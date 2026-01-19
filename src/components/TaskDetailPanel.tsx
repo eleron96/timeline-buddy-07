@@ -21,6 +21,7 @@ import {
 import { Trash2, X } from 'lucide-react';
 import { Task } from '@/types/planner';
 import { useAuthStore } from '@/store/authStore';
+import { addYears, format, parseISO } from 'date-fns';
 
 const areArraysEqual = (left: string[], right: string[]) => {
   if (left.length !== right.length) return false;
@@ -56,6 +57,8 @@ export const TaskDetailPanel: React.FC = () => {
     tags,
     updateTask,
     deleteTask,
+    duplicateTask,
+    createRepeats,
   } = usePlannerStore();
   const currentWorkspaceRole = useAuthStore((state) => state.currentWorkspaceRole);
   const canEdit = currentWorkspaceRole === 'editor' || currentWorkspaceRole === 'admin';
@@ -63,6 +66,13 @@ export const TaskDetailPanel: React.FC = () => {
 
   const originalTaskRef = useRef<Task | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [repeatFrequency, setRepeatFrequency] = useState<'none' | 'daily' | 'weekly' | 'monthly' | 'yearly'>('none');
+  const [repeatEnds, setRepeatEnds] = useState<'never' | 'on' | 'after'>('never');
+  const [repeatUntil, setRepeatUntil] = useState('');
+  const [repeatCount, setRepeatCount] = useState(4);
+  const [repeatError, setRepeatError] = useState('');
+  const [repeatNotice, setRepeatNotice] = useState('');
+  const [repeatCreating, setRepeatCreating] = useState(false);
   
   const task = tasks.find(t => t.id === selectedTaskId);
 
@@ -76,6 +86,17 @@ export const TaskDetailPanel: React.FC = () => {
       originalTaskRef.current = { ...task, tagIds: [...task.tagIds] };
     }
   }, [selectedTaskId, task]);
+
+  useEffect(() => {
+    if (!task) return;
+    setRepeatFrequency('none');
+    setRepeatEnds('never');
+    setRepeatUntil(format(addYears(parseISO(task.startDate), 1), 'yyyy-MM-dd'));
+    setRepeatCount(4);
+    setRepeatError('');
+    setRepeatNotice('');
+    setRepeatCreating(false);
+  }, [task?.id]);
 
   const isDirty = useMemo(() => {
     if (!task || !originalTaskRef.current) return false;
@@ -140,6 +161,39 @@ export const TaskDetailPanel: React.FC = () => {
     if (confirm('Are you sure you want to delete this task?')) {
       deleteTask(task.id);
     }
+  };
+
+  const handleCreateRepeats = async () => {
+    if (!canEdit) return;
+    setRepeatError('');
+    setRepeatNotice('');
+    if (repeatFrequency === 'none') {
+      setRepeatError('Select a repeat schedule.');
+      return;
+    }
+    if (repeatEnds === 'after' && (!repeatCount || repeatCount < 1)) {
+      setRepeatError('Enter how many repeats to create.');
+      return;
+    }
+    if (repeatEnds === 'on' && !repeatUntil) {
+      setRepeatError('Select an end date.');
+      return;
+    }
+
+    setRepeatCreating(true);
+    const result = await createRepeats(task.id, {
+      frequency: repeatFrequency,
+      ends: repeatEnds,
+      untilDate: repeatEnds === 'on' ? repeatUntil : undefined,
+      count: repeatEnds === 'after' ? repeatCount : undefined,
+    });
+    if (result.error) {
+      setRepeatError(result.error);
+      setRepeatCreating(false);
+      return;
+    }
+    setRepeatNotice(`Created ${result.created ?? 0} tasks.`);
+    setRepeatCreating(false);
   };
   
   return (
@@ -300,6 +354,87 @@ export const TaskDetailPanel: React.FC = () => {
               />
             </div>
           </div>
+
+          {/* Repeat */}
+          <div className="space-y-2">
+            <Label>Repeat</Label>
+            <div className="grid grid-cols-2 gap-4">
+              <Select
+                value={repeatFrequency}
+                onValueChange={(value) => setRepeatFrequency(value as typeof repeatFrequency)}
+                disabled={isReadOnly}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Repeat" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Does not repeat</SelectItem>
+                  <SelectItem value="daily">Daily</SelectItem>
+                  <SelectItem value="weekly">Weekly</SelectItem>
+                  <SelectItem value="monthly">Monthly</SelectItem>
+                  <SelectItem value="yearly">Yearly</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select
+                value={repeatEnds}
+                onValueChange={(value) => setRepeatEnds(value as typeof repeatEnds)}
+                disabled={isReadOnly || repeatFrequency === 'none'}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Ends" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="never">Never</SelectItem>
+                  <SelectItem value="on">On date</SelectItem>
+                  <SelectItem value="after">After count</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {repeatFrequency !== 'none' && repeatEnds === 'on' && (
+              <div className="space-y-2">
+                <Label htmlFor="repeat-until">End date</Label>
+                <Input
+                  id="repeat-until"
+                  type="date"
+                  value={repeatUntil}
+                  onChange={(e) => setRepeatUntil(e.target.value)}
+                  disabled={isReadOnly}
+                />
+              </div>
+            )}
+            {repeatFrequency !== 'none' && repeatEnds === 'after' && (
+              <div className="space-y-2">
+                <Label htmlFor="repeat-count">Occurrences</Label>
+                <Input
+                  id="repeat-count"
+                  type="number"
+                  min={1}
+                  value={repeatCount}
+                  onChange={(e) => setRepeatCount(Number(e.target.value))}
+                  disabled={isReadOnly}
+                />
+              </div>
+            )}
+            {repeatFrequency !== 'none' && repeatEnds === 'never' && (
+              <p className="text-xs text-muted-foreground">
+                Creates repeats for the next 12 months.
+              </p>
+            )}
+            {repeatError && (
+              <div className="text-sm text-destructive">{repeatError}</div>
+            )}
+            {repeatNotice && (
+              <div className="text-sm text-emerald-600">{repeatNotice}</div>
+            )}
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleCreateRepeats}
+              disabled={isReadOnly || repeatFrequency === 'none' || repeatCreating}
+            >
+              Create repeats
+            </Button>
+          </div>
           
           {/* Tags */}
           <div className="space-y-2">
@@ -345,8 +480,16 @@ export const TaskDetailPanel: React.FC = () => {
             />
           </div>
           
-          {/* Delete button */}
-          <div className="pt-4 border-t border-border">
+          {/* Actions */}
+          <div className="pt-4 border-t border-border space-y-2">
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={() => duplicateTask(task.id)}
+              disabled={isReadOnly}
+            >
+              Duplicate Task
+            </Button>
             <Button 
               variant="destructive" 
               className="w-full"

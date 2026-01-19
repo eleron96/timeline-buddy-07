@@ -98,16 +98,14 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({ collapsed, onToggle })
   
   if (collapsed) {
     return (
-      <div className="w-12 border-r border-border bg-card flex flex-col h-full transition-all duration-200">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-label="Expand filters"
+        className="w-12 border-r border-border bg-card flex flex-col h-full transition-all duration-200 cursor-pointer"
+      >
         <div className="flex flex-col items-center py-3 border-b border-border">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onToggle}
-            className="h-8 w-8"
-          >
-            <ChevronRight className="h-4 w-4" />
-          </Button>
+          <ChevronRight className="h-4 w-4 text-muted-foreground" />
         </div>
         <div className="flex-1 py-2 space-y-2">
           <div className="flex justify-center p-2">
@@ -135,7 +133,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({ collapsed, onToggle })
             <></>
           </FilterSection>
         </div>
-      </div>
+      </button>
     );
   }
   

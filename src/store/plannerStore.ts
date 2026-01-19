@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { format } from 'date-fns';
+import { addDays, addMonths, addWeeks, addYears, differenceInDays, format, parseISO } from 'date-fns';
 import { supabase } from '@/lib/supabaseClient';
 import {
   Task,
@@ -69,6 +69,8 @@ interface PlannerStore extends PlannerState {
   workspaceId: string | null;
   loading: boolean;
   error: string | null;
+  scrollRequestId: number;
+  scrollTargetDate: string | null;
   setWorkspaceId: (id: string | null) => void;
   loadWorkspaceData: (workspaceId: string) => Promise<void>;
   refreshAssignees: () => Promise<void>;
@@ -77,6 +79,8 @@ interface PlannerStore extends PlannerState {
   addTask: (task: Omit<Task, 'id'>) => Promise<void>;
   updateTask: (id: string, updates: Partial<Task>) => Promise<void>;
   deleteTask: (id: string) => Promise<void>;
+  duplicateTask: (id: string) => Promise<void>;
+  createRepeats: (id: string, options: { frequency: 'daily' | 'weekly' | 'monthly' | 'yearly'; ends: 'never' | 'on' | 'after'; untilDate?: string; count?: number }) => Promise<{ error?: string; created?: number }>;
   moveTask: (id: string, startDate: string, endDate: string) => Promise<void>;
   reassignTask: (id: string, assigneeId: string | null, projectId?: string | null) => Promise<void>;
 
@@ -103,6 +107,7 @@ interface PlannerStore extends PlannerState {
   setViewMode: (mode: ViewMode) => void;
   setGroupMode: (mode: GroupMode) => void;
   setCurrentDate: (date: string) => void;
+  requestScrollToDate: (date: string) => void;
   setFilters: (filters: Partial<Filters>) => void;
   clearFilters: () => void;
   setSelectedTaskId: (id: string | null) => void;
@@ -190,6 +195,8 @@ export const usePlannerStore = create<PlannerStore>()(
       workspaceId: null,
       loading: false,
       error: null,
+      scrollRequestId: 0,
+      scrollTargetDate: null,
 
       setWorkspaceId: (id) => set({ workspaceId: id }),
       reset: () => set({
@@ -203,6 +210,8 @@ export const usePlannerStore = create<PlannerStore>()(
         workspaceId: null,
         loading: false,
         error: null,
+        scrollRequestId: 0,
+        scrollTargetDate: null,
       }),
 
       loadWorkspaceData: async (workspaceId) => {
@@ -352,6 +361,112 @@ export const usePlannerStore = create<PlannerStore>()(
           tasks: state.tasks.filter((task) => task.id !== id),
           selectedTaskId: state.selectedTaskId === id ? null : state.selectedTaskId,
         }));
+      },
+
+      duplicateTask: async (id) => {
+        const task = get().tasks.find((item) => item.id === id);
+        if (!task) return;
+
+        const start = parseISO(task.startDate);
+        const end = parseISO(task.endDate);
+        const duration = differenceInDays(end, start) + 1;
+        const newStart = addDays(end, 1);
+        const newEnd = addDays(newStart, Math.max(0, duration - 1));
+
+        await get().addTask({
+          title: task.title,
+          projectId: task.projectId,
+          assigneeId: task.assigneeId,
+          startDate: format(newStart, 'yyyy-MM-dd'),
+          endDate: format(newEnd, 'yyyy-MM-dd'),
+          statusId: task.statusId,
+          typeId: task.typeId,
+          tagIds: [...task.tagIds],
+          description: task.description,
+        });
+      },
+
+      createRepeats: async (id, options) => {
+        const task = get().tasks.find((item) => item.id === id);
+        const workspaceId = get().workspaceId;
+        if (!task) return { error: 'Task not found.' };
+        if (!workspaceId) return { error: 'Workspace not selected.' };
+
+        const baseStart = parseISO(task.startDate);
+        const baseEnd = parseISO(task.endDate);
+        const duration = differenceInDays(baseEnd, baseStart) + 1;
+        const endsMode = options.ends;
+        const targetCount = options.count && options.count > 0 ? options.count : 0;
+        const untilDate = options.untilDate ? parseISO(options.untilDate) : null;
+        const neverHorizon = addYears(baseStart, 1);
+
+        const addInterval = (date: Date, step: number) => {
+          switch (options.frequency) {
+            case 'daily':
+              return addDays(date, step);
+            case 'weekly':
+              return addWeeks(date, step);
+            case 'monthly':
+              return addMonths(date, step);
+            case 'yearly':
+              return addYears(date, step);
+            default:
+              return addWeeks(date, step);
+          }
+        };
+
+        const newTasks: Array<{
+          workspace_id: string;
+          title: string;
+          project_id: string | null;
+          assignee_id: string | null;
+          start_date: string;
+          end_date: string;
+          status_id: string;
+          type_id: string;
+          tag_ids: string[];
+          description: string | null;
+        }> = [];
+
+        for (let index = 1; index <= 500; index += 1) {
+          if (endsMode === 'after' && index > targetCount) break;
+          const nextStart = addInterval(baseStart, index);
+          if (endsMode === 'on' && untilDate && nextStart > untilDate) break;
+          if (endsMode === 'never' && nextStart > neverHorizon) break;
+
+          const nextEnd = addDays(nextStart, Math.max(0, duration - 1));
+          newTasks.push({
+            workspace_id: workspaceId,
+            title: task.title,
+            project_id: task.projectId,
+            assignee_id: task.assigneeId,
+            start_date: format(nextStart, 'yyyy-MM-dd'),
+            end_date: format(nextEnd, 'yyyy-MM-dd'),
+            status_id: task.statusId,
+            type_id: task.typeId,
+            tag_ids: [...task.tagIds],
+            description: task.description,
+          });
+        }
+
+        if (newTasks.length === 0) {
+          return { error: 'No repeats created for the selected range.' };
+        }
+
+        const { data, error } = await supabase
+          .from('tasks')
+          .insert(newTasks)
+          .select('*');
+
+        if (error) {
+          return { error: error.message };
+        }
+
+        set((state) => ({
+          tasks: [...state.tasks, ...((data ?? []) as TaskRow[]).map(mapTaskRow)],
+        }));
+
+        return { created: newTasks.length };
       },
 
       moveTask: async (id, startDate, endDate) => {
@@ -724,6 +839,10 @@ export const usePlannerStore = create<PlannerStore>()(
       setViewMode: (mode) => set({ viewMode: mode }),
       setGroupMode: (mode) => set({ groupMode: mode }),
       setCurrentDate: (date) => set({ currentDate: date }),
+      requestScrollToDate: (date) => set((state) => ({
+        scrollTargetDate: date,
+        scrollRequestId: state.scrollRequestId + 1,
+      })),
       setFilters: (filters) => set((state) => ({
         filters: { ...state.filters, ...filters },
       })),

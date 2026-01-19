@@ -7,6 +7,8 @@ import { TaskBar } from './TaskBar';
 import { getVisibleDays, getDayWidth, getTaskPosition, checkOverlap, SIDEBAR_WIDTH, HEADER_HEIGHT, MIN_ROW_HEIGHT, TASK_HEIGHT, TASK_GAP } from '@/utils/dateUtils';
 import { Task } from '@/types/planner';
 import { calculateTaskLanes, getMaxLanes, TaskWithLane } from '@/utils/taskLanes';
+import { Button } from '@/components/ui/button';
+import { differenceInDays, format, isSameDay, parseISO } from 'date-fns';
 
 export const TimelineGrid: React.FC = () => {
   const { 
@@ -16,18 +18,44 @@ export const TimelineGrid: React.FC = () => {
     viewMode, 
     groupMode, 
     currentDate,
+    setCurrentDate,
+    requestScrollToDate,
+    scrollTargetDate,
+    scrollRequestId,
     filters,
   } = usePlannerStore();
   const currentWorkspaceRole = useAuthStore((state) => state.currentWorkspaceRole);
   const canEdit = currentWorkspaceRole === 'editor' || currentWorkspaceRole === 'admin';
   
   const containerRef = useRef<HTMLDivElement>(null);
+  const milestoneRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const syncingRef = useRef<HTMLDivElement | null>(null);
   const [scrollLeft, setScrollLeft] = useState(0);
+  const [viewportWidth, setViewportWidth] = useState(0);
+  const milestoneRowHeight = 24;
   
-  const visibleDays = useMemo(() => getVisibleDays(currentDate, viewMode), [currentDate, viewMode]);
+  const visibleDays = useMemo(() => getVisibleDays(currentDate, viewMode, tasks), [currentDate, viewMode, tasks]);
   const dayWidth = useMemo(() => getDayWidth(viewMode), [viewMode]);
   const totalWidth = visibleDays.length * dayWidth;
+  const currentDateObj = useMemo(() => parseISO(currentDate), [currentDate]);
+  const currentDayIndex = useMemo(
+    () => visibleDays.findIndex((day) => isSameDay(day, currentDateObj)),
+    [currentDateObj, visibleDays],
+  );
+  const centerIndex = useMemo(() => {
+    if (!viewportWidth || dayWidth === 0) return -1;
+    const centerPx = scrollLeft + viewportWidth / 2;
+    return Math.min(visibleDays.length - 1, Math.max(0, Math.floor(centerPx / dayWidth)));
+  }, [scrollLeft, viewportWidth, dayWidth, visibleDays.length]);
+  const centerDate = useMemo(() => {
+    if (centerIndex < 0 || centerIndex >= visibleDays.length) return null;
+    return visibleDays[centerIndex];
+  }, [centerIndex, visibleDays]);
+  const showTodayButton = useMemo(() => {
+    if (!centerDate) return false;
+    return Math.abs(differenceInDays(centerDate, new Date())) > 7;
+  }, [centerDate]);
   
   // Filter tasks
   const filteredTasks = useMemo(() => {
@@ -136,30 +164,71 @@ export const TimelineGrid: React.FC = () => {
   
   // Sync scroll between header and grid
   const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    if (syncingRef.current && syncingRef.current !== e.currentTarget) {
+      return;
+    }
+    syncingRef.current = e.currentTarget;
     const newScrollLeft = e.currentTarget.scrollLeft;
     setScrollLeft(newScrollLeft);
     
     // Sync header scroll
-    if (containerRef.current && e.currentTarget !== containerRef.current) {
+    if (containerRef.current && e.currentTarget !== containerRef.current && containerRef.current.scrollLeft !== newScrollLeft) {
       containerRef.current.scrollLeft = newScrollLeft;
     }
-    if (scrollContainerRef.current && e.currentTarget !== scrollContainerRef.current) {
+    if (milestoneRef.current && e.currentTarget !== milestoneRef.current && milestoneRef.current.scrollLeft !== newScrollLeft) {
+      milestoneRef.current.scrollLeft = newScrollLeft;
+    }
+    if (scrollContainerRef.current && e.currentTarget !== scrollContainerRef.current && scrollContainerRef.current.scrollLeft !== newScrollLeft) {
       scrollContainerRef.current.scrollLeft = newScrollLeft;
     }
+    requestAnimationFrame(() => {
+      syncingRef.current = null;
+    });
+  }, []);
+
+  const scrollToIndex = useCallback((index: number) => {
+    if (!scrollContainerRef.current) return;
+    const container = scrollContainerRef.current;
+    const targetScroll = Math.max(0, index * dayWidth - container.clientWidth / 2 + dayWidth / 2);
+    container.scrollLeft = targetScroll;
+    setScrollLeft(targetScroll);
+
+    if (containerRef.current) {
+      containerRef.current.scrollLeft = targetScroll;
+    }
+    if (milestoneRef.current) {
+      milestoneRef.current.scrollLeft = targetScroll;
+    }
+  }, [dayWidth]);
+
+  useEffect(() => {
+    if (!scrollContainerRef.current) return;
+    const container = scrollContainerRef.current;
+    const updateWidth = () => setViewportWidth(container.clientWidth);
+    updateWidth();
+
+    if (typeof ResizeObserver !== 'undefined') {
+      const observer = new ResizeObserver(updateWidth);
+      observer.observe(container);
+      return () => observer.disconnect();
+    }
+    return undefined;
   }, []);
   
   // Center scroll on mount
   useEffect(() => {
-    if (scrollContainerRef.current) {
-      const centerOffset = (totalWidth - scrollContainerRef.current.clientWidth) / 2;
-      scrollContainerRef.current.scrollLeft = Math.max(0, centerOffset);
-      setScrollLeft(scrollContainerRef.current.scrollLeft);
-      
-      if (containerRef.current) {
-        containerRef.current.scrollLeft = scrollContainerRef.current.scrollLeft;
-      }
+    const targetIndex = currentDayIndex >= 0 ? currentDayIndex : Math.floor(visibleDays.length / 2);
+    scrollToIndex(targetIndex);
+  }, [currentDayIndex, scrollToIndex, visibleDays.length]);
+
+  useEffect(() => {
+    if (!scrollTargetDate) return;
+    const targetDate = parseISO(scrollTargetDate);
+    const targetIndex = visibleDays.findIndex((day) => isSameDay(day, targetDate));
+    if (targetIndex >= 0) {
+      scrollToIndex(targetIndex);
     }
-  }, [totalWidth]);
+  }, [scrollRequestId, scrollTargetDate, scrollToIndex, visibleDays]);
   
   // Rows to display (including unassigned if there are unassigned tasks)
   const displayRows = useMemo(() => {
@@ -182,8 +251,14 @@ export const TimelineGrid: React.FC = () => {
     return rows;
   }, [groupItems, tasksByRow, rowHeights, groupMode]);
   
+  const handleJumpToToday = () => {
+    const today = format(new Date(), 'yyyy-MM-dd');
+    setCurrentDate(today);
+    requestScrollToDate(today);
+  };
+
   return (
-    <div className="flex flex-col h-full overflow-hidden bg-background">
+    <div className="relative flex flex-col h-full overflow-hidden bg-background">
       {/* Timeline Header - Sticky */}
       <div className="flex border-b border-border sticky top-0 z-20 bg-background" style={{ height: HEADER_HEIGHT }}>
         {/* Sidebar header spacer */}
@@ -194,7 +269,7 @@ export const TimelineGrid: React.FC = () => {
         {/* Day headers - synced scroll, hide scrollbar */}
         <div 
           ref={containerRef}
-          className="flex-1 overflow-x-auto scrollbar-thin"
+          className="flex-1 overflow-x-auto scrollbar-hidden"
           onScroll={handleScroll}
           style={{ overflowY: 'hidden' }}
         >
@@ -202,7 +277,24 @@ export const TimelineGrid: React.FC = () => {
             visibleDays={visibleDays} 
             dayWidth={dayWidth} 
             viewMode={viewMode}
+            scrollLeft={scrollLeft}
+            viewportWidth={viewportWidth}
           />
+        </div>
+      </div>
+
+      <div className="flex border-b border-border bg-background" style={{ height: milestoneRowHeight }}>
+        <div
+          className="flex-shrink-0 bg-timeline-header border-r border-border"
+          style={{ width: SIDEBAR_WIDTH }}
+        />
+        <div
+          ref={milestoneRef}
+          className="flex-1 overflow-x-auto scrollbar-hidden"
+          onScroll={handleScroll}
+          style={{ overflowY: 'hidden' }}
+        >
+          <div style={{ width: totalWidth, height: '100%' }} />
         </div>
       </div>
       
@@ -238,7 +330,7 @@ export const TimelineGrid: React.FC = () => {
         {/* Grid area */}
         <div 
           ref={scrollContainerRef}
-          className="flex-1 overflow-auto scrollbar-thin"
+          className="flex-1 overflow-auto scrollbar-soft"
           onScroll={handleScroll}
         >
           <div style={{ width: totalWidth, minHeight: '100%' }}>
@@ -280,6 +372,17 @@ export const TimelineGrid: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {showTodayButton && (
+        <Button
+          type="button"
+          variant="secondary"
+          className="absolute bottom-4 right-4 z-30 shadow-md"
+          onClick={handleJumpToToday}
+        >
+          Today
+        </Button>
+      )}
     </div>
   );
 };

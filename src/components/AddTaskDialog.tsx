@@ -20,6 +20,7 @@ export const AddTaskDialog: React.FC<AddTaskDialogProps> = ({ open, onOpenChange
   const today = new Date();
   const [title, setTitle] = useState('');
   const [projectId, setProjectId] = useState<string>('none');
+  const [projectInitialized, setProjectInitialized] = useState(false);
   const [assigneeId, setAssigneeId] = useState<string>('none');
   const [statusId, setStatusId] = useState(statuses[0]?.id || '');
   const [typeId, setTypeId] = useState(taskTypes[0]?.id || '');
@@ -46,7 +47,8 @@ export const AddTaskDialog: React.FC<AddTaskDialogProps> = ({ open, onOpenChange
     
     // Reset form
     setTitle('');
-    setProjectId('none');
+    setProjectId(projects[0]?.id || 'none');
+    setProjectInitialized(false);
     setAssigneeId('none');
     setStatusId(statuses[0]?.id || '');
     setTypeId(taskTypes[0]?.id || '');
@@ -62,6 +64,16 @@ export const AddTaskDialog: React.FC<AddTaskDialogProps> = ({ open, onOpenChange
       setStatusId(statuses[0].id);
     }
   }, [statusId, statuses]);
+
+  useEffect(() => {
+    if (!open) {
+      setProjectInitialized(false);
+      return;
+    }
+    if (projectInitialized) return;
+    setProjectId(projects[0]?.id || 'none');
+    setProjectInitialized(true);
+  }, [open, projectInitialized, projects]);
 
   useEffect(() => {
     if (!typeId && taskTypes[0]?.id) {

@@ -48,10 +48,12 @@ interface AuthState {
   setCurrentWorkspaceId: (id: string | null) => void;
   createWorkspace: (name: string) => Promise<{ error?: string }>;
   deleteWorkspace: (workspaceId?: string) => Promise<{ error?: string }>;
+  updateWorkspaceName: (workspaceId: string, name: string) => Promise<{ error?: string }>;
   fetchMembers: (workspaceId?: string) => Promise<void>;
   inviteMember: (email: string, role: WorkspaceRole) => Promise<{ error?: string; actionLink?: string; warning?: string }>;
   updateMemberRole: (userId: string, role: WorkspaceRole) => Promise<{ error?: string }>;
   removeMember: (userId: string) => Promise<{ error?: string }>;
+  updateDisplayName: (displayName: string) => Promise<{ error?: string }>;
 }
 
 const getWorkspaceStorageKey = (userId: string) => `current-workspace-${userId}`;
@@ -160,6 +162,20 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     if (!targetWorkspaceId) return { error: 'Workspace not selected.' };
 
     const { error } = await supabase.rpc('delete_workspace', { workspace_id: targetWorkspaceId });
+    if (error) return { error: error.message };
+
+    await get().fetchWorkspaces();
+    return {};
+  },
+  updateWorkspaceName: async (workspaceId, name) => {
+    const trimmedName = name.trim();
+    if (!trimmedName) return { error: 'Workspace name cannot be empty.' };
+
+    const { error } = await supabase
+      .from('workspaces')
+      .update({ name: trimmedName })
+      .eq('id', workspaceId);
+
     if (error) return { error: error.message };
 
     await get().fetchWorkspaces();
@@ -275,6 +291,27 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
 
     await get().fetchMembers(workspaceId);
+    return {};
+  },
+  updateDisplayName: async (displayName) => {
+    const user = get().user;
+    if (!user) return { error: 'You are not signed in.' };
+
+    const nextName = displayName.trim();
+    const { error } = await supabase
+      .from('profiles')
+      .update({ display_name: nextName.length > 0 ? nextName : null })
+      .eq('id', user.id);
+
+    if (error) {
+      return { error: error.message };
+    }
+
+    const workspaceId = get().currentWorkspaceId;
+    if (workspaceId) {
+      await get().fetchMembers(workspaceId);
+    }
+    await usePlannerStore.getState().refreshAssignees();
     return {};
   },
 }));

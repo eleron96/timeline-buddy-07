@@ -1,18 +1,34 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { usePlannerStore } from '@/store/plannerStore';
 import { Task } from '@/types/planner';
 import { cn } from '@/lib/utils';
-import { calculateNewDates, calculateResizedDates, TASK_HEIGHT, TASK_GAP } from '@/utils/dateUtils';
+import { calculateNewDates, calculateResizedDates, formatDateRange, TASK_HEIGHT, TASK_GAP } from '@/utils/dateUtils';
 import { AlertTriangle } from 'lucide-react';
 import {
   ContextMenu,
   ContextMenuContent,
+  ContextMenuItem,
   ContextMenuLabel,
   ContextMenuRadioGroup,
   ContextMenuRadioItem,
   ContextMenuSeparator,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
   ContextMenuTrigger,
 } from '@/components/ui/context-menu';
+import { Badge } from '@/components/ui/badge';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 
 interface TaskBarProps {
   task: Task;
@@ -24,6 +40,49 @@ interface TaskBarProps {
   canEdit: boolean;
 }
 
+const normalizeHex = (color: string) => {
+  const raw = color.startsWith('#') ? color.slice(1) : color;
+  if (raw.length === 3) {
+    return raw.split('').map((char) => `${char}${char}`).join('');
+  }
+  if (raw.length === 6) {
+    return raw;
+  }
+  return null;
+};
+
+const isDarkColor = (color: string) => {
+  const hex = normalizeHex(color);
+  if (!hex || !/^[0-9a-fA-F]{6}$/.test(hex)) {
+    return false;
+  }
+  const r = parseInt(hex.slice(0, 2), 16);
+  const g = parseInt(hex.slice(2, 4), 16);
+  const b = parseInt(hex.slice(4, 6), 16);
+  const luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+  return luminance < 0.5;
+};
+
+const hexToRgba = (color: string, alpha: number) => {
+  const hex = normalizeHex(color);
+  if (!hex || !/^[0-9a-fA-F]{6}$/.test(hex)) {
+    return null;
+  }
+  const r = parseInt(hex.slice(0, 2), 16);
+  const g = parseInt(hex.slice(2, 4), 16);
+  const b = parseInt(hex.slice(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+};
+
+const getBadgeStyle = (color?: string) => {
+  if (!color) return undefined;
+  const background = hexToRgba(color, 0.18);
+  const border = hexToRgba(color, 0.45);
+  const text = isDarkColor(color) ? color : '#0f172a';
+  if (!background || !border) return undefined;
+  return { backgroundColor: background, borderColor: border, color: text };
+};
+
 export const TaskBar: React.FC<TaskBarProps> = ({
   task,
   position,
@@ -33,25 +92,64 @@ export const TaskBar: React.FC<TaskBarProps> = ({
   lane,
   canEdit,
 }) => {
-  const { projects, statuses, moveTask, updateTask, setSelectedTaskId, selectedTaskId } = usePlannerStore();
+  const {
+    projects,
+    statuses,
+    taskTypes,
+    tags,
+    assignees,
+    moveTask,
+    updateTask,
+    deleteTask,
+    duplicateTask,
+    setSelectedTaskId,
+    selectedTaskId,
+  } = usePlannerStore();
   
   const [isDragging, setIsDragging] = useState(false);
   const [isResizing, setIsResizing] = useState<'left' | 'right' | null>(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, startX: 0 });
   const [hasMoved, setHasMoved] = useState(false);
+  const [isHovering, setIsHovering] = useState(false);
+  const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
+  const [deleteOpen, setDeleteOpen] = useState(false);
   
   const barRef = useRef<HTMLDivElement>(null);
   
   const project = projects.find(p => p.id === task.projectId);
   const status = statuses.find(s => s.id === task.statusId);
+  const taskType = taskTypes.find(t => t.id === task.typeId);
+  const taskTags = tags.filter(tag => task.tagIds.includes(tag.id));
+  const assignee = assignees.find(a => a.id === task.assigneeId);
   const isSelected = selectedTaskId === task.id;
   
-  const bgColor = project?.color || '#94a3b8';
+  const fallbackProjectColor = projects.length === 1 ? projects[0]?.color : undefined;
+  const bgColor = project?.color || fallbackProjectColor || '#94a3b8';
   const statusColor = status?.color || '#94a3b8';
+  const isDarkBackground = isDarkColor(bgColor);
+  const textColor = isDarkBackground ? '#f8fafc' : '#0f172a';
+  const iconColor = isDarkBackground ? 'rgba(248, 250, 252, 0.9)' : 'rgba(15, 23, 42, 0.8)';
   const isFinal = status?.isFinal || false;
+  const showTooltip = isHovering && !isDragging && !isResizing;
   
   // Calculate vertical position based on lane
   const topPosition = lane * (TASK_HEIGHT + TASK_GAP);
+
+  const updateTooltipPosition = useCallback((event: React.MouseEvent) => {
+    const offset = 14;
+    const tooltipWidth = 260;
+    const tooltipHeight = 180;
+    const { innerWidth, innerHeight } = window;
+    let x = event.clientX + offset;
+    let y = event.clientY + offset;
+    if (x + tooltipWidth > innerWidth) {
+      x = Math.max(8, event.clientX - tooltipWidth - offset);
+    }
+    if (y + tooltipHeight > innerHeight) {
+      y = Math.max(8, event.clientY - tooltipHeight - offset);
+    }
+    setTooltipPos({ x, y });
+  }, []);
   
   const handleMouseDown = useCallback((e: React.MouseEvent, resize?: 'left' | 'right') => {
     if (!canEdit) return;
@@ -139,12 +237,27 @@ export const TaskBar: React.FC<TaskBarProps> = ({
     updateTask(task.id, { statusId });
   };
 
+  const handleProjectChange = (projectId: string) => {
+    if (!canEdit) return;
+    const nextProjectId = projectId === 'none' ? null : projectId;
+    if (nextProjectId === task.projectId) return;
+    updateTask(task.id, { projectId: nextProjectId });
+  };
+
+  const projectValue = task.projectId ?? 'none';
+
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>
         <div
           ref={barRef}
           onMouseDown={(e) => handleMouseDown(e)}
+          onMouseEnter={(e) => {
+            setIsHovering(true);
+            updateTooltipPosition(e);
+          }}
+          onMouseMove={updateTooltipPosition}
+          onMouseLeave={() => setIsHovering(false)}
           onClick={(e) => {
             e.stopPropagation();
             if (!canEdit) {
@@ -157,7 +270,7 @@ export const TaskBar: React.FC<TaskBarProps> = ({
             isResizing && 'z-50',
             isSelected && 'ring-2 ring-primary ring-offset-1',
             isOverlapping && 'conflict',
-            isFinal && 'opacity-60'
+            isFinal && 'opacity-60 saturate-50'
           )}
           style={{
             left: visualLeft,
@@ -165,7 +278,6 @@ export const TaskBar: React.FC<TaskBarProps> = ({
             width: Math.max(visualWidth, dayWidth - 4),
             height: TASK_HEIGHT,
             backgroundColor: bgColor,
-            borderLeft: `3px solid ${statusColor}`,
           }}
         >
           {/* Left resize handle */}
@@ -177,9 +289,16 @@ export const TaskBar: React.FC<TaskBarProps> = ({
           {/* Task content */}
           <div className="flex items-center gap-2 min-w-0 flex-1">
             {isOverlapping && (
-              <AlertTriangle className="w-3 h-3 text-white/90 flex-shrink-0" />
+              <AlertTriangle className="w-3 h-3 flex-shrink-0" style={{ color: iconColor }} />
             )}
-            <span className="text-xs font-medium text-white truncate">
+            <span
+              className="inline-flex h-4 w-1.5 flex-shrink-0 rounded-[2px]"
+              style={{ backgroundColor: statusColor }}
+            />
+            <span
+              className={cn('task-label text-sm font-semibold leading-tight truncate', isFinal && 'line-through')}
+              style={{ color: textColor }}
+            >
               {task.title}
             </span>
           </div>
@@ -192,17 +311,105 @@ export const TaskBar: React.FC<TaskBarProps> = ({
         </div>
       </ContextMenuTrigger>
       <ContextMenuContent>
-        <ContextMenuLabel>Status</ContextMenuLabel>
+        <ContextMenuSub>
+          <ContextMenuSubTrigger>Status</ContextMenuSubTrigger>
+          <ContextMenuSubContent>
+            <ContextMenuLabel>Status</ContextMenuLabel>
+            <ContextMenuSeparator />
+            <ContextMenuRadioGroup value={task.statusId} onValueChange={handleStatusChange}>
+              {statuses.map((item) => (
+                <ContextMenuRadioItem key={item.id} value={item.id} disabled={!canEdit}>
+                  <span className="mr-2 inline-flex h-2 w-2 rounded-full" style={{ backgroundColor: item.color }} />
+                  {item.name}
+                </ContextMenuRadioItem>
+              ))}
+            </ContextMenuRadioGroup>
+          </ContextMenuSubContent>
+        </ContextMenuSub>
+        <ContextMenuItem onSelect={() => duplicateTask(task.id)} disabled={!canEdit}>
+          Duplicate task
+        </ContextMenuItem>
+        <ContextMenuSub>
+          <ContextMenuSubTrigger>Assign project</ContextMenuSubTrigger>
+          <ContextMenuSubContent>
+            <ContextMenuLabel>Project</ContextMenuLabel>
+            <ContextMenuSeparator />
+            <ContextMenuRadioGroup value={projectValue} onValueChange={handleProjectChange}>
+              <ContextMenuRadioItem value="none" disabled={!canEdit}>
+                No Project
+              </ContextMenuRadioItem>
+              {projects.map((project) => (
+                <ContextMenuRadioItem key={project.id} value={project.id} disabled={!canEdit}>
+                  <span className="mr-2 inline-flex h-2 w-2 rounded-full" style={{ backgroundColor: project.color }} />
+                  {project.name}
+                </ContextMenuRadioItem>
+              ))}
+            </ContextMenuRadioGroup>
+          </ContextMenuSubContent>
+        </ContextMenuSub>
         <ContextMenuSeparator />
-        <ContextMenuRadioGroup value={task.statusId} onValueChange={handleStatusChange}>
-          {statuses.map((item) => (
-            <ContextMenuRadioItem key={item.id} value={item.id} disabled={!canEdit}>
-              <span className="mr-2 inline-flex h-2 w-2 rounded-full" style={{ backgroundColor: item.color }} />
-              {item.name}
-            </ContextMenuRadioItem>
-          ))}
-        </ContextMenuRadioGroup>
+        <ContextMenuItem onSelect={() => setDeleteOpen(true)} disabled={!canEdit} className="text-destructive">
+          Delete task
+        </ContextMenuItem>
       </ContextMenuContent>
+      {showTooltip && typeof document !== 'undefined' && createPortal(
+        <div
+          className="fixed z-50 w-64 max-w-xs rounded-lg border bg-background p-3 shadow-xl"
+          style={{ left: tooltipPos.x, top: tooltipPos.y }}
+        >
+          <div className="space-y-2">
+            <div className="text-sm font-semibold text-foreground leading-snug break-words">
+              {task.title}
+            </div>
+            <div className="text-xs text-muted-foreground">
+              {formatDateRange(task.startDate, task.endDate)}
+            </div>
+            <div className="text-xs text-muted-foreground">
+              Assignee: <span className="text-foreground font-medium">{assignee?.name ?? 'Unassigned'}</span>
+            </div>
+            <div className="flex flex-wrap gap-1">
+              {status && (
+                <Badge className="text-[10px]" style={getBadgeStyle(status.color)}>
+                  {status.name}
+                </Badge>
+              )}
+              {taskType && (
+                <Badge className="text-[10px]" variant="secondary">
+                  {taskType.name}
+                </Badge>
+              )}
+              {taskTags.map((tag) => (
+                <Badge key={tag.id} className="text-[10px]" style={getBadgeStyle(tag.color)}>
+                  {tag.name}
+                </Badge>
+              ))}
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete task?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete "{task.title}".
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={async () => {
+                if (!canEdit) return;
+                await deleteTask(task.id);
+                setDeleteOpen(false);
+              }}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </ContextMenu>
   );
 };

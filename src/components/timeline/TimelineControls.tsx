@@ -20,6 +20,7 @@ export const TimelineControls: React.FC = () => {
     setGroupMode, 
     currentDate, 
     setCurrentDate,
+    requestScrollToDate,
   } = usePlannerStore();
   
   const handlePrev = () => {
@@ -39,7 +40,9 @@ export const TimelineControls: React.FC = () => {
   };
   
   const handleToday = () => {
-    setCurrentDate(format(new Date(), 'yyyy-MM-dd'));
+    const today = format(new Date(), 'yyyy-MM-dd');
+    setCurrentDate(today);
+    requestScrollToDate(today);
   };
   
   return (

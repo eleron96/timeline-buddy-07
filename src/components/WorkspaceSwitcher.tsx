@@ -1,15 +1,5 @@
-import React, { useState } from 'react';
-import { ChevronDown, Plus, Trash2, Users } from 'lucide-react';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
+import React, { useEffect, useState } from 'react';
+import { ChevronDown, Plus, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -26,6 +16,11 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useAuthStore } from '@/store/authStore';
 import { WorkspaceMembersSheet } from '@/components/WorkspaceMembersSheet';
+import { usePlannerStore } from '@/store/plannerStore';
+import { ColorPicker } from '@/components/ColorPicker';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
+import { Switch } from '@/components/ui/switch';
+import { supabase } from '@/lib/supabaseClient';
 
 export const WorkspaceSwitcher: React.FC = () => {
   const {
@@ -35,28 +30,129 @@ export const WorkspaceSwitcher: React.FC = () => {
     currentWorkspaceRole,
     setCurrentWorkspaceId,
     createWorkspace,
-    deleteWorkspace,
-    signOut,
   } = useAuthStore();
+  const { statuses, taskTypes, tags } = usePlannerStore();
 
   const [createOpen, setCreateOpen] = useState(false);
   const [membersOpen, setMembersOpen] = useState(false);
-  const [deleteOpen, setDeleteOpen] = useState(false);
   const [workspaceName, setWorkspaceName] = useState('');
   const [createError, setCreateError] = useState('');
   const [creating, setCreating] = useState(false);
-  const [deleteError, setDeleteError] = useState('');
-  const [deleting, setDeleting] = useState(false);
+  const [templateStatuses, setTemplateStatuses] = useState<Array<{ name: string; color: string; is_final: boolean }>>([]);
+  const [templateTypes, setTemplateTypes] = useState<Array<{ name: string; icon: string | null }>>([]);
+  const [templateTags, setTemplateTags] = useState<Array<{ name: string; color: string }>>([]);
+  const [templateLoading, setTemplateLoading] = useState(false);
+  const [templateError, setTemplateError] = useState('');
+  const [templateSaved, setTemplateSaved] = useState(false);
+  const [newTemplateStatusName, setNewTemplateStatusName] = useState('');
+  const [newTemplateStatusColor, setNewTemplateStatusColor] = useState('#3b82f6');
+  const [newTemplateTypeName, setNewTemplateTypeName] = useState('');
+  const [newTemplateTagName, setNewTemplateTagName] = useState('');
+  const [newTemplateTagColor, setNewTemplateTagColor] = useState('#3b82f6');
 
   const currentWorkspace = workspaces.find((workspace) => workspace.id === currentWorkspaceId);
   const isAdmin = currentWorkspaceRole === 'admin';
   const canCreateWorkspace = workspaces.length < 5;
-  const canDeleteWorkspace = Boolean(currentWorkspaceId) && isAdmin;
-  const signedInLabel = user?.email
-    ?? user?.user_metadata?.full_name
-    ?? user?.user_metadata?.name
-    ?? user?.id
-    ?? 'Unknown user';
+
+  useEffect(() => {
+    if (!createOpen || !user) return;
+    let active = true;
+
+    const loadTemplate = async () => {
+      setTemplateLoading(true);
+      setTemplateError('');
+      setTemplateSaved(false);
+      const { data, error } = await supabase
+        .from('user_workspace_templates')
+        .select('statuses, task_types, tags')
+        .eq('user_id', user.id)
+        .single();
+
+      if (!active) return;
+      if (error) {
+        if ((error as { code?: string }).code !== 'PGRST116') {
+          setTemplateError(error.message);
+        }
+        setTemplateStatuses([]);
+        setTemplateTypes([]);
+        setTemplateTags([]);
+        setTemplateLoading(false);
+        return;
+      }
+
+      setTemplateStatuses((data?.statuses as Array<{ name: string; color: string; is_final?: boolean }>)?.map((item) => ({
+        name: item.name ?? '',
+        color: item.color ?? '#94a3b8',
+        is_final: Boolean(item.is_final),
+      })) ?? []);
+      setTemplateTypes((data?.task_types as Array<{ name: string; icon?: string | null }>)?.map((item) => ({
+        name: item.name ?? '',
+        icon: item.icon ?? null,
+      })) ?? []);
+      setTemplateTags((data?.tags as Array<{ name: string; color: string }>)?.map((item) => ({
+        name: item.name ?? '',
+        color: item.color ?? '#94a3b8',
+      })) ?? []);
+      setTemplateLoading(false);
+    };
+
+    loadTemplate();
+    return () => {
+      active = false;
+    };
+  }, [createOpen, user]);
+
+  const handleSaveTemplate = async () => {
+    if (!user) return;
+    setTemplateError('');
+    setTemplateSaved(false);
+    const { error } = await supabase
+      .from('user_workspace_templates')
+      .upsert({
+        user_id: user.id,
+        statuses: templateStatuses,
+        task_types: templateTypes,
+        tags: templateTags,
+      });
+
+    if (error) {
+      setTemplateError(error.message);
+      return;
+    }
+    setTemplateSaved(true);
+  };
+
+  const handleCopyWorkspaceToTemplate = () => {
+    setTemplateStatuses(statuses.map((status) => ({
+      name: status.name,
+      color: status.color,
+      is_final: status.isFinal,
+    })));
+    setTemplateTypes(taskTypes.map((type) => ({
+      name: type.name,
+      icon: type.icon ?? null,
+    })));
+    setTemplateTags(tags.map((tag) => ({
+      name: tag.name,
+      color: tag.color,
+    })));
+    setTemplateSaved(false);
+  };
+
+  const updateTemplateStatus = (index: number, updates: Partial<{ name: string; color: string; is_final: boolean }>) => {
+    setTemplateStatuses((current) => current.map((item, i) => (i === index ? { ...item, ...updates } : item)));
+    setTemplateSaved(false);
+  };
+
+  const updateTemplateType = (index: number, updates: Partial<{ name: string; icon: string | null }>) => {
+    setTemplateTypes((current) => current.map((item, i) => (i === index ? { ...item, ...updates } : item)));
+    setTemplateSaved(false);
+  };
+
+  const updateTemplateTag = (index: number, updates: Partial<{ name: string; color: string }>) => {
+    setTemplateTags((current) => current.map((item, i) => (i === index ? { ...item, ...updates } : item)));
+    setTemplateSaved(false);
+  };
 
   const handleCreateWorkspace = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -78,20 +174,6 @@ export const WorkspaceSwitcher: React.FC = () => {
     setCreating(false);
   };
 
-  const handleDeleteWorkspace = async () => {
-    if (!currentWorkspaceId || !canDeleteWorkspace) return;
-    setDeleteError('');
-    setDeleting(true);
-    const result = await deleteWorkspace(currentWorkspaceId);
-    if (result.error) {
-      setDeleteError(result.error);
-      setDeleting(false);
-      return;
-    }
-    setDeleting(false);
-    setDeleteOpen(false);
-  };
-
   return (
     <>
       <DropdownMenu>
@@ -108,7 +190,11 @@ export const WorkspaceSwitcher: React.FC = () => {
             onValueChange={(value) => setCurrentWorkspaceId(value)}
           >
             {workspaces.map((workspace) => (
-              <DropdownMenuRadioItem key={workspace.id} value={workspace.id}>
+              <DropdownMenuRadioItem
+                key={workspace.id}
+                value={workspace.id}
+                className="data-[state=checked]:bg-zinc-800 data-[state=checked]:text-white"
+              >
                 <span className="truncate">{workspace.name}</span>
               </DropdownMenuRadioItem>
             ))}
@@ -127,22 +213,6 @@ export const WorkspaceSwitcher: React.FC = () => {
           >
             <Users className="mr-2 h-4 w-4" />
             Manage members
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            onSelect={(event) => { event.preventDefault(); setDeleteError(''); setDeleteOpen(true); }}
-            disabled={!canDeleteWorkspace}
-          >
-            <Trash2 className="mr-2 h-4 w-4" />
-            Delete workspace
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuLabel className="text-xs text-muted-foreground">Signed in as</DropdownMenuLabel>
-          <DropdownMenuItem disabled className="cursor-default opacity-100">
-            <span className="max-w-[180px] truncate">{signedInLabel}</span>
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem onSelect={(event) => { event.preventDefault(); signOut(); }}>
-            Sign out
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
@@ -167,6 +237,213 @@ export const WorkspaceSwitcher: React.FC = () => {
                 <p className="text-sm text-destructive">{createError}</p>
               )}
             </div>
+
+            <Accordion type="single" collapsible className="rounded-md border px-3">
+              <AccordionItem value="template" className="border-none">
+                <AccordionTrigger type="button" className="py-2 text-sm">Workspace template</AccordionTrigger>
+                <AccordionContent>
+                  <div className="space-y-4">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={handleCopyWorkspaceToTemplate}
+                        disabled={templateLoading}
+                      >
+                        Use current workspace
+                      </Button>
+                      <Button
+                        type="button"
+                        onClick={handleSaveTemplate}
+                        disabled={!user || templateLoading}
+                      >
+                        Save template
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Template is used for all new workspaces.
+                    </p>
+                    {templateError && (
+                      <div className="text-sm text-destructive">{templateError}</div>
+                    )}
+                    {templateSaved && (
+                      <div className="text-sm text-emerald-600">Template saved.</div>
+                    )}
+                    {templateLoading && (
+                      <div className="text-sm text-muted-foreground">Loading template...</div>
+                    )}
+
+                    <div className="space-y-3">
+                      <h4 className="text-sm font-semibold">Statuses</h4>
+                      <div className="flex gap-2">
+                        <Input
+                          placeholder="New status name..."
+                          value={newTemplateStatusName}
+                          onChange={(e) => setNewTemplateStatusName(e.target.value)}
+                        />
+                        <ColorPicker value={newTemplateStatusColor} onChange={setNewTemplateStatusColor} />
+                        <Button
+                          type="button"
+                          size="icon"
+                          onClick={() => {
+                            if (!newTemplateStatusName.trim()) return;
+                            setTemplateStatuses((current) => [
+                              ...current,
+                              { name: newTemplateStatusName.trim(), color: newTemplateStatusColor, is_final: false },
+                            ]);
+                            setNewTemplateStatusName('');
+                            setTemplateSaved(false);
+                          }}
+                        >
+                          <Plus className="w-4 h-4" />
+                        </Button>
+                      </div>
+                      <div className="space-y-2">
+                        {templateStatuses.map((status, index) => (
+                          <div key={`${status.name}-${index}`} className="flex items-center gap-2 rounded-lg bg-muted/50 p-2">
+                            <ColorPicker
+                              value={status.color}
+                              onChange={(color) => updateTemplateStatus(index, { color })}
+                            />
+                            <Input
+                              value={status.name}
+                              onChange={(e) => updateTemplateStatus(index, { name: e.target.value })}
+                              className="flex-1 h-8"
+                            />
+                            <div className="flex items-center gap-1">
+                              <Switch
+                                id={`template-final-${index}`}
+                                checked={status.is_final}
+                                onCheckedChange={(isFinal) => updateTemplateStatus(index, { is_final: isFinal })}
+                              />
+                              <Label htmlFor={`template-final-${index}`} className="text-xs text-muted-foreground">
+                                Final
+                              </Label>
+                            </div>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => {
+                                setTemplateStatuses((current) => current.filter((_, i) => i !== index));
+                                setTemplateSaved(false);
+                              }}
+                              className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                            >
+                              <Plus className="w-4 h-4 rotate-45" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="space-y-3">
+                      <h4 className="text-sm font-semibold">Types</h4>
+                      <div className="flex gap-2">
+                        <Input
+                          placeholder="New type name..."
+                          value={newTemplateTypeName}
+                          onChange={(e) => setNewTemplateTypeName(e.target.value)}
+                        />
+                        <Button
+                          type="button"
+                          size="icon"
+                          onClick={() => {
+                            if (!newTemplateTypeName.trim()) return;
+                            setTemplateTypes((current) => [
+                              ...current,
+                              { name: newTemplateTypeName.trim(), icon: null },
+                            ]);
+                            setNewTemplateTypeName('');
+                            setTemplateSaved(false);
+                          }}
+                        >
+                          <Plus className="w-4 h-4" />
+                        </Button>
+                      </div>
+                      <div className="space-y-2">
+                        {templateTypes.map((type, index) => (
+                          <div key={`${type.name}-${index}`} className="flex items-center gap-3 rounded-lg bg-muted/50 p-3">
+                            <Input
+                              value={type.name}
+                              onChange={(e) => updateTemplateType(index, { name: e.target.value })}
+                              className="flex-1"
+                            />
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => {
+                                setTemplateTypes((current) => current.filter((_, i) => i !== index));
+                                setTemplateSaved(false);
+                              }}
+                              className="text-muted-foreground hover:text-destructive"
+                            >
+                              <Plus className="w-4 h-4 rotate-45" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="space-y-3">
+                      <h4 className="text-sm font-semibold">Tags</h4>
+                      <div className="flex gap-2">
+                        <Input
+                          placeholder="New tag name..."
+                          value={newTemplateTagName}
+                          onChange={(e) => setNewTemplateTagName(e.target.value)}
+                        />
+                        <ColorPicker value={newTemplateTagColor} onChange={setNewTemplateTagColor} />
+                        <Button
+                          type="button"
+                          size="icon"
+                          onClick={() => {
+                            if (!newTemplateTagName.trim()) return;
+                            setTemplateTags((current) => [
+                              ...current,
+                              { name: newTemplateTagName.trim(), color: newTemplateTagColor },
+                            ]);
+                            setNewTemplateTagName('');
+                            setTemplateSaved(false);
+                          }}
+                        >
+                          <Plus className="w-4 h-4" />
+                        </Button>
+                      </div>
+                      <div className="space-y-2">
+                        {templateTags.map((tag, index) => (
+                          <div key={`${tag.name}-${index}`} className="flex items-center gap-2 rounded-lg bg-muted/50 p-2">
+                            <ColorPicker
+                              value={tag.color}
+                              onChange={(color) => updateTemplateTag(index, { color })}
+                            />
+                            <Input
+                              value={tag.name}
+                              onChange={(e) => updateTemplateTag(index, { name: e.target.value })}
+                              className="flex-1 h-8"
+                            />
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => {
+                                setTemplateTags((current) => current.filter((_, i) => i !== index));
+                                setTemplateSaved(false);
+                              }}
+                              className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                            >
+                              <Plus className="w-4 h-4 rotate-45" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </AccordionContent>
+              </AccordionItem>
+            </Accordion>
+
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>
                 Cancel
@@ -178,26 +455,6 @@ export const WorkspaceSwitcher: React.FC = () => {
           </form>
         </DialogContent>
       </Dialog>
-
-      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete workspace</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will permanently delete "{currentWorkspace?.name ?? 'this workspace'}" and all its data.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          {deleteError && (
-            <p className="text-sm text-destructive">{deleteError}</p>
-          )}
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDeleteWorkspace} disabled={deleting}>
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
 
       <WorkspaceMembersSheet open={membersOpen} onOpenChange={setMembersOpen} />
     </>

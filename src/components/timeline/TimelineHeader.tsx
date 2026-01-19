@@ -8,12 +8,16 @@ interface TimelineHeaderProps {
   visibleDays: Date[];
   dayWidth: number;
   viewMode: ViewMode;
+  scrollLeft: number;
+  viewportWidth: number;
 }
 
 export const TimelineHeader: React.FC<TimelineHeaderProps> = ({
   visibleDays,
   dayWidth,
   viewMode,
+  scrollLeft,
+  viewportWidth,
 }) => {
   // Group days by month for month labels
   const monthGroups = React.useMemo(() => {
@@ -42,11 +46,28 @@ export const TimelineHeader: React.FC<TimelineHeaderProps> = ({
     
     return groups;
   }, [visibleDays]);
+
+  const totalWidth = visibleDays.length * dayWidth;
+  const activeMonth = React.useMemo(() => {
+    if (visibleDays.length === 0) return '';
+    if (!dayWidth) return format(visibleDays[0], 'MMMM yyyy');
+    const centerPx = scrollLeft + viewportWidth / 2;
+    const centerIndex = Math.min(
+      visibleDays.length - 1,
+      Math.max(0, Math.floor(centerPx / dayWidth))
+    );
+    return format(visibleDays[centerIndex], 'MMMM yyyy');
+  }, [visibleDays, dayWidth, scrollLeft, viewportWidth]);
+
+  const labelLeft = Math.min(
+    totalWidth,
+    Math.max(0, scrollLeft + viewportWidth / 2)
+  );
   
   return (
-    <div className="relative" style={{ width: visibleDays.length * dayWidth }}>
+    <div className="relative" style={{ width: totalWidth }}>
       {/* Month row */}
-      <div className="flex h-6 bg-timeline-header border-b border-border">
+      <div className="flex h-10 bg-timeline-header border-b border-border">
         {monthGroups.map((group) => (
           <div
             key={`${group.month}-${group.startIndex}`}
@@ -59,9 +80,20 @@ export const TimelineHeader: React.FC<TimelineHeaderProps> = ({
           </div>
         ))}
       </div>
+
+      {activeMonth && viewportWidth > 0 && (
+        <div
+          className="pointer-events-none absolute top-0 z-10 flex h-10 items-center"
+          style={{ left: labelLeft, transform: 'translateX(-50%)' }}
+        >
+          <span className="rounded-full bg-background/80 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-foreground/80 shadow-sm backdrop-blur">
+            {activeMonth}
+          </span>
+        </div>
+      )}
       
       {/* Day row */}
-      <div className="flex h-[34px]">
+      <div className="flex h-14">
         {visibleDays.map((day, index) => {
           const { day: dayName, date } = formatDayHeader(day, viewMode);
           const today = isToday(day);
@@ -71,23 +103,28 @@ export const TimelineHeader: React.FC<TimelineHeaderProps> = ({
             <div
               key={index}
               className={cn(
-                'flex flex-col items-center justify-center border-r border-border transition-colors',
+                'flex flex-col items-center justify-center border-r border-border transition-colors py-2 gap-1',
                 weekend && 'bg-timeline-weekend',
-                today && 'bg-primary/10'
+                today && 'today-hatch'
               )}
               style={{ width: dayWidth }}
             >
               <span className={cn(
-                'text-[10px] uppercase tracking-wide',
-                today ? 'text-primary font-semibold' : 'text-muted-foreground'
+                'text-xs uppercase tracking-wide leading-none',
+                today ? 'text-rose-700 font-semibold' : 'text-muted-foreground'
               )}>
                 {dayName}
               </span>
               <span className={cn(
-                'text-sm font-medium',
-                today ? 'text-primary' : 'text-foreground'
+                'inline-flex items-center justify-center text-lg font-medium leading-none',
+                today ? 'text-rose-700' : 'text-foreground'
               )}>
-                {date}
+                <span className={cn(
+                  'inline-flex items-center justify-center',
+                  today && 'rounded-full bg-rose-100/80 px-2.5 py-0.5'
+                )}>
+                  {date}
+                </span>
               </span>
             </div>
           );

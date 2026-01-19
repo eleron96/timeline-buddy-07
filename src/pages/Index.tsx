@@ -4,16 +4,18 @@ import { TimelineControls } from '@/components/timeline/TimelineControls';
 import { FilterPanel } from '@/components/FilterPanel';
 import { TaskDetailPanel } from '@/components/TaskDetailPanel';
 import { SettingsPanel } from '@/components/SettingsPanel';
+import { AccountSettingsDialog } from '@/components/AccountSettingsDialog';
 import { AddTaskDialog } from '@/components/AddTaskDialog';
 import { Button } from '@/components/ui/button';
-import { Plus, Settings } from 'lucide-react';
+import { Plus, Settings, User } from 'lucide-react';
 import { usePlannerStore } from '@/store/plannerStore';
 import { useAuthStore } from '@/store/authStore';
 import { WorkspaceSwitcher } from '@/components/WorkspaceSwitcher';
 
 const Index = () => {
-  const [filterCollapsed, setFilterCollapsed] = useState(false);
+  const [filterCollapsed, setFilterCollapsed] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
+  const [showAccountSettings, setShowAccountSettings] = useState(false);
   const [showAddTask, setShowAddTask] = useState(false);
   const loadWorkspaceData = usePlannerStore((state) => state.loadWorkspaceData);
   const plannerLoading = usePlannerStore((state) => state.loading);
@@ -52,6 +54,14 @@ const Index = () => {
           >
             <Settings className="h-4 w-4" />
           </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setShowAccountSettings(true)}
+            className="h-9 w-9"
+          >
+            <User className="h-4 w-4" />
+          </Button>
         </div>
       </header>
       
@@ -83,6 +93,7 @@ const Index = () => {
       {/* Panels */}
       <TaskDetailPanel />
       <SettingsPanel open={showSettings} onOpenChange={setShowSettings} />
+      <AccountSettingsDialog open={showAccountSettings} onOpenChange={setShowAccountSettings} />
       <AddTaskDialog open={showAddTask} onOpenChange={setShowAddTask} />
     </div>
   );

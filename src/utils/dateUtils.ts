@@ -4,8 +4,10 @@ import {
   startOfDay, 
   endOfDay,
   addDays, 
+  addYears,
   addWeeks, 
   subDays, 
+  subYears,
   subWeeks,
   differenceInDays,
   format,
@@ -13,6 +15,8 @@ import {
   isSameDay,
   isWeekend,
   eachDayOfInterval,
+  max,
+  min,
 } from 'date-fns';
 import { ViewMode } from '@/types/planner';
 
@@ -21,24 +25,35 @@ export const WEEK_DAY_WIDTH = 48; // pixels per day in week view
 export const MIN_ROW_HEIGHT = 56; // minimum pixels per row
 export const TASK_HEIGHT = 28; // height of task bar
 export const TASK_GAP = 4; // gap between stacked tasks
-export const HEADER_HEIGHT = 60; // pixels for timeline header
+export const HEADER_HEIGHT = 96; // pixels for timeline header
 export const SIDEBAR_WIDTH = 200; // pixels for left sidebar
 
-export const getVisibleDays = (currentDate: string, viewMode: ViewMode): Date[] => {
+export const getVisibleDays = (
+  currentDate: string,
+  viewMode: ViewMode,
+  tasks: Array<{ startDate: string; endDate: string }> = []
+): Date[] => {
   const date = parseISO(currentDate);
-  
-  if (viewMode === 'day') {
-    // Show 14 days centered on current date
-    const start = subDays(date, 3);
-    const end = addDays(date, 10);
-    return eachDayOfInterval({ start, end });
-  } else {
-    // Show 4 weeks centered on current week
-    const weekStart = startOfWeek(date, { weekStartsOn: 1 });
-    const start = subWeeks(weekStart, 1);
-    const end = addWeeks(weekStart, 3);
-    return eachDayOfInterval({ start, end });
+
+  let rangeStart = subYears(date, 1);
+  let rangeEnd = addYears(date, 1);
+
+  if (tasks.length > 0) {
+    const startDates = tasks.map((task) => parseISO(task.startDate));
+    const endDates = tasks.map((task) => parseISO(task.endDate));
+    const minDate = min([date, ...startDates]);
+    const maxDate = max([date, ...endDates]);
+
+    rangeStart = subYears(minDate, 1);
+    rangeEnd = addYears(maxDate, 1);
   }
+
+  if (viewMode === 'week') {
+    rangeStart = startOfWeek(rangeStart, { weekStartsOn: 1 });
+    rangeEnd = endOfWeek(rangeEnd, { weekStartsOn: 1 });
+  }
+
+  return eachDayOfInterval({ start: rangeStart, end: rangeEnd });
 };
 
 export const getDayWidth = (viewMode: ViewMode): number => {

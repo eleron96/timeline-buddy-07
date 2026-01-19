@@ -1,67 +1,37 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { usePlannerStore } from '@/store/plannerStore';
+import { useAuthStore } from '@/store/authStore';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Plus, Trash2, Palette, Settings2 } from 'lucide-react';
-import { cn } from '@/lib/utils';
-
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-
-const PRESET_COLORS = [
-  '#3b82f6', '#22c55e', '#f59e0b', '#8b5cf6', '#ec4899',
-  '#ef4444', '#14b8a6', '#6366f1', '#f97316', '#84cc16',
-];
-
-interface ColorPickerProps {
-  value: string;
-  onChange: (color: string) => void;
-}
-
-const ColorPicker: React.FC<ColorPickerProps> = ({ value, onChange }) => {
-  return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          className="w-6 h-6 rounded-full border-2 border-border hover:scale-110 transition-transform flex-shrink-0"
-          style={{ backgroundColor: value }}
-        />
-      </PopoverTrigger>
-      <PopoverContent className="w-auto p-3" align="end">
-        <div className="flex flex-wrap gap-2 max-w-[180px]">
-          {PRESET_COLORS.map(color => (
-            <button
-              key={color}
-              type="button"
-              onClick={() => onChange(color)}
-              className={cn(
-                'w-6 h-6 rounded-full border-2 transition-transform hover:scale-110',
-                value === color ? 'border-foreground scale-110' : 'border-transparent'
-              )}
-              style={{ backgroundColor: color }}
-            />
-          ))}
-          <Input
-            type="color"
-            value={value}
-            onChange={(e) => onChange(e.target.value)}
-            className="w-6 h-6 p-0 border-0 cursor-pointer"
-          />
-        </div>
-      </PopoverContent>
-    </Popover>
-  );
-};
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { Plus, Trash2, Settings2 } from 'lucide-react';
+import { supabase } from '@/lib/supabaseClient';
+import { ColorPicker } from '@/components/ColorPicker';
 
 interface SettingsPanelProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
+
+const SectionCard: React.FC<{ title?: string; children: React.ReactNode }> = ({ title, children }) => (
+  <div className="rounded-lg border bg-muted/30 p-4 space-y-3">
+    {title && <h3 className="text-sm font-semibold text-foreground">{title}</h3>}
+    {children}
+  </div>
+);
 
 export const SettingsPanel: React.FC<SettingsPanelProps> = ({ open, onOpenChange }) => {
   const {
@@ -70,7 +40,17 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ open, onOpenChange
     tags, addTag, updateTag, deleteTag,
     projects, addProject, updateProject, deleteProject,
     assignees,
+    workspaceId,
+    loadWorkspaceData,
   } = usePlannerStore();
+  const {
+    user,
+    workspaces,
+    currentWorkspaceId,
+    currentWorkspaceRole,
+    updateWorkspaceName,
+    deleteWorkspace,
+  } = useAuthStore();
   
   const [newStatusName, setNewStatusName] = useState('');
   const [newStatusColor, setNewStatusColor] = useState('#3b82f6');
@@ -82,7 +62,24 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ open, onOpenChange
   
   const [newProjectName, setNewProjectName] = useState('');
   const [newProjectColor, setNewProjectColor] = useState('#3b82f6');
-  
+  const currentWorkspace = workspaces.find((workspace) => workspace.id === currentWorkspaceId);
+  const isAdmin = currentWorkspaceRole === 'admin';
+  const [workspaceName, setWorkspaceName] = useState('');
+  const [workspaceError, setWorkspaceError] = useState('');
+  const [workspaceSaving, setWorkspaceSaving] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [templateApplyError, setTemplateApplyError] = useState('');
+  const [templateApplying, setTemplateApplying] = useState(false);
+  const [templateApplied, setTemplateApplied] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    setWorkspaceName(currentWorkspace?.name ?? '');
+    setWorkspaceError('');
+    setTemplateApplyError('');
+    setTemplateApplied(false);
+  }, [open, currentWorkspace?.name]);
+
   const handleAddStatus = () => {
     if (!newStatusName.trim()) return;
     addStatus({ name: newStatusName.trim(), color: newStatusColor, isFinal: false });
@@ -106,209 +103,432 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ open, onOpenChange
     addProject({ name: newProjectName.trim(), color: newProjectColor });
     setNewProjectName('');
   };
+
+  const handleSaveWorkspaceName = async () => {
+    if (!currentWorkspaceId) {
+      setWorkspaceError('Workspace not selected.');
+      return;
+    }
+    setWorkspaceError('');
+    setWorkspaceSaving(true);
+    const result = await updateWorkspaceName(currentWorkspaceId, workspaceName);
+    if (result.error) {
+      setWorkspaceError(result.error);
+      setWorkspaceSaving(false);
+      return;
+    }
+    setWorkspaceSaving(false);
+  };
+
+  const handleDeleteWorkspace = async () => {
+    if (!currentWorkspaceId) {
+      setWorkspaceError('Workspace not selected.');
+      return;
+    }
+    setWorkspaceError('');
+    const result = await deleteWorkspace(currentWorkspaceId);
+    if (result.error) {
+      setWorkspaceError(result.error);
+      return;
+    }
+    setDeleteOpen(false);
+  };
+
+  const handleApplyTemplate = async () => {
+    if (!user) {
+      setTemplateApplyError('You are not signed in.');
+      return;
+    }
+    if (!workspaceId) {
+      setTemplateApplyError('Workspace not selected.');
+      return;
+    }
+
+    setTemplateApplying(true);
+    setTemplateApplyError('');
+    setTemplateApplied(false);
+    const { data, error } = await supabase
+      .from('user_workspace_templates')
+      .select('statuses, task_types, tags')
+      .eq('user_id', user.id)
+      .single();
+
+    if (error) {
+      if ((error as { code?: string }).code === 'PGRST116') {
+        setTemplateApplyError('No template saved yet.');
+      } else {
+        setTemplateApplyError(error.message);
+      }
+      setTemplateApplying(false);
+      return;
+    }
+
+    const templateStatuses = (data?.statuses as Array<{ name: string; color: string; is_final?: boolean }>) ?? [];
+    const templateTypes = (data?.task_types as Array<{ name: string; icon?: string | null }>) ?? [];
+    const templateTags = (data?.tags as Array<{ name: string; color: string }>) ?? [];
+
+    const statusNames = new Set(statuses.map((status) => status.name.trim().toLowerCase()));
+    const typeNames = new Set(taskTypes.map((type) => type.name.trim().toLowerCase()));
+    const tagNames = new Set(tags.map((tag) => tag.name.trim().toLowerCase()));
+
+    const newStatuses = templateStatuses.filter((status) => {
+      const name = status.name?.trim().toLowerCase();
+      return name && !statusNames.has(name);
+    });
+    const newTypes = templateTypes.filter((type) => {
+      const name = type.name?.trim().toLowerCase();
+      return name && !typeNames.has(name);
+    });
+    const newTags = templateTags.filter((tag) => {
+      const name = tag.name?.trim().toLowerCase();
+      return name && !tagNames.has(name);
+    });
+
+    try {
+      if (newStatuses.length > 0) {
+        const { error } = await supabase
+          .from('statuses')
+          .insert(newStatuses.map((status) => ({
+            workspace_id: workspaceId,
+            name: status.name.trim(),
+            color: status.color ?? '#94a3b8',
+            is_final: Boolean(status.is_final),
+          })));
+        if (error) throw error;
+      }
+
+      if (newTypes.length > 0) {
+        const { error } = await supabase
+          .from('task_types')
+          .insert(newTypes.map((type) => ({
+            workspace_id: workspaceId,
+            name: type.name.trim(),
+            icon: type.icon ?? null,
+          })));
+        if (error) throw error;
+      }
+
+      if (newTags.length > 0) {
+        const { error } = await supabase
+          .from('tags')
+          .insert(newTags.map((tag) => ({
+            workspace_id: workspaceId,
+            name: tag.name.trim(),
+            color: tag.color ?? '#94a3b8',
+          })));
+        if (error) throw error;
+      }
+
+      await loadWorkspaceData(workspaceId);
+      setTemplateApplied(true);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to apply template.';
+      setTemplateApplyError(message);
+    } finally {
+      setTemplateApplying(false);
+    }
+  };
   
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="w-[500px] sm:w-[600px] overflow-hidden flex flex-col">
-        <SheetHeader>
+    <>
+      <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent className="w-[500px] sm:w-[600px] overflow-y-auto flex flex-col">
+          <SheetHeader>
           <SheetTitle className="flex items-center gap-2">
             <Settings2 className="w-5 h-5" />
-            Settings
+            Workspace settings
           </SheetTitle>
         </SheetHeader>
-        
-        <Tabs defaultValue="statuses" className="flex-1 flex flex-col mt-4 overflow-hidden">
-          <TabsList className="grid grid-cols-5 mb-4">
-            <TabsTrigger value="statuses">Statuses</TabsTrigger>
-            <TabsTrigger value="types">Types</TabsTrigger>
-            <TabsTrigger value="tags">Tags</TabsTrigger>
-            <TabsTrigger value="projects">Projects</TabsTrigger>
-            <TabsTrigger value="people">People</TabsTrigger>
-          </TabsList>
           
-          <ScrollArea className="flex-1">
+          <Tabs defaultValue="workspace" className="flex-1 flex flex-col mt-4">
+            <TabsList className="flex flex-wrap w-full h-auto items-start justify-start gap-2 mb-4">
+              <TabsTrigger value="workspace" className="whitespace-nowrap">Workspace</TabsTrigger>
+              <TabsTrigger value="statuses" className="whitespace-nowrap">Statuses</TabsTrigger>
+              <TabsTrigger value="types" className="whitespace-nowrap">Types</TabsTrigger>
+              <TabsTrigger value="tags" className="whitespace-nowrap">Tags</TabsTrigger>
+              <TabsTrigger value="projects" className="whitespace-nowrap">Projects</TabsTrigger>
+              <TabsTrigger value="people" className="whitespace-nowrap">People</TabsTrigger>
+            </TabsList>
+
+            <div className="flex-1 space-y-4">
+            {/* Workspace */}
+            <TabsContent value="workspace" className="space-y-4 m-0">
+              {!isAdmin && (
+                <SectionCard title="Access">
+                  <p className="text-sm text-muted-foreground">
+                    You have view access and cannot edit this workspace.
+                  </p>
+                </SectionCard>
+              )}
+
+              <SectionCard title="Name">
+                <div className="space-y-2">
+                  <Label htmlFor="workspace-name">Workspace name</Label>
+                  <Input
+                    id="workspace-name"
+                    value={workspaceName}
+                    onChange={(e) => setWorkspaceName(e.target.value)}
+                    disabled={!isAdmin || !currentWorkspaceId || workspaceSaving}
+                  />
+                  {workspaceError && (
+                    <div className="text-sm text-destructive">{workspaceError}</div>
+                  )}
+                  <Button
+                    onClick={handleSaveWorkspaceName}
+                    disabled={!isAdmin || !currentWorkspaceId || workspaceSaving || !workspaceName.trim()}
+                  >
+                    Save
+                  </Button>
+                </div>
+              </SectionCard>
+
+              <SectionCard title="Template">
+                <p className="text-xs text-muted-foreground">
+                  Apply your saved template to this workspace (adds missing items by name).
+                </p>
+                {templateApplyError && (
+                  <div className="text-sm text-destructive">{templateApplyError}</div>
+                )}
+                {templateApplied && (
+                  <div className="text-sm text-emerald-600">Template applied.</div>
+                )}
+                <Button
+                  variant="secondary"
+                  onClick={handleApplyTemplate}
+                  disabled={!user || !currentWorkspaceId || templateApplying}
+                >
+                  Apply template
+                </Button>
+              </SectionCard>
+
+              <SectionCard title="Danger zone">
+                <Button
+                  variant="destructive"
+                  onClick={() => setDeleteOpen(true)}
+                  disabled={!isAdmin || !currentWorkspaceId}
+                >
+                  Delete workspace
+                </Button>
+              </SectionCard>
+            </TabsContent>
+
             {/* Statuses */}
             <TabsContent value="statuses" className="space-y-4 m-0">
-              <div className="flex gap-2">
-                <Input
-                  placeholder="New status name..."
-                  value={newStatusName}
-                  onChange={(e) => setNewStatusName(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleAddStatus()}
-                />
-                <Button onClick={handleAddStatus} size="icon">
-                  <Plus className="w-4 h-4" />
-                </Button>
-              </div>
-              
-              <div className="space-y-2">
-                {statuses.map(status => (
-                  <div key={status.id} className="flex items-center gap-2 p-2 bg-muted/50 rounded-lg">
-                    <ColorPicker
-                      value={status.color}
-                      onChange={(color) => updateStatus(status.id, { color })}
-                    />
-                    <Input
-                      value={status.name}
-                      onChange={(e) => updateStatus(status.id, { name: e.target.value })}
-                      className="flex-1 h-8"
-                    />
-                    <div className="flex items-center gap-1">
-                      <Switch
-                        id={`final-${status.id}`}
-                        checked={status.isFinal}
-                        onCheckedChange={(isFinal) => updateStatus(status.id, { isFinal })}
+              <SectionCard title="Add status">
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="New status name..."
+                    value={newStatusName}
+                    onChange={(e) => setNewStatusName(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleAddStatus()}
+                  />
+                  <Button onClick={handleAddStatus} size="icon">
+                    <Plus className="w-4 h-4" />
+                  </Button>
+                </div>
+              </SectionCard>
+
+              <SectionCard title="Statuses">
+                <div className="space-y-2">
+                  {statuses.map(status => (
+                    <div key={status.id} className="flex items-center gap-2 p-2 bg-muted/50 rounded-lg">
+                      <ColorPicker
+                        value={status.color}
+                        onChange={(color) => updateStatus(status.id, { color })}
                       />
-                      <Label htmlFor={`final-${status.id}`} className="text-xs text-muted-foreground">
-                        Final
-                      </Label>
+                      <Input
+                        value={status.name}
+                        onChange={(e) => updateStatus(status.id, { name: e.target.value })}
+                        className="flex-1 h-8"
+                      />
+                      <div className="flex items-center gap-1">
+                        <Switch
+                          id={`final-${status.id}`}
+                          checked={status.isFinal}
+                          onCheckedChange={(isFinal) => updateStatus(status.id, { isFinal })}
+                        />
+                        <Label htmlFor={`final-${status.id}`} className="text-xs text-muted-foreground">
+                          Final
+                        </Label>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => deleteStatus(status.id)}
+                        className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => deleteStatus(status.id)}
-                      className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              </SectionCard>
             </TabsContent>
             
             {/* Types */}
             <TabsContent value="types" className="space-y-4 m-0">
-              <div className="flex gap-2">
-                <Input
-                  placeholder="New type name..."
-                  value={newTypeName}
-                  onChange={(e) => setNewTypeName(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleAddType()}
-                />
-                <Button onClick={handleAddType} size="icon">
-                  <Plus className="w-4 h-4" />
-                </Button>
-              </div>
-              
-              <div className="space-y-2">
-                {taskTypes.map(type => (
-                  <div key={type.id} className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg">
-                    <Input
-                      value={type.name}
-                      onChange={(e) => updateTaskType(type.id, { name: e.target.value })}
-                      className="flex-1"
-                    />
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => deleteTaskType(type.id)}
-                      className="text-muted-foreground hover:text-destructive"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                  </div>
-                ))}
-              </div>
+              <SectionCard title="Add type">
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="New type name..."
+                    value={newTypeName}
+                    onChange={(e) => setNewTypeName(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleAddType()}
+                  />
+                  <Button onClick={handleAddType} size="icon">
+                    <Plus className="w-4 h-4" />
+                  </Button>
+                </div>
+              </SectionCard>
+
+              <SectionCard title="Types">
+                <div className="space-y-2">
+                  {taskTypes.map(type => (
+                    <div key={type.id} className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg">
+                      <Input
+                        value={type.name}
+                        onChange={(e) => updateTaskType(type.id, { name: e.target.value })}
+                        className="flex-1"
+                      />
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => deleteTaskType(type.id)}
+                        className="text-muted-foreground hover:text-destructive"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </SectionCard>
             </TabsContent>
             
             {/* Tags */}
             <TabsContent value="tags" className="space-y-4 m-0">
-              <div className="flex gap-2">
-                <Input
-                  placeholder="New tag name..."
-                  value={newTagName}
-                  onChange={(e) => setNewTagName(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleAddTag()}
-                />
-                <Button onClick={handleAddTag} size="icon">
-                  <Plus className="w-4 h-4" />
-                </Button>
-              </div>
-              
-              <div className="space-y-2">
-                {tags.map(tag => (
-                  <div key={tag.id} className="flex items-center gap-2 p-2 bg-muted/50 rounded-lg">
-                    <ColorPicker
-                      value={tag.color}
-                      onChange={(color) => updateTag(tag.id, { color })}
-                    />
-                    <Input
-                      value={tag.name}
-                      onChange={(e) => updateTag(tag.id, { name: e.target.value })}
-                      className="flex-1 h-8"
-                    />
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => deleteTag(tag.id)}
-                      className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                  </div>
-                ))}
-              </div>
+              <SectionCard title="Add tag">
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="New tag name..."
+                    value={newTagName}
+                    onChange={(e) => setNewTagName(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleAddTag()}
+                  />
+                  <Button onClick={handleAddTag} size="icon">
+                    <Plus className="w-4 h-4" />
+                  </Button>
+                </div>
+              </SectionCard>
+
+              <SectionCard title="Tags">
+                <div className="space-y-2">
+                  {tags.map(tag => (
+                    <div key={tag.id} className="flex items-center gap-2 p-2 bg-muted/50 rounded-lg">
+                      <ColorPicker
+                        value={tag.color}
+                        onChange={(color) => updateTag(tag.id, { color })}
+                      />
+                      <Input
+                        value={tag.name}
+                        onChange={(e) => updateTag(tag.id, { name: e.target.value })}
+                        className="flex-1 h-8"
+                      />
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => deleteTag(tag.id)}
+                        className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </SectionCard>
             </TabsContent>
             
             {/* Projects */}
             <TabsContent value="projects" className="space-y-4 m-0">
-              <div className="flex gap-2">
-                <Input
-                  placeholder="New project name..."
-                  value={newProjectName}
-                  onChange={(e) => setNewProjectName(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleAddProject()}
-                />
-                <Button onClick={handleAddProject} size="icon">
-                  <Plus className="w-4 h-4" />
-                </Button>
-              </div>
-              
-              <div className="space-y-2">
-                {projects.map(project => (
-                  <div key={project.id} className="flex items-center gap-2 p-2 bg-muted/50 rounded-lg">
-                    <ColorPicker
-                      value={project.color}
-                      onChange={(color) => updateProject(project.id, { color })}
-                    />
-                    <Input
-                      value={project.name}
-                      onChange={(e) => updateProject(project.id, { name: e.target.value })}
-                      className="flex-1 h-8"
-                    />
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => deleteProject(project.id)}
-                      className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                  </div>
-                ))}
-              </div>
+              <SectionCard title="Add project">
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="New project name..."
+                    value={newProjectName}
+                    onChange={(e) => setNewProjectName(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleAddProject()}
+                  />
+                  <Button onClick={handleAddProject} size="icon">
+                    <Plus className="w-4 h-4" />
+                  </Button>
+                </div>
+              </SectionCard>
+
+              <SectionCard title="Projects">
+                <div className="space-y-2">
+                  {projects.map(project => (
+                    <div key={project.id} className="flex items-center gap-2 p-2 bg-muted/50 rounded-lg">
+                      <ColorPicker
+                        value={project.color}
+                        onChange={(color) => updateProject(project.id, { color })}
+                      />
+                      <Input
+                        value={project.name}
+                        onChange={(e) => updateProject(project.id, { name: e.target.value })}
+                        className="flex-1 h-8"
+                      />
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => deleteProject(project.id)}
+                        className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </SectionCard>
             </TabsContent>
             
             {/* People */}
             <TabsContent value="people" className="space-y-4 m-0">
-              <p className="text-sm text-muted-foreground">
-                People are workspace members. Manage members from the workspace menu.
-              </p>
+              <SectionCard title="People">
+                <p className="text-sm text-muted-foreground">
+                  People are workspace members. Manage members from the workspace menu.
+                </p>
 
-              <div className="space-y-2">
-                {assignees.length === 0 && (
-                  <div className="text-sm text-muted-foreground">No members yet.</div>
-                )}
-                {assignees.map((assignee) => (
-                  <div key={assignee.id} className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg">
-                    <span className="text-sm font-medium truncate">{assignee.name}</span>
-                  </div>
-                ))}
-              </div>
+                <div className="space-y-2">
+                  {assignees.length === 0 && (
+                    <div className="text-sm text-muted-foreground">No members yet.</div>
+                  )}
+                  {assignees.map((assignee) => (
+                    <div key={assignee.id} className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg">
+                      <span className="text-sm font-medium truncate">{assignee.name}</span>
+                    </div>
+                  ))}
+                </div>
+              </SectionCard>
             </TabsContent>
-          </ScrollArea>
-        </Tabs>
-      </SheetContent>
-    </Sheet>
+
+            </div>
+          </Tabs>
+        </SheetContent>
+      </Sheet>
+
+      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete workspace?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete "{currentWorkspace?.name ?? 'this workspace'}" and all its data.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDeleteWorkspace}>Delete</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 };

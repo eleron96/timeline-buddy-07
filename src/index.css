@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Open+Sans:wght@400;600;700&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -156,6 +156,19 @@
   .task-bar.conflict {
     @apply ring-2 ring-destructive ring-offset-1;
   }
+
+  .task-label {
+    font-family: 'Open Sans', 'Inter', system-ui, sans-serif;
+  }
+
+  .today-hatch {
+    background-image: repeating-linear-gradient(
+      135deg,
+      rgba(248, 113, 113, 0.25) 0 8px,
+      rgba(248, 113, 113, 0.06) 8px 16px
+    );
+    background-color: rgba(252, 165, 165, 0.12);
+  }
   
   .resize-handle {
     @apply absolute top-0 bottom-0 w-2 cursor-ew-resize opacity-0 transition-opacity;
@@ -186,6 +199,39 @@
   
   .scrollbar-thin::-webkit-scrollbar-thumb:hover {
     background: hsl(var(--muted-foreground) / 0.5);
+  }
+
+  .scrollbar-hidden {
+    scrollbar-width: none;
+  }
+
+  .scrollbar-hidden::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+  }
+
+  .scrollbar-soft {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--muted-foreground) / 0.5) hsl(var(--muted-foreground) / 0.2);
+  }
+
+  .scrollbar-soft::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  .scrollbar-soft::-webkit-scrollbar-track {
+    background: hsl(var(--muted-foreground) / 0.2);
+    border-radius: 999px;
+  }
+
+  .scrollbar-soft::-webkit-scrollbar-thumb {
+    background: hsl(var(--muted-foreground) / 0.5);
+    border-radius: 999px;
+  }
+
+  .scrollbar-soft::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground) / 0.6);
   }
 }
 

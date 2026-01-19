@@ -39,14 +39,10 @@ export const TimelineRow: React.FC<TimelineRowProps> = ({
               className={cn(
                 'h-full border-r border-timeline-grid transition-colors relative',
                 weekend && 'bg-timeline-weekend/50',
-                today && 'bg-primary/5'
+                today && 'today-hatch'
               )}
               style={{ width: dayWidth }}
-            >
-              {today && (
-                <div className="absolute top-0 bottom-0 w-0.5 bg-primary left-1/2 -translate-x-1/2 z-10" />
-              )}
-            </div>
+            />
           );
         })}
       </div>
