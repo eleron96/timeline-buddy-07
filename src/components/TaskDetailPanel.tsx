@@ -61,8 +61,12 @@ export const TaskDetailPanel: React.FC = () => {
   };
   
   return (
-    <Sheet open={!!selectedTaskId} onOpenChange={() => setSelectedTaskId(null)}>
-      <SheetContent className="w-[400px] sm:w-[450px] overflow-y-auto">
+    <Sheet open={!!selectedTaskId} onOpenChange={(open) => !open && setSelectedTaskId(null)}>
+      <SheetContent 
+        className="w-[400px] sm:w-[450px] overflow-y-auto"
+        onInteractOutside={(e) => e.preventDefault()}
+        onPointerDownOutside={(e) => e.preventDefault()}
+      >
         <SheetHeader className="space-y-1">
           <div className="flex items-center gap-2">
             {project && (

@@ -10,6 +10,8 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Plus, Trash2, Palette, Settings2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+
 const PRESET_COLORS = [
   '#3b82f6', '#22c55e', '#f59e0b', '#8b5cf6', '#ec4899',
   '#ef4444', '#14b8a6', '#6366f1', '#f97316', '#84cc16',
@@ -22,26 +24,37 @@ interface ColorPickerProps {
 
 const ColorPicker: React.FC<ColorPickerProps> = ({ value, onChange }) => {
   return (
-    <div className="flex items-center gap-2 flex-wrap">
-      {PRESET_COLORS.map(color => (
+    <Popover>
+      <PopoverTrigger asChild>
         <button
-          key={color}
           type="button"
-          onClick={() => onChange(color)}
-          className={cn(
-            'w-6 h-6 rounded-full border-2 transition-transform hover:scale-110',
-            value === color ? 'border-foreground scale-110' : 'border-transparent'
-          )}
-          style={{ backgroundColor: color }}
+          className="w-6 h-6 rounded-full border-2 border-border hover:scale-110 transition-transform flex-shrink-0"
+          style={{ backgroundColor: value }}
         />
-      ))}
-      <Input
-        type="color"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="w-8 h-8 p-0 border-0 cursor-pointer"
-      />
-    </div>
+      </PopoverTrigger>
+      <PopoverContent className="w-auto p-3" align="end">
+        <div className="flex flex-wrap gap-2 max-w-[180px]">
+          {PRESET_COLORS.map(color => (
+            <button
+              key={color}
+              type="button"
+              onClick={() => onChange(color)}
+              className={cn(
+                'w-6 h-6 rounded-full border-2 transition-transform hover:scale-110',
+                value === color ? 'border-foreground scale-110' : 'border-transparent'
+              )}
+              style={{ backgroundColor: color }}
+            />
+          ))}
+          <Input
+            type="color"
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            className="w-6 h-6 p-0 border-0 cursor-pointer"
+          />
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 };
 
@@ -138,35 +151,31 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ open, onOpenChange
               
               <div className="space-y-2">
                 {statuses.map(status => (
-                  <div key={status.id} className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg">
-                    <div 
-                      className="w-4 h-4 rounded-full flex-shrink-0"
-                      style={{ backgroundColor: status.color }}
-                    />
-                    <Input
-                      value={status.name}
-                      onChange={(e) => updateStatus(status.id, { name: e.target.value })}
-                      className="flex-1"
-                    />
+                  <div key={status.id} className="flex items-center gap-2 p-2 bg-muted/50 rounded-lg">
                     <ColorPicker
                       value={status.color}
                       onChange={(color) => updateStatus(status.id, { color })}
                     />
-                    <div className="flex items-center gap-2">
-                      <Label htmlFor={`final-${status.id}`} className="text-xs text-muted-foreground">
-                        Final
-                      </Label>
+                    <Input
+                      value={status.name}
+                      onChange={(e) => updateStatus(status.id, { name: e.target.value })}
+                      className="flex-1 h-8"
+                    />
+                    <div className="flex items-center gap-1">
                       <Switch
                         id={`final-${status.id}`}
                         checked={status.isFinal}
                         onCheckedChange={(isFinal) => updateStatus(status.id, { isFinal })}
                       />
+                      <Label htmlFor={`final-${status.id}`} className="text-xs text-muted-foreground">
+                        Final
+                      </Label>
                     </div>
                     <Button
                       variant="ghost"
                       size="icon"
                       onClick={() => deleteStatus(status.id)}
-                      className="text-muted-foreground hover:text-destructive"
+                      className="h-8 w-8 text-muted-foreground hover:text-destructive"
                     >
                       <Trash2 className="w-4 h-4" />
                     </Button>
@@ -226,25 +235,21 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ open, onOpenChange
               
               <div className="space-y-2">
                 {tags.map(tag => (
-                  <div key={tag.id} className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg">
-                    <div 
-                      className="w-4 h-4 rounded-full flex-shrink-0"
-                      style={{ backgroundColor: tag.color }}
+                  <div key={tag.id} className="flex items-center gap-2 p-2 bg-muted/50 rounded-lg">
+                    <ColorPicker
+                      value={tag.color}
+                      onChange={(color) => updateTag(tag.id, { color })}
                     />
                     <Input
                       value={tag.name}
                       onChange={(e) => updateTag(tag.id, { name: e.target.value })}
-                      className="flex-1"
-                    />
-                    <ColorPicker
-                      value={tag.color}
-                      onChange={(color) => updateTag(tag.id, { color })}
+                      className="flex-1 h-8"
                     />
                     <Button
                       variant="ghost"
                       size="icon"
                       onClick={() => deleteTag(tag.id)}
-                      className="text-muted-foreground hover:text-destructive"
+                      className="h-8 w-8 text-muted-foreground hover:text-destructive"
                     >
                       <Trash2 className="w-4 h-4" />
                     </Button>
@@ -269,25 +274,21 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ open, onOpenChange
               
               <div className="space-y-2">
                 {projects.map(project => (
-                  <div key={project.id} className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg">
-                    <div 
-                      className="w-4 h-4 rounded-full flex-shrink-0"
-                      style={{ backgroundColor: project.color }}
+                  <div key={project.id} className="flex items-center gap-2 p-2 bg-muted/50 rounded-lg">
+                    <ColorPicker
+                      value={project.color}
+                      onChange={(color) => updateProject(project.id, { color })}
                     />
                     <Input
                       value={project.name}
                       onChange={(e) => updateProject(project.id, { name: e.target.value })}
-                      className="flex-1"
-                    />
-                    <ColorPicker
-                      value={project.color}
-                      onChange={(color) => updateProject(project.id, { color })}
+                      className="flex-1 h-8"
                     />
                     <Button
                       variant="ghost"
                       size="icon"
                       onClick={() => deleteProject(project.id)}
-                      className="text-muted-foreground hover:text-destructive"
+                      className="h-8 w-8 text-muted-foreground hover:text-destructive"
                     >
                       <Trash2 className="w-4 h-4" />
                     </Button>
