@@ -27,6 +27,7 @@ export const TaskBar: React.FC<TaskBarProps> = ({
   const [isDragging, setIsDragging] = useState(false);
   const [isResizing, setIsResizing] = useState<'left' | 'right' | null>(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, startX: 0 });
+  const [hasMoved, setHasMoved] = useState(false);
   
   const barRef = useRef<HTMLDivElement>(null);
   
@@ -41,14 +42,11 @@ export const TaskBar: React.FC<TaskBarProps> = ({
   // Calculate vertical position based on lane
   const topPosition = lane * (TASK_HEIGHT + TASK_GAP);
   
-  const handleClick = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation();
-    setSelectedTaskId(task.id);
-  }, [task.id, setSelectedTaskId]);
-  
   const handleMouseDown = useCallback((e: React.MouseEvent, resize?: 'left' | 'right') => {
     e.preventDefault();
     e.stopPropagation();
+    
+    setHasMoved(false);
     
     if (resize) {
       setIsResizing(resize);
@@ -64,6 +62,9 @@ export const TaskBar: React.FC<TaskBarProps> = ({
     
     const handleMouseMove = (e: MouseEvent) => {
       const deltaX = e.clientX - dragOffset.startX;
+      if (Math.abs(deltaX) > 3) {
+        setHasMoved(true);
+      }
       setDragOffset(prev => ({ ...prev, x: deltaX }));
     };
     
@@ -89,9 +90,15 @@ export const TaskBar: React.FC<TaskBarProps> = ({
         }
       }
       
+      // Only open panel on clean click (no movement)
+      if (!hasMoved && !isResizing) {
+        setSelectedTaskId(task.id);
+      }
+      
       setIsDragging(false);
       setIsResizing(null);
       setDragOffset({ x: 0, startX: 0 });
+      setHasMoved(false);
     };
     
     document.addEventListener('mousemove', handleMouseMove);
@@ -101,7 +108,7 @@ export const TaskBar: React.FC<TaskBarProps> = ({
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [isDragging, isResizing, dragOffset.startX, dragOffset.x, dayWidth, task, moveTask]);
+  }, [isDragging, isResizing, dragOffset.startX, dragOffset.x, dayWidth, task, moveTask, hasMoved, setSelectedTaskId]);
   
   // Calculate visual position during drag
   const visualLeft = isDragging || isResizing === 'left'
@@ -117,7 +124,6 @@ export const TaskBar: React.FC<TaskBarProps> = ({
   return (
     <div
       ref={barRef}
-      onClick={handleClick}
       onMouseDown={(e) => handleMouseDown(e)}
       className={cn(
         'task-bar absolute flex items-center px-2 overflow-hidden select-none',
