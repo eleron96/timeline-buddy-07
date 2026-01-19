@@ -2,7 +2,7 @@ import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { usePlannerStore } from '@/store/plannerStore';
 import { Task } from '@/types/planner';
 import { cn } from '@/lib/utils';
-import { calculateNewDates, calculateResizedDates, differenceInDays, parseISO, format, addDays } from '@/utils/dateUtils';
+import { calculateNewDates, calculateResizedDates, TASK_HEIGHT, TASK_GAP } from '@/utils/dateUtils';
 import { AlertTriangle } from 'lucide-react';
 
 interface TaskBarProps {
@@ -11,6 +11,7 @@ interface TaskBarProps {
   dayWidth: number;
   visibleDays: Date[];
   isOverlapping: boolean;
+  lane: number;
 }
 
 export const TaskBar: React.FC<TaskBarProps> = ({
@@ -19,6 +20,7 @@ export const TaskBar: React.FC<TaskBarProps> = ({
   dayWidth,
   visibleDays,
   isOverlapping,
+  lane,
 }) => {
   const { projects, statuses, moveTask, setSelectedTaskId, selectedTaskId } = usePlannerStore();
   
@@ -35,6 +37,9 @@ export const TaskBar: React.FC<TaskBarProps> = ({
   const bgColor = project?.color || '#94a3b8';
   const statusColor = status?.color || '#94a3b8';
   const isFinal = status?.isFinal || false;
+  
+  // Calculate vertical position based on lane
+  const topPosition = lane * (TASK_HEIGHT + TASK_GAP);
   
   const handleClick = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
@@ -115,7 +120,7 @@ export const TaskBar: React.FC<TaskBarProps> = ({
       onClick={handleClick}
       onMouseDown={(e) => handleMouseDown(e)}
       className={cn(
-        'task-bar absolute h-[calc(100%-8px)] flex items-center px-2 overflow-hidden select-none',
+        'task-bar absolute flex items-center px-2 overflow-hidden select-none',
         isDragging && 'dragging z-50',
         isResizing && 'z-50',
         isSelected && 'ring-2 ring-primary ring-offset-1',
@@ -124,7 +129,9 @@ export const TaskBar: React.FC<TaskBarProps> = ({
       )}
       style={{
         left: visualLeft,
+        top: topPosition,
         width: Math.max(visualWidth, dayWidth - 4),
+        height: TASK_HEIGHT,
         backgroundColor: bgColor,
         borderLeft: `3px solid ${statusColor}`,
       }}

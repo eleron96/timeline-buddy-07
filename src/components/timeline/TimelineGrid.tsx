@@ -3,8 +3,9 @@ import { usePlannerStore } from '@/store/plannerStore';
 import { TimelineHeader } from './TimelineHeader';
 import { TimelineRow } from './TimelineRow';
 import { TaskBar } from './TaskBar';
-import { getVisibleDays, getDayWidth, getTaskPosition, checkOverlap, SIDEBAR_WIDTH, HEADER_HEIGHT, ROW_HEIGHT } from '@/utils/dateUtils';
+import { getVisibleDays, getDayWidth, getTaskPosition, checkOverlap, SIDEBAR_WIDTH, HEADER_HEIGHT, MIN_ROW_HEIGHT, TASK_HEIGHT, TASK_GAP } from '@/utils/dateUtils';
 import { Task } from '@/types/planner';
+import { calculateTaskLanes, getMaxLanes, TaskWithLane } from '@/utils/taskLanes';
 
 export const TimelineGrid: React.FC = () => {
   const { 
@@ -18,6 +19,7 @@ export const TimelineGrid: React.FC = () => {
   } = usePlannerStore();
   
   const containerRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [scrollLeft, setScrollLeft] = useState(0);
   
   const visibleDays = useMemo(() => getVisibleDays(currentDate, viewMode), [currentDate, viewMode]);
@@ -54,30 +56,56 @@ export const TimelineGrid: React.FC = () => {
     return projects.map(p => ({ id: p.id, name: p.name, color: p.color }));
   }, [groupMode, assignees, projects]);
   
-  // Group tasks by row
+  // Group tasks by row with lane calculation
   const tasksByRow = useMemo(() => {
-    const grouped: Record<string, Task[]> = {};
+    const grouped: Record<string, TaskWithLane[]> = {};
     
     groupItems.forEach(item => {
       grouped[item.id] = [];
     });
     grouped['unassigned'] = [];
     
+    // Group tasks first
+    const tasksPerGroup: Record<string, Task[]> = {};
+    groupItems.forEach(item => {
+      tasksPerGroup[item.id] = [];
+    });
+    tasksPerGroup['unassigned'] = [];
+    
     filteredTasks.forEach(task => {
       const groupId = groupMode === 'assignee' 
         ? (task.assigneeId || 'unassigned')
         : (task.projectId || 'unassigned');
       
-      if (!grouped[groupId]) {
-        grouped[groupId] = [];
+      if (!tasksPerGroup[groupId]) {
+        tasksPerGroup[groupId] = [];
       }
-      grouped[groupId].push(task);
+      tasksPerGroup[groupId].push(task);
+    });
+    
+    // Calculate lanes for each group
+    Object.entries(tasksPerGroup).forEach(([groupId, tasks]) => {
+      grouped[groupId] = calculateTaskLanes(tasks);
     });
     
     return grouped;
   }, [filteredTasks, groupItems, groupMode]);
   
-  // Check for overlapping tasks per assignee
+  // Calculate row heights based on max lanes
+  const rowHeights = useMemo(() => {
+    const heights: Record<string, number> = {};
+    
+    Object.entries(tasksByRow).forEach(([groupId, tasks]) => {
+      const maxLanes = getMaxLanes(tasks);
+      // Calculate height: padding (16px) + (task height + gap) * lanes
+      const calculatedHeight = 16 + maxLanes * (TASK_HEIGHT + TASK_GAP);
+      heights[groupId] = Math.max(MIN_ROW_HEIGHT, calculatedHeight);
+    });
+    
+    return heights;
+  }, [tasksByRow]);
+  
+  // Check for overlapping tasks per assignee (for warning indicators)
   const overlappingTaskIds = useMemo(() => {
     const overlaps = new Set<string>();
     
@@ -103,16 +131,30 @@ export const TimelineGrid: React.FC = () => {
     return overlaps;
   }, [tasksByRow, groupMode]);
   
+  // Sync scroll between header and grid
   const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
-    setScrollLeft(e.currentTarget.scrollLeft);
+    const newScrollLeft = e.currentTarget.scrollLeft;
+    setScrollLeft(newScrollLeft);
+    
+    // Sync header scroll
+    if (containerRef.current && e.currentTarget !== containerRef.current) {
+      containerRef.current.scrollLeft = newScrollLeft;
+    }
+    if (scrollContainerRef.current && e.currentTarget !== scrollContainerRef.current) {
+      scrollContainerRef.current.scrollLeft = newScrollLeft;
+    }
   }, []);
   
   // Center scroll on mount
   useEffect(() => {
-    if (containerRef.current) {
-      const centerOffset = (totalWidth - containerRef.current.clientWidth) / 2;
-      containerRef.current.scrollLeft = Math.max(0, centerOffset);
-      setScrollLeft(containerRef.current.scrollLeft);
+    if (scrollContainerRef.current) {
+      const centerOffset = (totalWidth - scrollContainerRef.current.clientWidth) / 2;
+      scrollContainerRef.current.scrollLeft = Math.max(0, centerOffset);
+      setScrollLeft(scrollContainerRef.current.scrollLeft);
+      
+      if (containerRef.current) {
+        containerRef.current.scrollLeft = scrollContainerRef.current.scrollLeft;
+      }
     }
   }, [totalWidth]);
   
@@ -121,6 +163,7 @@ export const TimelineGrid: React.FC = () => {
     const rows = groupItems.map(item => ({
       ...item,
       tasks: tasksByRow[item.id] || [],
+      height: rowHeights[item.id] || MIN_ROW_HEIGHT,
     }));
     
     if (tasksByRow['unassigned']?.length > 0) {
@@ -129,26 +172,28 @@ export const TimelineGrid: React.FC = () => {
         name: groupMode === 'assignee' ? 'Unassigned' : 'No Project',
         color: '#94a3b8',
         tasks: tasksByRow['unassigned'],
+        height: rowHeights['unassigned'] || MIN_ROW_HEIGHT,
       });
     }
     
     return rows;
-  }, [groupItems, tasksByRow, groupMode]);
+  }, [groupItems, tasksByRow, rowHeights, groupMode]);
   
   return (
     <div className="flex flex-col h-full overflow-hidden bg-background">
-      {/* Timeline Header */}
-      <div className="flex border-b border-border" style={{ height: HEADER_HEIGHT }}>
+      {/* Timeline Header - Sticky */}
+      <div className="flex border-b border-border sticky top-0 z-20 bg-background" style={{ height: HEADER_HEIGHT }}>
         {/* Sidebar header spacer */}
         <div 
           className="flex-shrink-0 bg-timeline-header border-r border-border"
           style={{ width: SIDEBAR_WIDTH }}
         />
-        {/* Day headers */}
+        {/* Day headers - synced scroll, hide scrollbar */}
         <div 
           ref={containerRef}
           className="flex-1 overflow-x-auto scrollbar-thin"
           onScroll={handleScroll}
+          style={{ overflowY: 'hidden' }}
         >
           <TimelineHeader 
             visibleDays={visibleDays} 
@@ -160,7 +205,7 @@ export const TimelineGrid: React.FC = () => {
       
       {/* Timeline Body */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Sidebar */}
+        {/* Sidebar - fixed left */}
         <div 
           className="flex-shrink-0 overflow-y-auto bg-card border-r border-border scrollbar-thin"
           style={{ width: SIDEBAR_WIDTH }}
@@ -169,7 +214,7 @@ export const TimelineGrid: React.FC = () => {
             <div 
               key={row.id}
               className="flex items-center px-4 border-b border-border hover:bg-timeline-row-hover transition-colors"
-              style={{ height: ROW_HEIGHT }}
+              style={{ height: row.height }}
             >
               {row.color && (
                 <div 
@@ -189,6 +234,7 @@ export const TimelineGrid: React.FC = () => {
         
         {/* Grid area */}
         <div 
+          ref={scrollContainerRef}
           className="flex-1 overflow-auto scrollbar-thin"
           onScroll={handleScroll}
         >
@@ -201,6 +247,7 @@ export const TimelineGrid: React.FC = () => {
                 visibleDays={visibleDays}
                 dayWidth={dayWidth}
                 viewMode={viewMode}
+                height={row.height}
               >
                 {row.tasks.map(task => {
                   const position = getTaskPosition(
@@ -220,6 +267,7 @@ export const TimelineGrid: React.FC = () => {
                       dayWidth={dayWidth}
                       visibleDays={visibleDays}
                       isOverlapping={overlappingTaskIds.has(task.id)}
+                      lane={task.lane}
                     />
                   );
                 })}

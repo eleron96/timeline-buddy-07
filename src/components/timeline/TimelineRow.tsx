@@ -2,7 +2,6 @@ import React from 'react';
 import { isToday, isWeekend } from '@/utils/dateUtils';
 import { ViewMode } from '@/types/planner';
 import { cn } from '@/lib/utils';
-import { ROW_HEIGHT } from '@/utils/dateUtils';
 
 interface TimelineRowProps {
   rowId: string;
@@ -10,6 +9,7 @@ interface TimelineRowProps {
   visibleDays: Date[];
   dayWidth: number;
   viewMode: ViewMode;
+  height: number;
   children: React.ReactNode;
 }
 
@@ -19,12 +19,13 @@ export const TimelineRow: React.FC<TimelineRowProps> = ({
   visibleDays,
   dayWidth,
   viewMode,
+  height,
   children,
 }) => {
   return (
     <div 
       className="relative border-b border-border"
-      style={{ height: ROW_HEIGHT }}
+      style={{ height }}
     >
       {/* Grid background */}
       <div className="absolute inset-0 flex">

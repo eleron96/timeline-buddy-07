@@ -1,20 +1,18 @@
 import React, { useState } from 'react';
 import { usePlannerStore } from '@/store/plannerStore';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { 
   Filter, 
-  X, 
   ChevronDown, 
   ChevronRight,
   FolderKanban,
   Users,
   CircleDot,
   Tag,
-  Layers
+  Layers,
+  ChevronLeft
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -23,15 +21,25 @@ interface FilterSectionProps {
   icon: React.ReactNode;
   children: React.ReactNode;
   defaultOpen?: boolean;
+  collapsed?: boolean;
 }
 
 const FilterSection: React.FC<FilterSectionProps> = ({ 
   title, 
   icon, 
   children, 
-  defaultOpen = true 
+  defaultOpen = true,
+  collapsed = false,
 }) => {
   const [isOpen, setIsOpen] = useState(defaultOpen);
+  
+  if (collapsed) {
+    return (
+      <div className="p-2 flex justify-center">
+        {icon}
+      </div>
+    );
+  }
   
   return (
     <div className="border-b border-border last:border-b-0">
@@ -56,7 +64,12 @@ const FilterSection: React.FC<FilterSectionProps> = ({
   );
 };
 
-export const FilterPanel: React.FC = () => {
+interface FilterPanelProps {
+  collapsed: boolean;
+  onToggle: () => void;
+}
+
+export const FilterPanel: React.FC<FilterPanelProps> = ({ collapsed, onToggle }) => {
   const { 
     projects, 
     assignees, 
@@ -83,23 +96,76 @@ export const FilterPanel: React.FC = () => {
     setFilters({ [type]: updated });
   };
   
+  if (collapsed) {
+    return (
+      <div className="w-12 border-r border-border bg-card flex flex-col h-full transition-all duration-200">
+        <div className="flex flex-col items-center py-3 border-b border-border">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onToggle}
+            className="h-8 w-8"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
+        <div className="flex-1 py-2 space-y-2">
+          <div className="flex justify-center p-2">
+            <Filter className="w-4 h-4 text-muted-foreground" />
+          </div>
+          <FilterSection 
+            title="" 
+            icon={<FolderKanban className="w-4 h-4 text-muted-foreground" />}
+            collapsed
+          >
+            <></>
+          </FilterSection>
+          <FilterSection 
+            title="" 
+            icon={<Users className="w-4 h-4 text-muted-foreground" />}
+            collapsed
+          >
+            <></>
+          </FilterSection>
+          <FilterSection 
+            title="" 
+            icon={<CircleDot className="w-4 h-4 text-muted-foreground" />}
+            collapsed
+          >
+            <></>
+          </FilterSection>
+        </div>
+      </div>
+    );
+  }
+  
   return (
-    <div className="w-64 border-r border-border bg-card flex flex-col h-full">
+    <div className="w-64 border-r border-border bg-card flex flex-col h-full transition-all duration-200">
       <div className="flex items-center justify-between px-4 py-3 border-b border-border">
         <div className="flex items-center gap-2">
           <Filter className="w-4 h-4" />
           <span className="font-semibold text-sm">Filters</span>
         </div>
-        {hasActiveFilters && (
+        <div className="flex items-center gap-1">
+          {hasActiveFilters && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={clearFilters}
+              className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
+            >
+              Clear
+            </Button>
+          )}
           <Button
             variant="ghost"
-            size="sm"
-            onClick={clearFilters}
-            className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
+            size="icon"
+            onClick={onToggle}
+            className="h-7 w-7"
           >
-            Clear all
+            <ChevronLeft className="h-4 w-4" />
           </Button>
-        )}
+        </div>
       </div>
       
       <ScrollArea className="flex-1">
@@ -126,7 +192,7 @@ export const FilterPanel: React.FC = () => {
         </FilterSection>
         
         <FilterSection 
-          title="Assignees" 
+          title="People" 
           icon={<Users className="w-4 h-4 text-muted-foreground" />}
         >
           {assignees.map(assignee => (
