@@ -71,3 +71,49 @@ Yes, you can!
 To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
 
 Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+
+## Supabase setup (auth + workspaces)
+
+This project uses Supabase for authentication, workspaces, and data storage.
+
+Quick local start (single command, Docker Compose):
+
+```sh
+make up
+```
+
+This starts a local Supabase stack (db/auth/rest/functions/gateway) and the Vite frontend in separate containers.
+Data is persisted in the `supabase_db_data` volume, so it survives frontend rebuilds and restarts.
+On first run, `.env.compose` is generated automatically. You can edit it to set `RESEND_API_KEY` and `RESEND_FROM` for invites.
+Keep `API_EXTERNAL_URL` set (default: `http://localhost:8080/auth/v1`) so auth links resolve correctly.
+
+Stop everything (data preserved):
+
+```sh
+make down
+```
+
+Tail logs from all containers:
+
+```sh
+make logs
+```
+
+1) Create a Supabase project (Postgres).
+2) Apply the schema from `supabase/migrations/0001_init.sql` (SQL editor or `supabase db push`).
+3) Create `.env` from `.env.example` and fill:
+   - `VITE_SUPABASE_URL`
+   - `VITE_SUPABASE_ANON_KEY`
+4) Deploy the edge function for invites:
+   - `supabase functions deploy invite`
+   - Configure function env vars:
+     - `APP_URL` (e.g. `http://localhost:5173`)
+     - `RESEND_API_KEY` (optional, for sending magic links to existing users)
+     - `RESEND_FROM` (e.g. `Workspace <no-reply@yourdomain.com>`)
+5) Enable email auth in Supabase and configure SMTP if needed.
+
+Notes:
+- New users get a personal workspace automatically.
+- Workspace membership is enforced with RLS.
+- Users can belong to max 5 workspaces.
+- Local Supabase data persists in Docker volumes unless you run `docker compose down -v` or delete volumes.

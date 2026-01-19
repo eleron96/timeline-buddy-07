@@ -1,14 +1,48 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { usePlannerStore } from '@/store/plannerStore';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
+import { cn } from '@/lib/utils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Trash2, X } from 'lucide-react';
-import { format, parseISO } from '@/utils/dateUtils';
+import { Task } from '@/types/planner';
+import { useAuthStore } from '@/store/authStore';
+
+const areArraysEqual = (left: string[], right: string[]) => {
+  if (left.length !== right.length) return false;
+  return left.every((value, index) => value === right[index]);
+};
+
+const areTasksEqual = (left: Task, right: Task) => (
+  left.title === right.title &&
+  left.projectId === right.projectId &&
+  left.assigneeId === right.assigneeId &&
+  left.statusId === right.statusId &&
+  left.typeId === right.typeId &&
+  left.startDate === right.startDate &&
+  left.endDate === right.endDate &&
+  left.description === right.description &&
+  areArraysEqual(left.tagIds, right.tagIds)
+);
+
+const shouldIgnoreOutsideInteraction = (target: EventTarget | null) => {
+  if (!(target instanceof HTMLElement)) return false;
+  return Boolean(target.closest('[data-radix-popper-content-wrapper]'));
+};
 
 export const TaskDetailPanel: React.FC = () => {
   const { 
@@ -23,12 +57,57 @@ export const TaskDetailPanel: React.FC = () => {
     updateTask,
     deleteTask,
   } = usePlannerStore();
+  const currentWorkspaceRole = useAuthStore((state) => state.currentWorkspaceRole);
+  const canEdit = currentWorkspaceRole === 'editor' || currentWorkspaceRole === 'admin';
+  const isReadOnly = !canEdit;
+
+  const originalTaskRef = useRef<Task | null>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
   
   const task = tasks.find(t => t.id === selectedTaskId);
+
+  useEffect(() => {
+    if (!selectedTaskId) {
+      originalTaskRef.current = null;
+      return;
+    }
+    if (originalTaskRef.current?.id === selectedTaskId) return;
+    if (task) {
+      originalTaskRef.current = { ...task, tagIds: [...task.tagIds] };
+    }
+  }, [selectedTaskId, task]);
+
+  const isDirty = useMemo(() => {
+    if (!task || !originalTaskRef.current) return false;
+    return !areTasksEqual(originalTaskRef.current, task);
+  }, [task]);
+
+  const requestClose = () => {
+    if (!isDirty) {
+      setSelectedTaskId(null);
+      return;
+    }
+    setConfirmOpen(true);
+  };
+
+  const handleSaveAndClose = () => {
+    setConfirmOpen(false);
+    setSelectedTaskId(null);
+  };
+
+  const handleDiscardAndClose = () => {
+    const originalTask = originalTaskRef.current;
+    if (originalTask) {
+      const { id, ...updates } = originalTask;
+      updateTask(id, updates);
+    }
+    setConfirmOpen(false);
+    setSelectedTaskId(null);
+  };
   
   if (!task) {
     return (
-      <Sheet open={!!selectedTaskId} onOpenChange={() => setSelectedTaskId(null)}>
+      <Sheet open={!!selectedTaskId} onOpenChange={(open) => !open && requestClose()}>
         <SheetContent className="w-[400px] sm:w-[450px]">
           <SheetHeader>
             <SheetTitle>Task not found</SheetTitle>
@@ -43,11 +122,13 @@ export const TaskDetailPanel: React.FC = () => {
   const status = statuses.find(s => s.id === task.statusId);
   const taskType = taskTypes.find(t => t.id === task.typeId);
   
-  const handleUpdate = (field: string, value: any) => {
-    updateTask(task.id, { [field]: value });
+  const handleUpdate = (field: keyof Task, value: Task[keyof Task]) => {
+    if (!canEdit) return;
+    updateTask(task.id, { [field]: value } as Partial<Task>);
   };
   
   const handleTagToggle = (tagId: string) => {
+    if (!canEdit) return;
     const newTagIds = task.tagIds.includes(tagId)
       ? task.tagIds.filter(id => id !== tagId)
       : [...task.tagIds, tagId];
@@ -55,31 +136,41 @@ export const TaskDetailPanel: React.FC = () => {
   };
   
   const handleDelete = () => {
+    if (!canEdit) return;
     if (confirm('Are you sure you want to delete this task?')) {
       deleteTask(task.id);
     }
   };
   
   return (
-    <Sheet open={!!selectedTaskId} onOpenChange={(open) => !open && setSelectedTaskId(null)}>
-      <SheetContent 
-        className="w-[400px] sm:w-[450px] overflow-y-auto"
-        onInteractOutside={(e) => e.preventDefault()}
-        onPointerDownOutside={(e) => e.preventDefault()}
-      >
-        <SheetHeader className="space-y-1">
-          <div className="flex items-center gap-2">
-            {project && (
-              <div 
-                className="w-3 h-3 rounded-full flex-shrink-0"
-                style={{ backgroundColor: project.color }}
-              />
-            )}
-            <SheetTitle className="text-lg">Task Details</SheetTitle>
-          </div>
-        </SheetHeader>
-        
-        <div className="space-y-6 mt-6">
+    <>
+      <Sheet open={!!selectedTaskId} onOpenChange={(open) => !open && requestClose()}>
+        <SheetContent 
+          className="w-[400px] sm:w-[450px] overflow-y-auto"
+          onInteractOutside={(e) => {
+            if (shouldIgnoreOutsideInteraction(e.target)) {
+              e.preventDefault();
+            }
+          }}
+          onPointerDownOutside={(e) => {
+            if (shouldIgnoreOutsideInteraction(e.target)) {
+              e.preventDefault();
+            }
+          }}
+        >
+          <SheetHeader className="space-y-1">
+            <div className="flex items-center gap-2">
+              {project && (
+                <div 
+                  className="w-3 h-3 rounded-full flex-shrink-0"
+                  style={{ backgroundColor: project.color }}
+                />
+              )}
+              <SheetTitle className="text-lg">Task Details</SheetTitle>
+            </div>
+          </SheetHeader>
+          
+          <div className="space-y-6 mt-6">
           {/* Title */}
           <div className="space-y-2">
             <Label htmlFor="title">Title</Label>
@@ -88,6 +179,7 @@ export const TaskDetailPanel: React.FC = () => {
               value={task.title}
               onChange={(e) => handleUpdate('title', e.target.value)}
               className="text-base"
+              disabled={isReadOnly}
             />
           </div>
           
@@ -97,6 +189,7 @@ export const TaskDetailPanel: React.FC = () => {
             <Select 
               value={task.projectId || 'none'} 
               onValueChange={(v) => handleUpdate('projectId', v === 'none' ? null : v)}
+              disabled={isReadOnly}
             >
               <SelectTrigger>
                 <SelectValue placeholder="Select project" />
@@ -124,6 +217,7 @@ export const TaskDetailPanel: React.FC = () => {
             <Select 
               value={task.assigneeId || 'none'} 
               onValueChange={(v) => handleUpdate('assigneeId', v === 'none' ? null : v)}
+              disabled={isReadOnly}
             >
               <SelectTrigger>
                 <SelectValue placeholder="Select assignee" />
@@ -143,6 +237,7 @@ export const TaskDetailPanel: React.FC = () => {
             <Select 
               value={task.statusId} 
               onValueChange={(v) => handleUpdate('statusId', v)}
+              disabled={isReadOnly}
             >
               <SelectTrigger>
                 <SelectValue placeholder="Select status" />
@@ -169,6 +264,7 @@ export const TaskDetailPanel: React.FC = () => {
             <Select 
               value={task.typeId} 
               onValueChange={(v) => handleUpdate('typeId', v)}
+              disabled={isReadOnly}
             >
               <SelectTrigger>
                 <SelectValue placeholder="Select type" />
@@ -190,6 +286,7 @@ export const TaskDetailPanel: React.FC = () => {
                 type="date"
                 value={task.startDate}
                 onChange={(e) => handleUpdate('startDate', e.target.value)}
+                disabled={isReadOnly}
               />
             </div>
             <div className="space-y-2">
@@ -199,6 +296,7 @@ export const TaskDetailPanel: React.FC = () => {
                 type="date"
                 value={task.endDate}
                 onChange={(e) => handleUpdate('endDate', e.target.value)}
+                disabled={isReadOnly}
               />
             </div>
           </div>
@@ -213,7 +311,10 @@ export const TaskDetailPanel: React.FC = () => {
                   <Badge
                     key={tag.id}
                     variant={isSelected ? 'default' : 'outline'}
-                    className="cursor-pointer transition-all"
+                    className={cn(
+                      'transition-all',
+                      isReadOnly ? 'cursor-not-allowed opacity-70' : 'cursor-pointer',
+                    )}
                     style={isSelected ? { 
                       backgroundColor: tag.color,
                       borderColor: tag.color,
@@ -221,7 +322,7 @@ export const TaskDetailPanel: React.FC = () => {
                       borderColor: tag.color,
                       color: tag.color,
                     }}
-                    onClick={() => handleTagToggle(tag.id)}
+                    onClick={canEdit ? () => handleTagToggle(tag.id) : undefined}
                   >
                     {tag.name}
                     {isSelected && <X className="w-3 h-3 ml-1" />}
@@ -240,6 +341,7 @@ export const TaskDetailPanel: React.FC = () => {
               onChange={(e) => handleUpdate('description', e.target.value)}
               placeholder="Add a description..."
               rows={4}
+              disabled={isReadOnly}
             />
           </div>
           
@@ -249,13 +351,29 @@ export const TaskDetailPanel: React.FC = () => {
               variant="destructive" 
               className="w-full"
               onClick={handleDelete}
+              disabled={isReadOnly}
             >
               <Trash2 className="w-4 h-4 mr-2" />
               Delete Task
             </Button>
           </div>
-        </div>
-      </SheetContent>
-    </Sheet>
+          </div>
+        </SheetContent>
+      </Sheet>
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Save changes?</AlertDialogTitle>
+            <AlertDialogDescription>
+              You have unsaved changes. Do you want to save them before closing?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={handleDiscardAndClose}>Don&apos;t save</AlertDialogCancel>
+            <AlertDialogAction onClick={handleSaveAndClose}>Save</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 };

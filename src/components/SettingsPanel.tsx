@@ -69,7 +69,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ open, onOpenChange
     taskTypes, addTaskType, updateTaskType, deleteTaskType,
     tags, addTag, updateTag, deleteTag,
     projects, addProject, updateProject, deleteProject,
-    assignees, addAssignee, updateAssignee, deleteAssignee,
+    assignees,
   } = usePlannerStore();
   
   const [newStatusName, setNewStatusName] = useState('');
@@ -82,8 +82,6 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ open, onOpenChange
   
   const [newProjectName, setNewProjectName] = useState('');
   const [newProjectColor, setNewProjectColor] = useState('#3b82f6');
-  
-  const [newAssigneeName, setNewAssigneeName] = useState('');
   
   const handleAddStatus = () => {
     if (!newStatusName.trim()) return;
@@ -107,12 +105,6 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ open, onOpenChange
     if (!newProjectName.trim()) return;
     addProject({ name: newProjectName.trim(), color: newProjectColor });
     setNewProjectName('');
-  };
-  
-  const handleAddAssignee = () => {
-    if (!newAssigneeName.trim()) return;
-    addAssignee({ name: newAssigneeName.trim() });
-    setNewAssigneeName('');
   };
   
   return (
@@ -299,34 +291,17 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ open, onOpenChange
             
             {/* People */}
             <TabsContent value="people" className="space-y-4 m-0">
-              <div className="flex gap-2">
-                <Input
-                  placeholder="New person name..."
-                  value={newAssigneeName}
-                  onChange={(e) => setNewAssigneeName(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleAddAssignee()}
-                />
-                <Button onClick={handleAddAssignee} size="icon">
-                  <Plus className="w-4 h-4" />
-                </Button>
-              </div>
-              
+              <p className="text-sm text-muted-foreground">
+                People are workspace members. Manage members from the workspace menu.
+              </p>
+
               <div className="space-y-2">
-                {assignees.map(assignee => (
+                {assignees.length === 0 && (
+                  <div className="text-sm text-muted-foreground">No members yet.</div>
+                )}
+                {assignees.map((assignee) => (
                   <div key={assignee.id} className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg">
-                    <Input
-                      value={assignee.name}
-                      onChange={(e) => updateAssignee(assignee.id, { name: e.target.value })}
-                      className="flex-1"
-                    />
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => deleteAssignee(assignee.id)}
-                      className="text-muted-foreground hover:text-destructive"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
+                    <span className="text-sm font-medium truncate">{assignee.name}</span>
                   </div>
                 ))}
               </div>

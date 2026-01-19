@@ -1,5 +1,6 @@
 import React, { useCallback, useMemo, useState, useRef, useEffect } from 'react';
 import { usePlannerStore } from '@/store/plannerStore';
+import { useAuthStore } from '@/store/authStore';
 import { TimelineHeader } from './TimelineHeader';
 import { TimelineRow } from './TimelineRow';
 import { TaskBar } from './TaskBar';
@@ -17,6 +18,8 @@ export const TimelineGrid: React.FC = () => {
     currentDate,
     filters,
   } = usePlannerStore();
+  const currentWorkspaceRole = useAuthStore((state) => state.currentWorkspaceRole);
+  const canEdit = currentWorkspaceRole === 'editor' || currentWorkspaceRole === 'admin';
   
   const containerRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -268,6 +271,7 @@ export const TimelineGrid: React.FC = () => {
                       visibleDays={visibleDays}
                       isOverlapping={overlappingTaskIds.has(task.id)}
                       lane={task.lane}
+                      canEdit={canEdit}
                     />
                   );
                 })}

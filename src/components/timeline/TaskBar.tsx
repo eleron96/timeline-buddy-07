@@ -4,6 +4,15 @@ import { Task } from '@/types/planner';
 import { cn } from '@/lib/utils';
 import { calculateNewDates, calculateResizedDates, TASK_HEIGHT, TASK_GAP } from '@/utils/dateUtils';
 import { AlertTriangle } from 'lucide-react';
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuLabel,
+  ContextMenuRadioGroup,
+  ContextMenuRadioItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from '@/components/ui/context-menu';
 
 interface TaskBarProps {
   task: Task;
@@ -12,6 +21,7 @@ interface TaskBarProps {
   visibleDays: Date[];
   isOverlapping: boolean;
   lane: number;
+  canEdit: boolean;
 }
 
 export const TaskBar: React.FC<TaskBarProps> = ({
@@ -21,8 +31,9 @@ export const TaskBar: React.FC<TaskBarProps> = ({
   visibleDays,
   isOverlapping,
   lane,
+  canEdit,
 }) => {
-  const { projects, statuses, moveTask, setSelectedTaskId, selectedTaskId } = usePlannerStore();
+  const { projects, statuses, moveTask, updateTask, setSelectedTaskId, selectedTaskId } = usePlannerStore();
   
   const [isDragging, setIsDragging] = useState(false);
   const [isResizing, setIsResizing] = useState<'left' | 'right' | null>(null);
@@ -43,6 +54,8 @@ export const TaskBar: React.FC<TaskBarProps> = ({
   const topPosition = lane * (TASK_HEIGHT + TASK_GAP);
   
   const handleMouseDown = useCallback((e: React.MouseEvent, resize?: 'left' | 'right') => {
+    if (!canEdit) return;
+    if (e.button !== 0) return;
     e.preventDefault();
     e.stopPropagation();
     
@@ -55,7 +68,7 @@ export const TaskBar: React.FC<TaskBarProps> = ({
     }
     
     setDragOffset({ x: 0, startX: e.clientX });
-  }, []);
+  }, [canEdit]);
   
   useEffect(() => {
     if (!isDragging && !isResizing) return;
@@ -120,49 +133,76 @@ export const TaskBar: React.FC<TaskBarProps> = ({
     : isResizing === 'right'
     ? position.width + dragOffset.x
     : position.width;
-  
+
+  const handleStatusChange = (statusId: string) => {
+    if (!canEdit || statusId === task.statusId) return;
+    updateTask(task.id, { statusId });
+  };
+
   return (
-    <div
-      ref={barRef}
-      onMouseDown={(e) => handleMouseDown(e)}
-      className={cn(
-        'task-bar absolute flex items-center px-2 overflow-hidden select-none',
-        isDragging && 'dragging z-50',
-        isResizing && 'z-50',
-        isSelected && 'ring-2 ring-primary ring-offset-1',
-        isOverlapping && 'conflict',
-        isFinal && 'opacity-60'
-      )}
-      style={{
-        left: visualLeft,
-        top: topPosition,
-        width: Math.max(visualWidth, dayWidth - 4),
-        height: TASK_HEIGHT,
-        backgroundColor: bgColor,
-        borderLeft: `3px solid ${statusColor}`,
-      }}
-    >
-      {/* Left resize handle */}
-      <div
-        className="resize-handle left-0 hover:bg-black/20"
-        onMouseDown={(e) => handleMouseDown(e, 'left')}
-      />
-      
-      {/* Task content */}
-      <div className="flex items-center gap-2 min-w-0 flex-1">
-        {isOverlapping && (
-          <AlertTriangle className="w-3 h-3 text-white/90 flex-shrink-0" />
-        )}
-        <span className="text-xs font-medium text-white truncate">
-          {task.title}
-        </span>
-      </div>
-      
-      {/* Right resize handle */}
-      <div
-        className="resize-handle right-0 hover:bg-black/20"
-        onMouseDown={(e) => handleMouseDown(e, 'right')}
-      />
-    </div>
+    <ContextMenu>
+      <ContextMenuTrigger asChild>
+        <div
+          ref={barRef}
+          onMouseDown={(e) => handleMouseDown(e)}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (!canEdit) {
+              setSelectedTaskId(task.id);
+            }
+          }}
+          className={cn(
+            'task-bar absolute flex items-center px-2 overflow-hidden select-none',
+            isDragging && 'dragging z-50',
+            isResizing && 'z-50',
+            isSelected && 'ring-2 ring-primary ring-offset-1',
+            isOverlapping && 'conflict',
+            isFinal && 'opacity-60'
+          )}
+          style={{
+            left: visualLeft,
+            top: topPosition,
+            width: Math.max(visualWidth, dayWidth - 4),
+            height: TASK_HEIGHT,
+            backgroundColor: bgColor,
+            borderLeft: `3px solid ${statusColor}`,
+          }}
+        >
+          {/* Left resize handle */}
+          <div
+            className="resize-handle left-0 hover:bg-black/20"
+            onMouseDown={(e) => handleMouseDown(e, 'left')}
+          />
+          
+          {/* Task content */}
+          <div className="flex items-center gap-2 min-w-0 flex-1">
+            {isOverlapping && (
+              <AlertTriangle className="w-3 h-3 text-white/90 flex-shrink-0" />
+            )}
+            <span className="text-xs font-medium text-white truncate">
+              {task.title}
+            </span>
+          </div>
+          
+          {/* Right resize handle */}
+          <div
+            className="resize-handle right-0 hover:bg-black/20"
+            onMouseDown={(e) => handleMouseDown(e, 'right')}
+          />
+        </div>
+      </ContextMenuTrigger>
+      <ContextMenuContent>
+        <ContextMenuLabel>Status</ContextMenuLabel>
+        <ContextMenuSeparator />
+        <ContextMenuRadioGroup value={task.statusId} onValueChange={handleStatusChange}>
+          {statuses.map((item) => (
+            <ContextMenuRadioItem key={item.id} value={item.id} disabled={!canEdit}>
+              <span className="mr-2 inline-flex h-2 w-2 rounded-full" style={{ backgroundColor: item.color }} />
+              {item.name}
+            </ContextMenuRadioItem>
+          ))}
+        </ContextMenuRadioGroup>
+      </ContextMenuContent>
+    </ContextMenu>
   );
 };

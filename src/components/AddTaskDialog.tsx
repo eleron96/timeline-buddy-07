@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { usePlannerStore } from '@/store/plannerStore';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -30,7 +30,7 @@ export const AddTaskDialog: React.FC<AddTaskDialogProps> = ({ open, onOpenChange
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!title.trim()) return;
+    if (!title.trim() || !statusId || !typeId) return;
     
     addTask({
       title: title.trim(),
@@ -56,6 +56,18 @@ export const AddTaskDialog: React.FC<AddTaskDialogProps> = ({ open, onOpenChange
     
     onOpenChange(false);
   };
+
+  useEffect(() => {
+    if (!statusId && statuses[0]?.id) {
+      setStatusId(statuses[0].id);
+    }
+  }, [statusId, statuses]);
+
+  useEffect(() => {
+    if (!typeId && taskTypes[0]?.id) {
+      setTypeId(taskTypes[0].id);
+    }
+  }, [taskTypes, typeId]);
   
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -190,7 +202,7 @@ export const AddTaskDialog: React.FC<AddTaskDialogProps> = ({ open, onOpenChange
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button type="submit" disabled={!title.trim()}>
+            <Button type="submit" disabled={!title.trim() || !statusId || !typeId}>
               <Plus className="w-4 h-4 mr-2" />
               Create Task
             </Button>
