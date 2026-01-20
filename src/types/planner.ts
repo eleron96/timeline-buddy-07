@@ -24,6 +24,7 @@ export interface Assignee {
   id: string;
   name: string;
   avatar?: string;
+  userId?: string | null;
 }
 
 export interface Status {
@@ -45,7 +46,14 @@ export interface Tag {
   color: string; // hex
 }
 
-export type ViewMode = 'day' | 'week';
+export interface Milestone {
+  id: string;
+  title: string;
+  projectId: string;
+  date: string; // ISO date
+}
+
+export type ViewMode = 'day' | 'week' | 'calendar';
 export type GroupMode = 'assignee' | 'project';
 
 export interface Filters {
@@ -59,6 +67,7 @@ export interface Filters {
 
 export interface PlannerState {
   tasks: Task[];
+  milestones: Milestone[];
   projects: Project[];
   assignees: Assignee[];
   statuses: Status[];

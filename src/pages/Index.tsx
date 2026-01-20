@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { TimelineGrid } from '@/components/timeline/TimelineGrid';
+import { CalendarTimeline } from '@/components/timeline/CalendarTimeline';
 import { TimelineControls } from '@/components/timeline/TimelineControls';
 import { FilterPanel } from '@/components/FilterPanel';
 import { TaskDetailPanel } from '@/components/TaskDetailPanel';
@@ -43,6 +44,7 @@ const Index = () => {
   const setFilters = usePlannerStore((state) => state.setFilters);
   const clearFilterCriteria = usePlannerStore((state) => state.clearFilterCriteria);
   const clearFilters = usePlannerStore((state) => state.clearFilters);
+  const viewMode = usePlannerStore((state) => state.viewMode);
   const user = useAuthStore((state) => state.user);
   const profileDisplayName = useAuthStore((state) => state.profileDisplayName);
   const currentWorkspaceId = useAuthStore((state) => state.currentWorkspaceId);
@@ -167,7 +169,9 @@ const Index = () => {
               {plannerError}
             </div>
           )}
-          {!plannerLoading && !plannerError && <TimelineGrid />}
+          {!plannerLoading && !plannerError && (
+            viewMode === 'calendar' ? <CalendarTimeline /> : <TimelineGrid />
+          )}
         </div>
       </div>
       

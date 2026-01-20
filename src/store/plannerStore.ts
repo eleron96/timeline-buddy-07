@@ -4,6 +4,7 @@ import { addDays, addMonths, addWeeks, addYears, differenceInDays, format, parse
 import { supabase } from '@/lib/supabaseClient';
 import {
   Task,
+  Milestone,
   Project,
   Assignee,
   Status,
@@ -67,6 +68,14 @@ type TagRow = {
   color: string;
 };
 
+type MilestoneRow = {
+  id: string;
+  workspace_id: string;
+  project_id: string;
+  date: string;
+  title: string;
+};
+
 interface PlannerStore extends PlannerState {
   workspaceId: string | null;
   loading: boolean;
@@ -105,6 +114,10 @@ interface PlannerStore extends PlannerState {
   addTag: (tag: Omit<Tag, 'id'>) => Promise<void>;
   updateTag: (id: string, updates: Partial<Tag>) => Promise<void>;
   deleteTag: (id: string) => Promise<void>;
+
+  addMilestone: (milestone: Omit<Milestone, 'id'>) => Promise<void>;
+  updateMilestone: (id: string, updates: Partial<Milestone>) => Promise<void>;
+  deleteMilestone: (id: string) => Promise<void>;
 
   setViewMode: (mode: ViewMode) => void;
   setGroupMode: (mode: GroupMode) => void;
@@ -148,6 +161,7 @@ const mapProjectRow = (row: ProjectRow): Project => ({
 const mapAssigneeRow = (row: AssigneeRow): Assignee => ({
   id: row.id,
   name: row.name,
+  userId: row.user_id,
 });
 
 const mapStatusRow = (row: StatusRow): Status => ({
@@ -169,6 +183,13 @@ const mapTagRow = (row: TagRow): Tag => ({
   color: row.color,
 });
 
+const mapMilestoneRow = (row: MilestoneRow): Milestone => ({
+  id: row.id,
+  title: row.title,
+  projectId: row.project_id,
+  date: row.date,
+});
+
 const mapTaskUpdates = (updates: Partial<Task>) => {
   const payload: Record<string, unknown> = {};
   if ('title' in updates) payload.title = updates.title;
@@ -188,6 +209,7 @@ export const usePlannerStore = create<PlannerStore>()(
   persist(
     (set, get) => ({
       tasks: [],
+      milestones: [],
       projects: [],
       assignees: [],
       statuses: [],
@@ -207,6 +229,7 @@ export const usePlannerStore = create<PlannerStore>()(
       setWorkspaceId: (id) => set({ workspaceId: id }),
       reset: () => set({
         tasks: [],
+        milestones: [],
         projects: [],
         assignees: [],
         statuses: [],
@@ -223,16 +246,17 @@ export const usePlannerStore = create<PlannerStore>()(
       loadWorkspaceData: async (workspaceId) => {
         set({ loading: true, error: null, workspaceId, selectedTaskId: null });
 
-        const [tasksRes, projectsRes, assigneesRes, statusesRes, taskTypesRes, tagsRes] = await Promise.all([
+        const [tasksRes, projectsRes, assigneesRes, statusesRes, taskTypesRes, tagsRes, milestonesRes] = await Promise.all([
           supabase.from('tasks').select('*').eq('workspace_id', workspaceId),
           supabase.from('projects').select('*').eq('workspace_id', workspaceId),
           supabase.from('assignees').select('*').eq('workspace_id', workspaceId),
           supabase.from('statuses').select('*').eq('workspace_id', workspaceId),
           supabase.from('task_types').select('*').eq('workspace_id', workspaceId),
           supabase.from('tags').select('*').eq('workspace_id', workspaceId),
+          supabase.from('milestones').select('*').eq('workspace_id', workspaceId),
         ]);
 
-        if (tasksRes.error || projectsRes.error || assigneesRes.error || statusesRes.error || taskTypesRes.error || tagsRes.error) {
+        if (tasksRes.error || projectsRes.error || assigneesRes.error || statusesRes.error || taskTypesRes.error || tagsRes.error || milestonesRes.error) {
           set({
             error: tasksRes.error?.message
               || projectsRes.error?.message
@@ -240,6 +264,7 @@ export const usePlannerStore = create<PlannerStore>()(
               || statusesRes.error?.message
               || taskTypesRes.error?.message
               || tagsRes.error?.message
+              || milestonesRes.error?.message
               || 'Failed to load workspace data.',
             loading: false,
           });
@@ -259,6 +284,7 @@ export const usePlannerStore = create<PlannerStore>()(
 
         set({
           tasks: taskRows.map(mapTaskRow),
+          milestones: (milestonesRes.data ?? []).map(mapMilestoneRow),
           projects: (projectsRes.data ?? []).map(mapProjectRow),
           assignees,
           statuses: (statusesRes.data ?? []).map(mapStatusRow),
@@ -843,6 +869,78 @@ export const usePlannerStore = create<PlannerStore>()(
             ...task,
             tagIds: task.tagIds.filter((tagId) => tagId !== id),
           })),
+        }));
+      },
+
+      addMilestone: async (milestone) => {
+        const workspaceId = get().workspaceId;
+        if (!workspaceId) return;
+
+        const { data, error } = await supabase
+          .from('milestones')
+          .insert({
+            workspace_id: workspaceId,
+            project_id: milestone.projectId,
+            date: milestone.date,
+            title: milestone.title,
+          })
+          .select('*')
+          .single();
+
+        if (error || !data) {
+          console.error(error);
+          return;
+        }
+
+        set((state) => ({ milestones: [...state.milestones, mapMilestoneRow(data as MilestoneRow)] }));
+      },
+
+      updateMilestone: async (id, updates) => {
+        const workspaceId = get().workspaceId;
+        if (!workspaceId) return;
+
+        const payload: Record<string, unknown> = {};
+        if ('title' in updates) payload.title = updates.title;
+        if ('projectId' in updates) payload.project_id = updates.projectId;
+        if ('date' in updates) payload.date = updates.date;
+        if (Object.keys(payload).length === 0) return;
+
+        const { data, error } = await supabase
+          .from('milestones')
+          .update(payload)
+          .eq('id', id)
+          .eq('workspace_id', workspaceId)
+          .select('*')
+          .single();
+
+        if (error || !data) {
+          console.error(error);
+          return;
+        }
+
+        const updated = mapMilestoneRow(data as MilestoneRow);
+        set((state) => ({
+          milestones: state.milestones.map((item) => (item.id === id ? updated : item)),
+        }));
+      },
+
+      deleteMilestone: async (id) => {
+        const workspaceId = get().workspaceId;
+        if (!workspaceId) return;
+
+        const { error } = await supabase
+          .from('milestones')
+          .delete()
+          .eq('id', id)
+          .eq('workspace_id', workspaceId);
+
+        if (error) {
+          console.error(error);
+          return;
+        }
+
+        set((state) => ({
+          milestones: state.milestones.filter((item) => item.id !== id),
         }));
       },
 

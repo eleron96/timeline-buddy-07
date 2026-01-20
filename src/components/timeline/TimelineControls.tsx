@@ -8,9 +8,9 @@ import {
   Calendar,
   Users,
   FolderKanban,
-  Plus,
 } from 'lucide-react';
 import { format, parseISO, addDays, subDays, addWeeks, subWeeks } from '@/utils/dateUtils';
+import { addMonths, subMonths } from 'date-fns';
 import { cn } from '@/lib/utils';
 
 export const TimelineControls: React.FC = () => {
@@ -31,6 +31,8 @@ export const TimelineControls: React.FC = () => {
     const date = parseISO(currentDate);
     const newDate = viewMode === 'day' 
       ? subDays(date, 7) 
+      : viewMode === 'calendar'
+      ? subMonths(date, 1)
       : subWeeks(date, 2);
     setCurrentDate(format(newDate, 'yyyy-MM-dd'));
   };
@@ -39,6 +41,8 @@ export const TimelineControls: React.FC = () => {
     const date = parseISO(currentDate);
     const newDate = viewMode === 'day' 
       ? addDays(date, 7) 
+      : viewMode === 'calendar'
+      ? addMonths(date, 1)
       : addWeeks(date, 2);
     setCurrentDate(format(newDate, 'yyyy-MM-dd'));
   };
@@ -110,6 +114,17 @@ export const TimelineControls: React.FC = () => {
             )}
           >
             Week
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setViewMode('calendar')}
+            className={cn(
+              'h-7 px-3 text-xs rounded-md',
+              viewMode === 'calendar' && 'bg-background shadow-sm'
+            )}
+          >
+            Calendar
           </Button>
         </div>
         

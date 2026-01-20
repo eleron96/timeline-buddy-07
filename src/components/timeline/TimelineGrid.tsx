@@ -4,15 +4,19 @@ import { useAuthStore } from '@/store/authStore';
 import { TimelineHeader } from './TimelineHeader';
 import { TimelineRow } from './TimelineRow';
 import { TaskBar } from './TaskBar';
+import { MilestoneDialog } from './MilestoneDialog';
 import { getVisibleDays, getDayWidth, getTaskPosition, checkOverlap, SIDEBAR_WIDTH, HEADER_HEIGHT, MIN_ROW_HEIGHT, TASK_HEIGHT, TASK_GAP } from '@/utils/dateUtils';
-import { Task } from '@/types/planner';
+import { Milestone, Task } from '@/types/planner';
 import { calculateTaskLanes, getMaxLanes, TaskWithLane } from '@/utils/taskLanes';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
+import { hexToRgba } from '@/utils/colorUtils';
 import { differenceInDays, format, isSameDay, parseISO } from 'date-fns';
 
 export const TimelineGrid: React.FC = () => {
   const { 
-    tasks, 
+    tasks,
+    milestones,
     projects, 
     assignees, 
     viewMode, 
@@ -31,10 +35,24 @@ export const TimelineGrid: React.FC = () => {
   const milestoneRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const syncingRef = useRef<HTMLDivElement | null>(null);
-  const dragScrollRef = useRef<{ startX: number; startScrollLeft: number; target: HTMLDivElement | null } | null>(null);
+  const dragScrollRef = useRef<{
+    startX: number;
+    startScrollLeft: number;
+    target: HTMLDivElement | null;
+    didMove: boolean;
+  } | null>(null);
+  const lastDragTimeRef = useRef(0);
   const [scrollLeft, setScrollLeft] = useState(0);
   const [isDragScrolling, setIsDragScrolling] = useState(false);
   const [viewportWidth, setViewportWidth] = useState(0);
+  const [milestoneDialogOpen, setMilestoneDialogOpen] = useState(false);
+  const [milestoneDialogDate, setMilestoneDialogDate] = useState<string | null>(null);
+  const [editingMilestone, setEditingMilestone] = useState<Milestone | null>(null);
+  const [milestoneLine, setMilestoneLine] = useState<{
+    date: string;
+    color: string;
+    visible: boolean;
+  } | null>(null);
   const milestoneRowHeight = 24;
   
   const visibleDays = useMemo(() => getVisibleDays(currentDate, viewMode, tasks), [currentDate, viewMode, tasks]);
@@ -58,6 +76,54 @@ export const TimelineGrid: React.FC = () => {
     if (!centerDate) return false;
     return Math.abs(differenceInDays(centerDate, new Date())) > 7;
   }, [centerDate]);
+
+  const projectById = useMemo(
+    () => new Map(projects.map((project) => [project.id, project])),
+    [projects]
+  );
+
+  const filteredMilestones = useMemo(() => {
+    if (filters.projectIds.length === 0) return milestones;
+    return milestones.filter((milestone) => filters.projectIds.includes(milestone.projectId));
+  }, [milestones, filters.projectIds]);
+
+  const sortedMilestones = useMemo(() => {
+    return [...filteredMilestones].sort((left, right) => {
+      if (left.date === right.date) {
+        return left.title.localeCompare(right.title);
+      }
+      return left.date.localeCompare(right.date);
+    });
+  }, [filteredMilestones]);
+
+  const visibleDayIndex = useMemo(() => {
+    const map = new Map<string, number>();
+    visibleDays.forEach((day, index) => {
+      map.set(format(day, 'yyyy-MM-dd'), index);
+    });
+    return map;
+  }, [visibleDays]);
+
+  const milestonesByDate = useMemo(() => {
+    const map = new Map<string, Milestone[]>();
+    sortedMilestones.forEach((milestone) => {
+      const list = map.get(milestone.date) ?? [];
+      list.push(milestone);
+      map.set(milestone.date, list);
+    });
+    return map;
+  }, [sortedMilestones]);
+
+  const milestoneOffsets = useMemo(() => {
+    const offsets = new Map<string, number>();
+    milestonesByDate.forEach((items) => {
+      items.forEach((item, index) => {
+        const offset = items.length > 1 ? (index - (items.length - 1) / 2) * 8 : 0;
+        offsets.set(item.id, offset);
+      });
+    });
+    return offsets;
+  }, [milestonesByDate]);
   
   // Filter tasks
   const filteredTasks = useMemo(() => {
@@ -201,13 +267,14 @@ export const TimelineGrid: React.FC = () => {
   const handleDragStart = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     if (e.button !== 0) return;
     const target = e.target;
-    if (target instanceof Element && target.closest('.task-bar')) {
+    if (target instanceof Element && target.closest('.task-bar, .milestone-dot')) {
       return;
     }
     dragScrollRef.current = {
       startX: e.clientX,
       startScrollLeft: e.currentTarget.scrollLeft,
       target: e.currentTarget,
+      didMove: false,
     };
     setIsDragScrolling(true);
     e.preventDefault();
@@ -220,10 +287,16 @@ export const TimelineGrid: React.FC = () => {
       const state = dragScrollRef.current;
       if (!state?.target) return;
       const deltaX = e.clientX - state.startX;
+      if (!state.didMove && Math.abs(deltaX) > 4) {
+        state.didMove = true;
+      }
       state.target.scrollLeft = state.startScrollLeft - deltaX;
     };
 
     const handleMouseUp = () => {
+      if (dragScrollRef.current?.didMove) {
+        lastDragTimeRef.current = Date.now();
+      }
       dragScrollRef.current = null;
       setIsDragScrolling(false);
     };
@@ -310,8 +383,75 @@ export const TimelineGrid: React.FC = () => {
     requestScrollToDate(today);
   };
 
+  const handleMilestoneDialogChange = useCallback((open: boolean) => {
+    setMilestoneDialogOpen(open);
+    if (!open) {
+      setMilestoneDialogDate(null);
+      setEditingMilestone(null);
+    }
+  }, []);
+
+  const handleCreateMilestone = useCallback((date: string) => {
+    setEditingMilestone(null);
+    setMilestoneDialogDate(date);
+    setMilestoneDialogOpen(true);
+  }, []);
+
+  const handleEditMilestone = useCallback((milestone: Milestone) => {
+    setEditingMilestone(milestone);
+    setMilestoneDialogDate(null);
+    setMilestoneDialogOpen(true);
+  }, []);
+
+  const handleMilestoneRowClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (!canEdit) return;
+    if (Date.now() - lastDragTimeRef.current < 200) return;
+    const target = e.target;
+    if (target instanceof Element && target.closest('.milestone-dot')) return;
+    const container = milestoneRef.current;
+    if (!container) return;
+    const rect = container.getBoundingClientRect();
+    const offsetX = e.clientX - rect.left + container.scrollLeft;
+    const index = Math.floor(offsetX / dayWidth);
+    if (index < 0 || index >= visibleDays.length) return;
+    handleCreateMilestone(format(visibleDays[index], 'yyyy-MM-dd'));
+  }, [canEdit, dayWidth, handleCreateMilestone, visibleDays]);
+
+  const handleMilestoneHover = useCallback((date: string, color: string) => {
+    setMilestoneLine({ date, color, visible: true });
+  }, []);
+
+  const handleMilestoneHoverEnd = useCallback(() => {
+    setMilestoneLine((prev) => (prev ? { ...prev, visible: false } : prev));
+  }, []);
+
+  useEffect(() => {
+    if (!milestoneLine || milestoneLine.visible) return;
+    const timer = window.setTimeout(() => setMilestoneLine(null), 200);
+    return () => window.clearTimeout(timer);
+  }, [milestoneLine]);
+
+  const milestoneLineIndex = milestoneLine ? visibleDayIndex.get(milestoneLine.date) : undefined;
+  const milestoneLineColor = milestoneLine
+    ? (hexToRgba(milestoneLine.color, 0.6) ?? milestoneLine.color)
+    : null;
+
   return (
     <div className="relative flex flex-col h-full overflow-hidden bg-background">
+      {milestoneLine && typeof milestoneLineIndex === 'number' && (
+        <div
+          className={cn(
+            'pointer-events-none absolute z-10 w-px transition-opacity duration-200',
+            milestoneLine.visible ? 'opacity-100' : 'opacity-0'
+          )}
+          style={{
+            left: SIDEBAR_WIDTH + milestoneLineIndex * dayWidth + dayWidth / 2 - scrollLeft,
+            top: HEADER_HEIGHT + milestoneRowHeight / 2,
+            height: `calc(100% - ${HEADER_HEIGHT + milestoneRowHeight / 2}px)`,
+            backgroundColor: milestoneLineColor ?? undefined,
+          }}
+        />
+      )}
       {/* Timeline Header - Sticky */}
       <div className="flex border-b border-border sticky top-0 z-20 bg-background" style={{ height: HEADER_HEIGHT }}>
         {/* Sidebar header spacer */}
@@ -349,7 +489,37 @@ export const TimelineGrid: React.FC = () => {
           onMouseDown={handleDragStart}
           style={{ overflowY: 'hidden' }}
         >
-          <div style={{ width: totalWidth, height: '100%' }} />
+          <div
+            className="relative h-full"
+            style={{ width: totalWidth }}
+            onClick={handleMilestoneRowClick}
+          >
+            {sortedMilestones.map((milestone) => {
+              const dayIndex = visibleDayIndex.get(milestone.date);
+              if (dayIndex === undefined) return null;
+              const project = projectById.get(milestone.projectId);
+              const color = project?.color ?? '#94a3b8';
+              const dotColor = hexToRgba(color, 0.45) ?? color;
+              const dotBorder = hexToRgba(color, 0.8) ?? color;
+              const offset = milestoneOffsets.get(milestone.id) ?? 0;
+              const left = dayIndex * dayWidth + dayWidth / 2 + offset;
+
+              return (
+                <button
+                  key={milestone.id}
+                  type="button"
+                  className="milestone-dot absolute top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border transition-transform hover:scale-110"
+                  style={{ left, backgroundColor: dotColor, borderColor: dotBorder }}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    handleEditMilestone(milestone);
+                  }}
+                  onMouseEnter={() => handleMilestoneHover(milestone.date, color)}
+                  onMouseLeave={handleMilestoneHoverEnd}
+                />
+              );
+            })}
+          </div>
         </div>
       </div>
       
@@ -439,6 +609,14 @@ export const TimelineGrid: React.FC = () => {
           Today
         </Button>
       )}
+
+      <MilestoneDialog
+        open={milestoneDialogOpen}
+        onOpenChange={handleMilestoneDialogChange}
+        date={milestoneDialogDate}
+        milestone={editingMilestone}
+        canEdit={canEdit}
+      />
     </div>
   );
 };

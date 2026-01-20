@@ -57,7 +57,8 @@ export const getVisibleDays = (
 };
 
 export const getDayWidth = (viewMode: ViewMode): number => {
-  return viewMode === 'day' ? DAY_WIDTH : WEEK_DAY_WIDTH;
+  if (viewMode === 'day') return DAY_WIDTH;
+  return WEEK_DAY_WIDTH;
 };
 
 export const getTaskPosition = (
