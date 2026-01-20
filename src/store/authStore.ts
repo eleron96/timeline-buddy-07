@@ -39,12 +39,14 @@ interface AuthState {
   currentWorkspaceRole: WorkspaceRole | null;
   members: WorkspaceMember[];
   membersLoading: boolean;
+  profileDisplayName: string | null;
   setSession: (session: Session | null) => void;
   setLoading: (loading: boolean) => void;
   signIn: (email: string, password: string) => Promise<{ error?: string }>;
   signUp: (email: string, password: string) => Promise<{ error?: string }>;
   signOut: () => Promise<void>;
   fetchWorkspaces: () => Promise<void>;
+  fetchProfile: () => Promise<void>;
   setCurrentWorkspaceId: (id: string | null) => void;
   createWorkspace: (name: string) => Promise<{ error?: string }>;
   deleteWorkspace: (workspaceId?: string) => Promise<{ error?: string }>;
@@ -67,7 +69,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   currentWorkspaceRole: null,
   members: [],
   membersLoading: false,
-  setSession: (session) => set({ session, user: session?.user ?? null }),
+  profileDisplayName: null,
+  setSession: (session) => set({ session, user: session?.user ?? null, profileDisplayName: null }),
   setLoading: (loading) => set({ loading }),
   signIn: async (email, password) => {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
@@ -88,6 +91,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       currentWorkspaceId: null,
       currentWorkspaceRole: null,
       members: [],
+      profileDisplayName: null,
     });
   },
   fetchWorkspaces: async () => {
@@ -133,6 +137,27 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       currentWorkspaceId: nextId,
       currentWorkspaceRole: nextRole,
     });
+  },
+  fetchProfile: async () => {
+    const user = get().user;
+    if (!user) {
+      set({ profileDisplayName: null });
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('display_name')
+      .eq('id', user.id)
+      .single();
+
+    if (error) {
+      console.error(error);
+      return;
+    }
+
+    const displayName = data?.display_name?.trim();
+    set({ profileDisplayName: displayName ? displayName : null });
   },
   setCurrentWorkspaceId: (id) => {
     const user = get().user;
@@ -306,6 +331,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     if (error) {
       return { error: error.message };
     }
+
+    const nextDisplayName = nextName.length > 0 ? nextName : null;
+    set({ profileDisplayName: nextDisplayName });
 
     const workspaceId = get().currentWorkspaceId;
     if (workspaceId) {

@@ -14,7 +14,6 @@ import {
   Layers,
   ChevronLeft
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
 
 interface FilterSectionProps {
   title: string;
@@ -78,7 +77,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({ collapsed, onToggle })
     tags,
     filters,
     setFilters,
-    clearFilters,
+    clearFilterCriteria,
   } = usePlannerStore();
   
   const hasActiveFilters = 
@@ -88,8 +87,11 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({ collapsed, onToggle })
     filters.typeIds.length > 0 ||
     filters.tagIds.length > 0;
   
-  const toggleFilter = (type: keyof typeof filters, id: string) => {
-    const current = filters[type] as string[];
+  const toggleFilter = (
+    type: 'projectIds' | 'assigneeIds' | 'statusIds' | 'typeIds' | 'tagIds',
+    id: string,
+  ) => {
+    const current = filters[type];
     const updated = current.includes(id)
       ? current.filter(i => i !== id)
       : [...current, id];
@@ -149,7 +151,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({ collapsed, onToggle })
             <Button
               variant="ghost"
               size="sm"
-              onClick={clearFilters}
+              onClick={clearFilterCriteria}
               className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
             >
               Clear

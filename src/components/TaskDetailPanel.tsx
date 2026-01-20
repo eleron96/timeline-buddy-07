@@ -19,7 +19,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Trash2, X } from 'lucide-react';
-import { Task } from '@/types/planner';
+import { Task, TaskPriority } from '@/types/planner';
 import { useAuthStore } from '@/store/authStore';
 import { addYears, format, parseISO } from 'date-fns';
 
@@ -34,6 +34,7 @@ const areTasksEqual = (left: Task, right: Task) => (
   left.assigneeId === right.assigneeId &&
   left.statusId === right.statusId &&
   left.typeId === right.typeId &&
+  left.priority === right.priority &&
   left.startDate === right.startDate &&
   left.endDate === right.endDate &&
   left.description === right.description &&
@@ -327,6 +328,26 @@ export const TaskDetailPanel: React.FC = () => {
                 {taskTypes.map(t => (
                   <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
                 ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Priority */}
+          <div className="space-y-2">
+            <Label>Priority</Label>
+            <Select
+              value={task.priority ?? 'none'}
+              onValueChange={(value) => handleUpdate('priority', value === 'none' ? null : (value as TaskPriority))}
+              disabled={isReadOnly}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select priority" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">No priority</SelectItem>
+                <SelectItem value="low">Low</SelectItem>
+                <SelectItem value="medium">Medium</SelectItem>
+                <SelectItem value="high">High</SelectItem>
               </SelectContent>
             </Select>
           </div>

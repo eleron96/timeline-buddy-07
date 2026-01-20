@@ -256,10 +256,24 @@
   }
 }
 
+@keyframes priority-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}
+
 .animate-slide-in-right {
   animation: slide-in-right 0.2s ease-out;
 }
 
 .animate-fade-in {
   animation: fade-in 0.15s ease-out;
+}
+
+.priority-blink {
+  animation: priority-blink 0.9s ease-in-out infinite;
 }

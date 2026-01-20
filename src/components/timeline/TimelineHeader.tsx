@@ -65,7 +65,7 @@ export const TimelineHeader: React.FC<TimelineHeaderProps> = ({
   );
   
   return (
-    <div className="relative" style={{ width: totalWidth }}>
+    <div className="relative select-none" style={{ width: totalWidth }}>
       {/* Month row */}
       <div className="flex h-10 bg-timeline-header border-b border-border">
         {monthGroups.map((group) => (

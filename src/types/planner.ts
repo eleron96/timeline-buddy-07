@@ -1,3 +1,5 @@
+export type TaskPriority = 'low' | 'medium' | 'high';
+
 export interface Task {
   id: string;
   title: string;
@@ -7,6 +9,7 @@ export interface Task {
   endDate: string; // ISO date
   statusId: string;
   typeId: string;
+  priority: TaskPriority | null;
   tagIds: string[];
   description: string | null;
 }
@@ -51,6 +54,7 @@ export interface Filters {
   statusIds: string[];
   typeIds: string[];
   tagIds: string[];
+  hideUnassigned: boolean;
 }
 
 export interface PlannerState {

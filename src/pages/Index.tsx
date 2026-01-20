@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { TimelineGrid } from '@/components/timeline/TimelineGrid';
 import { TimelineControls } from '@/components/timeline/TimelineControls';
 import { FilterPanel } from '@/components/FilterPanel';
@@ -11,6 +11,25 @@ import { Plus, Settings, User } from 'lucide-react';
 import { usePlannerStore } from '@/store/plannerStore';
 import { useAuthStore } from '@/store/authStore';
 import { WorkspaceSwitcher } from '@/components/WorkspaceSwitcher';
+import { Filters } from '@/types/planner';
+
+const normalizeFilterIds = (value: unknown) => (
+  Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string')
+    : []
+);
+
+const normalizeFilters = (value: unknown): Filters => {
+  const candidate = value && typeof value === 'object' ? (value as Partial<Filters>) : {};
+  return {
+    projectIds: normalizeFilterIds(candidate.projectIds),
+    assigneeIds: normalizeFilterIds(candidate.assigneeIds),
+    statusIds: normalizeFilterIds(candidate.statusIds),
+    typeIds: normalizeFilterIds(candidate.typeIds),
+    tagIds: normalizeFilterIds(candidate.tagIds),
+    hideUnassigned: typeof candidate.hideUnassigned === 'boolean' ? candidate.hideUnassigned : false,
+  };
+};
 
 const Index = () => {
   const [filterCollapsed, setFilterCollapsed] = useState(true);
@@ -20,15 +39,56 @@ const Index = () => {
   const loadWorkspaceData = usePlannerStore((state) => state.loadWorkspaceData);
   const plannerLoading = usePlannerStore((state) => state.loading);
   const plannerError = usePlannerStore((state) => state.error);
+  const filters = usePlannerStore((state) => state.filters);
+  const setFilters = usePlannerStore((state) => state.setFilters);
+  const clearFilterCriteria = usePlannerStore((state) => state.clearFilterCriteria);
+  const clearFilters = usePlannerStore((state) => state.clearFilters);
+  const user = useAuthStore((state) => state.user);
+  const profileDisplayName = useAuthStore((state) => state.profileDisplayName);
   const currentWorkspaceId = useAuthStore((state) => state.currentWorkspaceId);
   const currentWorkspaceRole = useAuthStore((state) => state.currentWorkspaceRole);
   const canEdit = currentWorkspaceRole === 'editor' || currentWorkspaceRole === 'admin';
+  const userLabel = profileDisplayName || user?.email || user?.id || '';
+  const filtersHydratedRef = useRef(false);
+  const hasActiveFilters = filters.projectIds.length > 0
+    || filters.assigneeIds.length > 0
+    || filters.statusIds.length > 0
+    || filters.typeIds.length > 0
+    || filters.tagIds.length > 0;
 
   useEffect(() => {
     if (currentWorkspaceId) {
       loadWorkspaceData(currentWorkspaceId);
     }
   }, [currentWorkspaceId, loadWorkspaceData]);
+
+  useEffect(() => {
+    filtersHydratedRef.current = false;
+    if (!user?.id || typeof window === 'undefined') return;
+    const storageKey = `planner-filters-${user.id}`;
+    const raw = window.localStorage.getItem(storageKey);
+    if (!raw) {
+      clearFilters();
+      filtersHydratedRef.current = true;
+      return;
+    }
+    try {
+      const parsed = JSON.parse(raw);
+      const nextFilters = normalizeFilters(parsed);
+      setFilters(nextFilters);
+    } catch (_error) {
+      clearFilters();
+    } finally {
+      filtersHydratedRef.current = true;
+    }
+  }, [clearFilters, setFilters, user?.id]);
+
+  useEffect(() => {
+    if (!user?.id || typeof window === 'undefined') return;
+    if (!filtersHydratedRef.current) return;
+    const storageKey = `planner-filters-${user.id}`;
+    window.localStorage.setItem(storageKey, JSON.stringify(filters));
+  }, [filters, user?.id]);
   
   return (
     <div className="flex flex-col h-screen overflow-hidden bg-background">
@@ -37,7 +97,14 @@ const Index = () => {
         <div className="flex items-center gap-3">
           <WorkspaceSwitcher />
           <div className="h-6 w-px bg-border" />
-          <h1 className="text-xl font-semibold text-foreground">Timeline Planner</h1>
+          <div className="flex flex-col min-w-0">
+            <h1 className="text-xl font-semibold text-foreground">Timeline Planner</h1>
+            {userLabel && (
+              <span className="text-xs text-muted-foreground truncate" title={userLabel}>
+                {userLabel}
+              </span>
+            )}
+          </div>
         </div>
         
         <div className="flex items-center gap-2">
@@ -64,6 +131,20 @@ const Index = () => {
           </Button>
         </div>
       </header>
+
+      {hasActiveFilters && (
+        <div className="flex items-center justify-between px-4 py-2 border-b-2 border-sky-500 bg-sky-50 text-sm text-sky-700">
+          <span className="font-medium">Применен фильтр</span>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={clearFilterCriteria}
+            className="h-7 px-2 text-sky-700 hover:text-sky-900"
+          >
+            Сбросить
+          </Button>
+        </div>
+      )}
       
       {/* Main content */}
       <div className="flex flex-1 overflow-hidden">

@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { usePlannerStore } from '@/store/plannerStore';
-import { Task } from '@/types/planner';
+import { Task, TaskPriority } from '@/types/planner';
 import { cn } from '@/lib/utils';
 import { calculateNewDates, calculateResizedDates, formatDateRange, TASK_HEIGHT, TASK_GAP } from '@/utils/dateUtils';
 import { AlertTriangle } from 'lucide-react';
@@ -83,6 +83,12 @@ const getBadgeStyle = (color?: string) => {
   return { backgroundColor: background, borderColor: border, color: text };
 };
 
+const priorityStyles: Record<TaskPriority, { className: string; label: string }> = {
+  low: { className: 'text-emerald-600', label: 'Low priority' },
+  medium: { className: 'text-amber-500', label: 'Medium priority' },
+  high: { className: 'text-red-600 priority-blink', label: 'High priority' },
+};
+
 export const TaskBar: React.FC<TaskBarProps> = ({
   task,
   position,
@@ -96,7 +102,6 @@ export const TaskBar: React.FC<TaskBarProps> = ({
     projects,
     statuses,
     taskTypes,
-    tags,
     assignees,
     moveTask,
     updateTask,
@@ -119,9 +124,9 @@ export const TaskBar: React.FC<TaskBarProps> = ({
   const project = projects.find(p => p.id === task.projectId);
   const status = statuses.find(s => s.id === task.statusId);
   const taskType = taskTypes.find(t => t.id === task.typeId);
-  const taskTags = tags.filter(tag => task.tagIds.includes(tag.id));
   const assignee = assignees.find(a => a.id === task.assigneeId);
   const isSelected = selectedTaskId === task.id;
+  const priorityMeta = task.priority ? priorityStyles[task.priority] : null;
   
   const fallbackProjectColor = projects.length === 1 ? projects[0]?.color : undefined;
   const bgColor = project?.color || fallbackProjectColor || '#94a3b8';
@@ -269,7 +274,6 @@ export const TaskBar: React.FC<TaskBarProps> = ({
             isDragging && 'dragging z-50',
             isResizing && 'z-50',
             isSelected && 'ring-2 ring-primary ring-offset-1',
-            isOverlapping && 'conflict',
             isFinal && 'opacity-60 saturate-50'
           )}
           style={{
@@ -295,6 +299,15 @@ export const TaskBar: React.FC<TaskBarProps> = ({
               className="inline-flex h-4 w-1.5 flex-shrink-0 rounded-[2px]"
               style={{ backgroundColor: statusColor }}
             />
+            {priorityMeta && (
+              <span
+                className={cn('text-base font-black leading-none', priorityMeta.className)}
+                title={priorityMeta.label}
+                aria-label={priorityMeta.label}
+              >
+                !
+              </span>
+            )}
             <span
               className={cn('task-label text-sm font-semibold leading-tight truncate', isFinal && 'line-through')}
               style={{ color: textColor }}
@@ -378,11 +391,6 @@ export const TaskBar: React.FC<TaskBarProps> = ({
                   {taskType.name}
                 </Badge>
               )}
-              {taskTags.map((tag) => (
-                <Badge key={tag.id} className="text-[10px]" style={getBadgeStyle(tag.color)}>
-                  {tag.name}
-                </Badge>
-              ))}
             </div>
           </div>
         </div>,

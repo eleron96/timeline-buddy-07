@@ -9,6 +9,7 @@ import {
   Status,
   TaskType,
   Tag,
+  TaskPriority,
   ViewMode,
   GroupMode,
   Filters,
@@ -25,6 +26,7 @@ type TaskRow = {
   end_date: string;
   status_id: string;
   type_id: string;
+  priority: TaskPriority | null;
   tag_ids: string[] | null;
   description: string | null;
 };
@@ -109,6 +111,7 @@ interface PlannerStore extends PlannerState {
   setCurrentDate: (date: string) => void;
   requestScrollToDate: (date: string) => void;
   setFilters: (filters: Partial<Filters>) => void;
+  clearFilterCriteria: () => void;
   clearFilters: () => void;
   setSelectedTaskId: (id: string | null) => void;
 }
@@ -119,6 +122,7 @@ const initialFilters: Filters = {
   statusIds: [],
   typeIds: [],
   tagIds: [],
+  hideUnassigned: false,
 };
 
 const mapTaskRow = (row: TaskRow): Task => ({
@@ -130,6 +134,7 @@ const mapTaskRow = (row: TaskRow): Task => ({
   endDate: row.end_date,
   statusId: row.status_id,
   typeId: row.type_id,
+  priority: row.priority ?? null,
   tagIds: row.tag_ids ?? [],
   description: row.description,
 });
@@ -173,6 +178,7 @@ const mapTaskUpdates = (updates: Partial<Task>) => {
   if ('endDate' in updates) payload.end_date = updates.endDate;
   if ('statusId' in updates) payload.status_id = updates.statusId;
   if ('typeId' in updates) payload.type_id = updates.typeId;
+  if ('priority' in updates) payload.priority = updates.priority;
   if ('tagIds' in updates) payload.tag_ids = updates.tagIds;
   if ('description' in updates) payload.description = updates.description;
   return payload;
@@ -302,6 +308,7 @@ export const usePlannerStore = create<PlannerStore>()(
             end_date: task.endDate,
             status_id: task.statusId,
             type_id: task.typeId,
+            priority: task.priority,
             tag_ids: task.tagIds,
             description: task.description,
           })
@@ -381,6 +388,7 @@ export const usePlannerStore = create<PlannerStore>()(
           endDate: format(newEnd, 'yyyy-MM-dd'),
           statusId: task.statusId,
           typeId: task.typeId,
+          priority: task.priority,
           tagIds: [...task.tagIds],
           description: task.description,
         });
@@ -424,6 +432,7 @@ export const usePlannerStore = create<PlannerStore>()(
           end_date: string;
           status_id: string;
           type_id: string;
+          priority: TaskPriority | null;
           tag_ids: string[];
           description: string | null;
         }> = [];
@@ -444,6 +453,7 @@ export const usePlannerStore = create<PlannerStore>()(
             end_date: format(nextEnd, 'yyyy-MM-dd'),
             status_id: task.statusId,
             type_id: task.typeId,
+            priority: task.priority,
             tag_ids: [...task.tagIds],
             description: task.description,
           });
@@ -846,6 +856,16 @@ export const usePlannerStore = create<PlannerStore>()(
       setFilters: (filters) => set((state) => ({
         filters: { ...state.filters, ...filters },
       })),
+      clearFilterCriteria: () => set((state) => ({
+        filters: {
+          ...state.filters,
+          projectIds: [],
+          assigneeIds: [],
+          statusIds: [],
+          typeIds: [],
+          tagIds: [],
+        },
+      })),
       clearFilters: () => set({ filters: initialFilters }),
       setSelectedTaskId: (id) => set({ selectedTaskId: id }),
     }),
@@ -855,7 +875,6 @@ export const usePlannerStore = create<PlannerStore>()(
         viewMode: state.viewMode,
         groupMode: state.groupMode,
         currentDate: state.currentDate,
-        filters: state.filters,
       }),
     }
   )

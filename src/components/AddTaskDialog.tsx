@@ -6,8 +6,11 @@ import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import { Badge } from '@/components/ui/badge';
 import { Plus } from 'lucide-react';
 import { format, addDays } from '@/utils/dateUtils';
+import { cn } from '@/lib/utils';
+import { TaskPriority } from '@/types/planner';
 
 interface AddTaskDialogProps {
   open: boolean;
@@ -15,7 +18,7 @@ interface AddTaskDialogProps {
 }
 
 export const AddTaskDialog: React.FC<AddTaskDialogProps> = ({ open, onOpenChange }) => {
-  const { projects, assignees, statuses, taskTypes, addTask } = usePlannerStore();
+  const { projects, assignees, statuses, taskTypes, tags, addTask } = usePlannerStore();
   
   const today = new Date();
   const [title, setTitle] = useState('');
@@ -24,9 +27,19 @@ export const AddTaskDialog: React.FC<AddTaskDialogProps> = ({ open, onOpenChange
   const [assigneeId, setAssigneeId] = useState<string>('none');
   const [statusId, setStatusId] = useState(statuses[0]?.id || '');
   const [typeId, setTypeId] = useState(taskTypes[0]?.id || '');
+  const [priority, setPriority] = useState<TaskPriority | 'none'>('none');
   const [startDate, setStartDate] = useState(format(today, 'yyyy-MM-dd'));
   const [endDate, setEndDate] = useState(format(addDays(today, 2), 'yyyy-MM-dd'));
+  const [tagIds, setTagIds] = useState<string[]>([]);
   const [description, setDescription] = useState('');
+
+  const handleTagToggle = (tagId: string) => {
+    setTagIds((prev) => (
+      prev.includes(tagId)
+        ? prev.filter((id) => id !== tagId)
+        : [...prev, tagId]
+    ));
+  };
   
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -39,9 +52,10 @@ export const AddTaskDialog: React.FC<AddTaskDialogProps> = ({ open, onOpenChange
       assigneeId: assigneeId === 'none' ? null : assigneeId,
       statusId,
       typeId,
+      priority: priority === 'none' ? null : priority,
       startDate,
       endDate,
-      tagIds: [],
+      tagIds,
       description: description.trim() || null,
     });
     
@@ -52,8 +66,10 @@ export const AddTaskDialog: React.FC<AddTaskDialogProps> = ({ open, onOpenChange
     setAssigneeId('none');
     setStatusId(statuses[0]?.id || '');
     setTypeId(taskTypes[0]?.id || '');
+    setPriority('none');
     setStartDate(format(today, 'yyyy-MM-dd'));
     setEndDate(format(addDays(today, 2), 'yyyy-MM-dd'));
+    setTagIds([]);
     setDescription('');
     
     onOpenChange(false);
@@ -177,6 +193,21 @@ export const AddTaskDialog: React.FC<AddTaskDialogProps> = ({ open, onOpenChange
               </Select>
             </div>
           </div>
+
+          <div className="space-y-2">
+            <Label>Priority</Label>
+            <Select value={priority} onValueChange={(value) => setPriority(value as TaskPriority | 'none')}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select priority" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">No priority</SelectItem>
+                <SelectItem value="low">Low</SelectItem>
+                <SelectItem value="medium">Medium</SelectItem>
+                <SelectItem value="high">High</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
           
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
@@ -208,6 +239,39 @@ export const AddTaskDialog: React.FC<AddTaskDialogProps> = ({ open, onOpenChange
               placeholder="Add a description..."
               rows={3}
             />
+          </div>
+
+          <div className="space-y-2">
+            <Label>Tags</Label>
+            {tags.length === 0 ? (
+              <p className="text-xs text-muted-foreground">No tags available yet.</p>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {tags.map(tag => {
+                  const isSelected = tagIds.includes(tag.id);
+                  return (
+                    <Badge
+                      key={tag.id}
+                      variant={isSelected ? 'default' : 'outline'}
+                      className={cn('transition-all cursor-pointer')}
+                      style={isSelected ? { 
+                        backgroundColor: tag.color,
+                        borderColor: tag.color,
+                      } : {
+                        borderColor: tag.color,
+                        color: tag.color,
+                      }}
+                      onClick={() => handleTagToggle(tag.id)}
+                    >
+                      <span className="inline-flex items-center gap-1">
+                        <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: tag.color }} />
+                        {tag.name}
+                      </span>
+                    </Badge>
+                  );
+                })}
+              </div>
+            )}
           </div>
           
           <DialogFooter>

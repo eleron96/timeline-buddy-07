@@ -11,6 +11,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const setSession = useAuthStore((state) => state.setSession);
   const setLoading = useAuthStore((state) => state.setLoading);
   const fetchWorkspaces = useAuthStore((state) => state.fetchWorkspaces);
+  const fetchProfile = useAuthStore((state) => state.fetchProfile);
   const resetPlanner = usePlannerStore((state) => state.reset);
 
   useEffect(() => {
@@ -22,6 +23,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       setLoading(false);
       if (data.session?.user) {
         fetchWorkspaces();
+        fetchProfile();
       } else {
         resetPlanner();
       }
@@ -31,6 +33,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       setLoading(false);
       if (session?.user) {
         fetchWorkspaces();
+        fetchProfile();
       } else {
         resetPlanner();
       }
@@ -39,7 +42,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       active = false;
       subscription.unsubscribe();
     };
-  }, [fetchWorkspaces, resetPlanner, setLoading, setSession]);
+  }, [fetchProfile, fetchWorkspaces, resetPlanner, setLoading, setSession]);
 
   return <>{children}</>;
 };

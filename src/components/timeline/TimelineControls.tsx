@@ -1,6 +1,7 @@
 import React from 'react';
 import { usePlannerStore } from '@/store/plannerStore';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { 
   ChevronLeft, 
   ChevronRight, 
@@ -21,7 +22,10 @@ export const TimelineControls: React.FC = () => {
     currentDate, 
     setCurrentDate,
     requestScrollToDate,
+    filters,
+    setFilters,
   } = usePlannerStore();
+  const hideUnassignedId = 'hide-unassigned-toggle';
   
   const handlePrev = () => {
     const date = parseISO(currentDate);
@@ -135,6 +139,22 @@ export const TimelineControls: React.FC = () => {
             <FolderKanban className="h-3.5 w-3.5" />
             Projects
           </Button>
+        </div>
+
+        <div
+          className="flex items-center gap-2 text-[11px] text-muted-foreground/70 select-none"
+          title="Не показывать неназначенные"
+        >
+          <Checkbox
+            id={hideUnassignedId}
+            checked={filters.hideUnassigned}
+            onCheckedChange={(value) => setFilters({ hideUnassigned: value === true })}
+            className="scale-75 border-muted-foreground/40 data-[state=checked]:bg-muted-foreground/60 data-[state=checked]:border-muted-foreground/60 data-[state=checked]:text-white/90"
+            aria-label="Не показывать неназначенные"
+          />
+          <label htmlFor={hideUnassignedId} className="cursor-pointer">
+            Без&nbsp;назнач.
+          </label>
         </div>
       </div>
     </div>

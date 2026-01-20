@@ -31,7 +31,9 @@ export const TimelineGrid: React.FC = () => {
   const milestoneRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const syncingRef = useRef<HTMLDivElement | null>(null);
+  const dragScrollRef = useRef<{ startX: number; startScrollLeft: number; target: HTMLDivElement | null } | null>(null);
   const [scrollLeft, setScrollLeft] = useState(0);
+  const [isDragScrolling, setIsDragScrolling] = useState(false);
   const [viewportWidth, setViewportWidth] = useState(0);
   const milestoneRowHeight = 24;
   
@@ -63,7 +65,11 @@ export const TimelineGrid: React.FC = () => {
       if (filters.projectIds.length > 0 && task.projectId && !filters.projectIds.includes(task.projectId)) {
         return false;
       }
-      if (filters.assigneeIds.length > 0 && task.assigneeId && !filters.assigneeIds.includes(task.assigneeId)) {
+      if (filters.assigneeIds.length > 0) {
+        if (!task.assigneeId || !filters.assigneeIds.includes(task.assigneeId)) {
+          return false;
+        }
+      } else if (filters.hideUnassigned && !task.assigneeId) {
         return false;
       }
       if (filters.statusIds.length > 0 && !filters.statusIds.includes(task.statusId)) {
@@ -79,13 +85,19 @@ export const TimelineGrid: React.FC = () => {
     });
   }, [tasks, filters]);
   
+  const visibleAssignees = useMemo(() => {
+    if (groupMode !== 'assignee') return assignees;
+    if (filters.assigneeIds.length === 0) return assignees;
+    return assignees.filter((assignee) => filters.assigneeIds.includes(assignee.id));
+  }, [assignees, filters.assigneeIds, groupMode]);
+
   // Group items (assignees or projects)
   const groupItems = useMemo(() => {
     if (groupMode === 'assignee') {
-      return assignees.map(a => ({ id: a.id, name: a.name, color: undefined }));
+      return visibleAssignees.map(a => ({ id: a.id, name: a.name, color: undefined }));
     }
     return projects.map(p => ({ id: p.id, name: p.name, color: p.color }));
-  }, [groupMode, assignees, projects]);
+  }, [groupMode, visibleAssignees, projects]);
   
   // Group tasks by row with lane calculation
   const tasksByRow = useMemo(() => {
@@ -186,6 +198,44 @@ export const TimelineGrid: React.FC = () => {
     });
   }, []);
 
+  const handleDragStart = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return;
+    const target = e.target;
+    if (target instanceof Element && target.closest('.task-bar')) {
+      return;
+    }
+    dragScrollRef.current = {
+      startX: e.clientX,
+      startScrollLeft: e.currentTarget.scrollLeft,
+      target: e.currentTarget,
+    };
+    setIsDragScrolling(true);
+    e.preventDefault();
+  }, []);
+
+  useEffect(() => {
+    if (!isDragScrolling) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const state = dragScrollRef.current;
+      if (!state?.target) return;
+      const deltaX = e.clientX - state.startX;
+      state.target.scrollLeft = state.startScrollLeft - deltaX;
+    };
+
+    const handleMouseUp = () => {
+      dragScrollRef.current = null;
+      setIsDragScrolling(false);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isDragScrolling]);
+
   const scrollToIndex = useCallback((index: number) => {
     if (!scrollContainerRef.current) return;
     const container = scrollContainerRef.current;
@@ -237,8 +287,11 @@ export const TimelineGrid: React.FC = () => {
       tasks: tasksByRow[item.id] || [],
       height: rowHeights[item.id] || MIN_ROW_HEIGHT,
     }));
+
+    const showUnassignedRow = tasksByRow['unassigned']?.length > 0
+      && (groupMode === 'project' || (filters.assigneeIds.length === 0 && !filters.hideUnassigned));
     
-    if (tasksByRow['unassigned']?.length > 0) {
+    if (showUnassignedRow) {
       rows.push({
         id: 'unassigned',
         name: groupMode === 'assignee' ? 'Unassigned' : 'No Project',
@@ -249,7 +302,7 @@ export const TimelineGrid: React.FC = () => {
     }
     
     return rows;
-  }, [groupItems, tasksByRow, rowHeights, groupMode]);
+  }, [filters.assigneeIds.length, filters.hideUnassigned, groupItems, groupMode, rowHeights, tasksByRow]);
   
   const handleJumpToToday = () => {
     const today = format(new Date(), 'yyyy-MM-dd');
@@ -269,8 +322,9 @@ export const TimelineGrid: React.FC = () => {
         {/* Day headers - synced scroll, hide scrollbar */}
         <div 
           ref={containerRef}
-          className="flex-1 overflow-x-auto scrollbar-hidden"
+          className={`flex-1 overflow-x-auto scrollbar-hidden ${isDragScrolling ? 'cursor-grabbing' : 'cursor-grab'}`}
           onScroll={handleScroll}
+          onMouseDown={handleDragStart}
           style={{ overflowY: 'hidden' }}
         >
           <TimelineHeader 
@@ -290,8 +344,9 @@ export const TimelineGrid: React.FC = () => {
         />
         <div
           ref={milestoneRef}
-          className="flex-1 overflow-x-auto scrollbar-hidden"
+          className={`flex-1 overflow-x-auto scrollbar-hidden ${isDragScrolling ? 'cursor-grabbing' : 'cursor-grab'}`}
           onScroll={handleScroll}
+          onMouseDown={handleDragStart}
           style={{ overflowY: 'hidden' }}
         >
           <div style={{ width: totalWidth, height: '100%' }} />
@@ -330,8 +385,9 @@ export const TimelineGrid: React.FC = () => {
         {/* Grid area */}
         <div 
           ref={scrollContainerRef}
-          className="flex-1 overflow-auto scrollbar-soft"
+          className={`flex-1 overflow-auto scrollbar-soft ${isDragScrolling ? 'cursor-grabbing' : 'cursor-grab'}`}
           onScroll={handleScroll}
+          onMouseDown={handleDragStart}
         >
           <div style={{ width: totalWidth, minHeight: '100%' }}>
             {displayRows.map((row, rowIndex) => (

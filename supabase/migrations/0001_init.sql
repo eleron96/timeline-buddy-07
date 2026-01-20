@@ -163,6 +163,7 @@ create table public.tasks (
   end_date date not null,
   status_id uuid not null references public.statuses(id),
   type_id uuid not null references public.task_types(id),
+  priority text,
   tag_ids uuid[] not null default '{}',
   description text,
   created_at timestamptz not null default now(),
