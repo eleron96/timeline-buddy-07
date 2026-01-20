@@ -57,6 +57,7 @@ export const AddTaskDialog: React.FC<AddTaskDialogProps> = ({ open, onOpenChange
       endDate,
       tagIds,
       description: description.trim() || null,
+      repeatId: null,
     });
     
     // Reset form

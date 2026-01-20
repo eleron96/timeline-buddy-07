@@ -30,6 +30,7 @@ type TaskRow = {
   priority: TaskPriority | null;
   tag_ids: string[] | null;
   description: string | null;
+  repeat_id: string | null;
 };
 
 type ProjectRow = {
@@ -94,6 +95,7 @@ interface PlannerStore extends PlannerState {
   createRepeats: (id: string, options: { frequency: 'daily' | 'weekly' | 'monthly' | 'yearly'; ends: 'never' | 'on' | 'after'; untilDate?: string; count?: number }) => Promise<{ error?: string; created?: number }>;
   moveTask: (id: string, startDate: string, endDate: string) => Promise<void>;
   reassignTask: (id: string, assigneeId: string | null, projectId?: string | null) => Promise<void>;
+  deleteTaskSeries: (repeatId: string, fromDate: string) => Promise<void>;
 
   addProject: (project: Omit<Project, 'id'>) => Promise<void>;
   updateProject: (id: string, updates: Partial<Project>) => Promise<void>;
@@ -150,6 +152,7 @@ const mapTaskRow = (row: TaskRow): Task => ({
   priority: row.priority ?? null,
   tagIds: row.tag_ids ?? [],
   description: row.description,
+  repeatId: row.repeat_id ?? null,
 });
 
 const mapProjectRow = (row: ProjectRow): Project => ({
@@ -202,6 +205,7 @@ const mapTaskUpdates = (updates: Partial<Task>) => {
   if ('priority' in updates) payload.priority = updates.priority;
   if ('tagIds' in updates) payload.tag_ids = updates.tagIds;
   if ('description' in updates) payload.description = updates.description;
+  if ('repeatId' in updates) payload.repeat_id = updates.repeatId;
   return payload;
 };
 
@@ -337,6 +341,7 @@ export const usePlannerStore = create<PlannerStore>()(
             priority: task.priority,
             tag_ids: task.tagIds,
             description: task.description,
+            repeat_id: task.repeatId,
           })
           .select('*')
           .single();
@@ -417,6 +422,7 @@ export const usePlannerStore = create<PlannerStore>()(
           priority: task.priority,
           tagIds: [...task.tagIds],
           description: task.description,
+          repeatId: null,
         });
       },
 
@@ -425,6 +431,29 @@ export const usePlannerStore = create<PlannerStore>()(
         const workspaceId = get().workspaceId;
         if (!task) return { error: 'Task not found.' };
         if (!workspaceId) return { error: 'Workspace not selected.' };
+
+        const repeatId = task.repeatId ?? (typeof crypto !== 'undefined' && crypto.randomUUID
+          ? crypto.randomUUID()
+          : `${Date.now()}-${Math.random().toString(16).slice(2)}`);
+
+        if (!task.repeatId) {
+          const { data: repeatData, error: repeatError } = await supabase
+            .from('tasks')
+            .update({ repeat_id: repeatId })
+            .eq('id', task.id)
+            .eq('workspace_id', workspaceId)
+            .select('*')
+            .single();
+
+          if (repeatError || !repeatData) {
+            return { error: repeatError?.message ?? 'Failed to link repeat series.' };
+          }
+
+          const updatedTask = mapTaskRow(repeatData as TaskRow);
+          set((state) => ({
+            tasks: state.tasks.map((item) => (item.id === task.id ? updatedTask : item)),
+          }));
+        }
 
         const baseStart = parseISO(task.startDate);
         const baseEnd = parseISO(task.endDate);
@@ -461,6 +490,7 @@ export const usePlannerStore = create<PlannerStore>()(
           priority: TaskPriority | null;
           tag_ids: string[];
           description: string | null;
+          repeat_id: string;
         }> = [];
 
         for (let index = 1; index <= 500; index += 1) {
@@ -482,6 +512,7 @@ export const usePlannerStore = create<PlannerStore>()(
             priority: task.priority,
             tag_ids: [...task.tagIds],
             description: task.description,
+            repeat_id: repeatId,
           });
         }
 
@@ -513,6 +544,35 @@ export const usePlannerStore = create<PlannerStore>()(
         await get().updateTask(id, {
           assigneeId,
           ...(projectId !== undefined ? { projectId } : {}),
+        });
+      },
+
+      deleteTaskSeries: async (repeatId, fromDate) => {
+        const workspaceId = get().workspaceId;
+        if (!workspaceId) return;
+
+        const { error } = await supabase
+          .from('tasks')
+          .delete()
+          .eq('workspace_id', workspaceId)
+          .eq('repeat_id', repeatId)
+          .gte('start_date', fromDate);
+
+        if (error) {
+          console.error(error);
+          return;
+        }
+
+        set((state) => {
+          const deletedIds = new Set(
+            state.tasks
+              .filter((item) => item.repeatId === repeatId && item.startDate >= fromDate)
+              .map((item) => item.id)
+          );
+          return {
+            tasks: state.tasks.filter((item) => !(item.repeatId === repeatId && item.startDate >= fromDate)),
+            selectedTaskId: state.selectedTaskId && deletedIds.has(state.selectedTaskId) ? null : state.selectedTaskId,
+          };
         });
       },
 

@@ -13,6 +13,7 @@ import { usePlannerStore } from '@/store/plannerStore';
 import { useAuthStore } from '@/store/authStore';
 import { WorkspaceSwitcher } from '@/components/WorkspaceSwitcher';
 import { Filters } from '@/types/planner';
+import { format } from 'date-fns';
 
 const normalizeFilterIds = (value: unknown) => (
   Array.isArray(value)
@@ -45,6 +46,8 @@ const Index = () => {
   const clearFilterCriteria = usePlannerStore((state) => state.clearFilterCriteria);
   const clearFilters = usePlannerStore((state) => state.clearFilters);
   const viewMode = usePlannerStore((state) => state.viewMode);
+  const setCurrentDate = usePlannerStore((state) => state.setCurrentDate);
+  const requestScrollToDate = usePlannerStore((state) => state.requestScrollToDate);
   const user = useAuthStore((state) => state.user);
   const profileDisplayName = useAuthStore((state) => state.profileDisplayName);
   const currentWorkspaceId = useAuthStore((state) => state.currentWorkspaceId);
@@ -52,6 +55,7 @@ const Index = () => {
   const canEdit = currentWorkspaceRole === 'editor' || currentWorkspaceRole === 'admin';
   const userLabel = profileDisplayName || user?.email || user?.id || '';
   const filtersHydratedRef = useRef(false);
+  const centeredOnLoadRef = useRef(false);
   const hasActiveFilters = filters.projectIds.length > 0
     || filters.assigneeIds.length > 0
     || filters.statusIds.length > 0
@@ -63,6 +67,15 @@ const Index = () => {
       loadWorkspaceData(currentWorkspaceId);
     }
   }, [currentWorkspaceId, loadWorkspaceData]);
+
+  useEffect(() => {
+    if (centeredOnLoadRef.current) return;
+    if (viewMode === 'calendar') return;
+    const today = format(new Date(), 'yyyy-MM-dd');
+    setCurrentDate(today);
+    requestScrollToDate(today);
+    centeredOnLoadRef.current = true;
+  }, [requestScrollToDate, setCurrentDate, viewMode]);
 
   useEffect(() => {
     filtersHydratedRef.current = false;

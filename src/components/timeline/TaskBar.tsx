@@ -96,6 +96,7 @@ export const TaskBar: React.FC<TaskBarProps> = ({
   canEdit,
 }) => {
   const {
+    tasks,
     projects,
     statuses,
     taskTypes,
@@ -103,6 +104,7 @@ export const TaskBar: React.FC<TaskBarProps> = ({
     moveTask,
     updateTask,
     deleteTask,
+    deleteTaskSeries,
     duplicateTask,
     setSelectedTaskId,
     selectedTaskId,
@@ -124,6 +126,13 @@ export const TaskBar: React.FC<TaskBarProps> = ({
   const assignee = assignees.find(a => a.id === task.assigneeId);
   const isSelected = selectedTaskId === task.id;
   const priorityMeta = task.priority ? priorityStyles[task.priority] : null;
+  const isCancelled = status
+    ? ['отменена', 'cancelled', 'canceled'].includes(status.name.trim().toLowerCase())
+    : false;
+  const isRepeating = Boolean(task.repeatId);
+  const hasFutureRepeats = isRepeating
+    ? tasks.some((item) => item.repeatId === task.repeatId && item.startDate > task.startDate)
+    : false;
   
   const fallbackProjectColor = projects.length === 1 ? projects[0]?.color : undefined;
   const bgColor = project?.color || fallbackProjectColor || '#94a3b8';
@@ -297,6 +306,11 @@ export const TaskBar: React.FC<TaskBarProps> = ({
               className="inline-flex h-4 w-1.5 flex-shrink-0 rounded-[2px]"
               style={{ backgroundColor: statusColor, boxShadow: `0 0 0 1px ${statusOutline}` }}
             />
+            {isCancelled && (
+              <span className="text-xs leading-none" aria-label="Cancelled" title="Cancelled">
+                🚫
+              </span>
+            )}
             {priorityMeta && (
               <span
                 className="inline-flex h-4 w-4 items-center justify-center rounded-full border shadow-[0_0_0_1px_rgba(0,0,0,0.06)]"
@@ -400,22 +414,49 @@ export const TaskBar: React.FC<TaskBarProps> = ({
       <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete task?</AlertDialogTitle>
+            <AlertDialogTitle>{isRepeating ? 'Delete repeated task?' : 'Delete task?'}</AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently delete "{task.title}".
+              {isRepeating
+                ? `Delete only this task or this and ${hasFutureRepeats ? 'future' : 'subsequent'} repeats? Previous repeats stay.`
+                : `This will permanently delete "${task.title}".`}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={async () => {
-                if (!canEdit) return;
-                await deleteTask(task.id);
-                setDeleteOpen(false);
-              }}
-            >
-              Delete
-            </AlertDialogAction>
+            {isRepeating ? (
+              <>
+                <AlertDialogAction
+                  className="bg-muted text-foreground hover:bg-muted/80"
+                  onClick={async () => {
+                    if (!canEdit) return;
+                    await deleteTask(task.id);
+                    setDeleteOpen(false);
+                  }}
+                >
+                  Delete this
+                </AlertDialogAction>
+                <AlertDialogAction
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  onClick={async () => {
+                    if (!canEdit || !task.repeatId) return;
+                    await deleteTaskSeries(task.repeatId, task.startDate);
+                    setDeleteOpen(false);
+                  }}
+                >
+                  Delete this & following
+                </AlertDialogAction>
+              </>
+            ) : (
+              <AlertDialogAction
+                onClick={async () => {
+                  if (!canEdit) return;
+                  await deleteTask(task.id);
+                  setDeleteOpen(false);
+                }}
+              >
+                Delete
+              </AlertDialogAction>
+            )}
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

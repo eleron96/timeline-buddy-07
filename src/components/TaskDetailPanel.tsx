@@ -58,6 +58,7 @@ export const TaskDetailPanel: React.FC = () => {
     tags,
     updateTask,
     deleteTask,
+    deleteTaskSeries,
     duplicateTask,
     createRepeats,
   } = usePlannerStore();
@@ -74,6 +75,7 @@ export const TaskDetailPanel: React.FC = () => {
   const [repeatError, setRepeatError] = useState('');
   const [repeatNotice, setRepeatNotice] = useState('');
   const [repeatCreating, setRepeatCreating] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   
   const task = tasks.find(t => t.id === selectedTaskId);
 
@@ -143,6 +145,10 @@ export const TaskDetailPanel: React.FC = () => {
   const assignee = assignees.find(a => a.id === task.assigneeId);
   const status = statuses.find(s => s.id === task.statusId);
   const taskType = taskTypes.find(t => t.id === task.typeId);
+  const isRepeating = Boolean(task.repeatId);
+  const hasFutureRepeats = isRepeating
+    ? tasks.some((item) => item.repeatId === task.repeatId && item.startDate > task.startDate)
+    : false;
   
   const handleUpdate = (field: keyof Task, value: Task[keyof Task]) => {
     if (!canEdit) return;
@@ -159,9 +165,7 @@ export const TaskDetailPanel: React.FC = () => {
   
   const handleDelete = () => {
     if (!canEdit) return;
-    if (confirm('Are you sure you want to delete this task?')) {
-      deleteTask(task.id);
-    }
+    setDeleteOpen(true);
   };
 
   const handleCreateRepeats = async () => {
@@ -535,6 +539,56 @@ export const TaskDetailPanel: React.FC = () => {
           <AlertDialogFooter>
             <AlertDialogCancel onClick={handleDiscardAndClose}>Don&apos;t save</AlertDialogCancel>
             <AlertDialogAction onClick={handleSaveAndClose}>Save</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{isRepeating ? 'Delete repeated task?' : 'Delete task?'}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {isRepeating
+                ? `Delete only this task or this and ${hasFutureRepeats ? 'future' : 'subsequent'} repeats? Previous repeats stay.`
+                : `This will permanently delete "${task.title}".`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            {isRepeating ? (
+              <>
+                <AlertDialogAction
+                  className="bg-muted text-foreground hover:bg-muted/80"
+                  onClick={async () => {
+                    if (!canEdit) return;
+                    await deleteTask(task.id);
+                    setDeleteOpen(false);
+                  }}
+                >
+                  Delete this
+                </AlertDialogAction>
+                <AlertDialogAction
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  onClick={async () => {
+                    if (!canEdit || !task.repeatId) return;
+                    await deleteTaskSeries(task.repeatId, task.startDate);
+                    setDeleteOpen(false);
+                  }}
+                >
+                  Delete this & following
+                </AlertDialogAction>
+              </>
+            ) : (
+              <AlertDialogAction
+                onClick={async () => {
+                  if (!canEdit) return;
+                  await deleteTask(task.id);
+                  setDeleteOpen(false);
+                }}
+              >
+                Delete
+              </AlertDialogAction>
+            )}
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

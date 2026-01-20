@@ -58,10 +58,6 @@ export const TimelineGrid: React.FC = () => {
   const dayWidth = useMemo(() => getDayWidth(viewMode), [viewMode]);
   const totalWidth = visibleDays.length * dayWidth;
   const currentDateObj = useMemo(() => parseISO(currentDate), [currentDate]);
-  const currentDayIndex = useMemo(
-    () => visibleDays.findIndex((day) => isSameDay(day, currentDateObj)),
-    [currentDateObj, visibleDays],
-  );
   const centerIndex = useMemo(() => {
     if (!viewportWidth || dayWidth === 0) return -1;
     const centerPx = scrollLeft + viewportWidth / 2;
@@ -315,11 +311,19 @@ export const TimelineGrid: React.FC = () => {
     return undefined;
   }, []);
   
-  // Center scroll on mount
+  const lastCenteredRef = useRef<{ date: string; viewMode: string } | null>(null);
+
+  // Center scroll when the active date or view changes (not when tasks change)
   useEffect(() => {
-    const targetIndex = currentDayIndex >= 0 ? currentDayIndex : Math.floor(visibleDays.length / 2);
-    scrollToIndex(targetIndex);
-  }, [currentDayIndex, scrollToIndex, visibleDays.length]);
+    if (lastCenteredRef.current?.date === currentDate && lastCenteredRef.current?.viewMode === viewMode) {
+      return;
+    }
+    const targetIndex = visibleDays.findIndex((day) => isSameDay(day, currentDateObj));
+    if (targetIndex >= 0) {
+      scrollToIndex(targetIndex);
+      lastCenteredRef.current = { date: currentDate, viewMode };
+    }
+  }, [currentDate, currentDateObj, scrollToIndex, viewMode, visibleDays]);
 
   useEffect(() => {
     if (!scrollTargetDate) return;

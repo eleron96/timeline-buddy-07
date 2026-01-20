@@ -12,6 +12,7 @@ export interface Task {
   priority: TaskPriority | null;
   tagIds: string[];
   description: string | null;
+  repeatId: string | null;
 }
 
 export interface Project {
