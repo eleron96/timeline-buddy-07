@@ -5,7 +5,7 @@ import { TimelineHeader } from './TimelineHeader';
 import { TimelineRow } from './TimelineRow';
 import { TaskBar } from './TaskBar';
 import { MilestoneDialog } from './MilestoneDialog';
-import { getVisibleDays, getDayWidth, getTaskPosition, checkOverlap, SIDEBAR_WIDTH, HEADER_HEIGHT, MIN_ROW_HEIGHT, TASK_HEIGHT, TASK_GAP } from '@/utils/dateUtils';
+import { getVisibleDays, getDayWidth, getTaskPosition, SIDEBAR_WIDTH, HEADER_HEIGHT, MIN_ROW_HEIGHT, TASK_HEIGHT, TASK_GAP } from '@/utils/dateUtils';
 import { Milestone, Task } from '@/types/planner';
 import { calculateTaskLanes, getMaxLanes, TaskWithLane } from '@/utils/taskLanes';
 import { Button } from '@/components/ui/button';
@@ -32,7 +32,6 @@ export const TimelineGrid: React.FC = () => {
   const canEdit = currentWorkspaceRole === 'editor' || currentWorkspaceRole === 'admin';
   
   const containerRef = useRef<HTMLDivElement>(null);
-  const milestoneRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const syncingRef = useRef<HTMLDivElement | null>(null);
   const dragScrollRef = useRef<{
@@ -214,32 +213,6 @@ export const TimelineGrid: React.FC = () => {
     return heights;
   }, [tasksByRow]);
   
-  // Check for overlapping tasks per assignee (for warning indicators)
-  const overlappingTaskIds = useMemo(() => {
-    const overlaps = new Set<string>();
-    
-    // Only check overlaps for assignee view
-    if (groupMode !== 'assignee') return overlaps;
-    
-    Object.values(tasksByRow).forEach(rowTasks => {
-      for (let i = 0; i < rowTasks.length; i++) {
-        for (let j = i + 1; j < rowTasks.length; j++) {
-          if (checkOverlap(
-            rowTasks[i].startDate,
-            rowTasks[i].endDate,
-            rowTasks[j].startDate,
-            rowTasks[j].endDate
-          )) {
-            overlaps.add(rowTasks[i].id);
-            overlaps.add(rowTasks[j].id);
-          }
-        }
-      }
-    });
-    
-    return overlaps;
-  }, [tasksByRow, groupMode]);
-  
   // Sync scroll between header and grid
   const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
     if (syncingRef.current && syncingRef.current !== e.currentTarget) {
@@ -252,9 +225,6 @@ export const TimelineGrid: React.FC = () => {
     // Sync header scroll
     if (containerRef.current && e.currentTarget !== containerRef.current && containerRef.current.scrollLeft !== newScrollLeft) {
       containerRef.current.scrollLeft = newScrollLeft;
-    }
-    if (milestoneRef.current && e.currentTarget !== milestoneRef.current && milestoneRef.current.scrollLeft !== newScrollLeft) {
-      milestoneRef.current.scrollLeft = newScrollLeft;
     }
     if (scrollContainerRef.current && e.currentTarget !== scrollContainerRef.current && scrollContainerRef.current.scrollLeft !== newScrollLeft) {
       scrollContainerRef.current.scrollLeft = newScrollLeft;
@@ -290,7 +260,17 @@ export const TimelineGrid: React.FC = () => {
       if (!state.didMove && Math.abs(deltaX) > 4) {
         state.didMove = true;
       }
-      state.target.scrollLeft = state.startScrollLeft - deltaX;
+      const nextScrollLeft = state.startScrollLeft - deltaX;
+      state.target.scrollLeft = nextScrollLeft;
+      if (state.target === scrollContainerRef.current && containerRef.current) {
+        if (containerRef.current.scrollLeft !== nextScrollLeft) {
+          containerRef.current.scrollLeft = nextScrollLeft;
+        }
+      } else if (state.target === containerRef.current && scrollContainerRef.current) {
+        if (scrollContainerRef.current.scrollLeft !== nextScrollLeft) {
+          scrollContainerRef.current.scrollLeft = nextScrollLeft;
+        }
+      }
     };
 
     const handleMouseUp = () => {
@@ -318,9 +298,6 @@ export const TimelineGrid: React.FC = () => {
 
     if (containerRef.current) {
       containerRef.current.scrollLeft = targetScroll;
-    }
-    if (milestoneRef.current) {
-      milestoneRef.current.scrollLeft = targetScroll;
     }
   }, [dayWidth]);
 
@@ -408,9 +385,9 @@ export const TimelineGrid: React.FC = () => {
     if (Date.now() - lastDragTimeRef.current < 200) return;
     const target = e.target;
     if (target instanceof Element && target.closest('.milestone-dot')) return;
-    const container = milestoneRef.current;
+    const container = containerRef.current;
     if (!container) return;
-    const rect = container.getBoundingClientRect();
+    const rect = e.currentTarget.getBoundingClientRect();
     const offsetX = e.clientX - rect.left + container.scrollLeft;
     const index = Math.floor(offsetX / dayWidth);
     if (index < 0 || index >= visibleDays.length) return;
@@ -452,73 +429,63 @@ export const TimelineGrid: React.FC = () => {
           }}
         />
       )}
-      {/* Timeline Header - Sticky */}
-      <div className="flex border-b border-border sticky top-0 z-20 bg-background" style={{ height: HEADER_HEIGHT }}>
-        {/* Sidebar header spacer */}
-        <div 
-          className="flex-shrink-0 bg-timeline-header border-r border-border"
-          style={{ width: SIDEBAR_WIDTH }}
-        />
-        {/* Day headers - synced scroll, hide scrollbar */}
-        <div 
-          ref={containerRef}
-          className={`flex-1 overflow-x-auto scrollbar-hidden ${isDragScrolling ? 'cursor-grabbing' : 'cursor-grab'}`}
-          onScroll={handleScroll}
-          onMouseDown={handleDragStart}
-          style={{ overflowY: 'hidden' }}
-        >
-          <TimelineHeader 
-            visibleDays={visibleDays} 
-            dayWidth={dayWidth} 
-            viewMode={viewMode}
-            scrollLeft={scrollLeft}
-            viewportWidth={viewportWidth}
-          />
-        </div>
-      </div>
-
-      <div className="flex border-b border-border bg-background" style={{ height: milestoneRowHeight }}>
-        <div
-          className="flex-shrink-0 bg-timeline-header border-r border-border"
-          style={{ width: SIDEBAR_WIDTH }}
-        />
-        <div
-          ref={milestoneRef}
-          className={`flex-1 overflow-x-auto scrollbar-hidden ${isDragScrolling ? 'cursor-grabbing' : 'cursor-grab'}`}
-          onScroll={handleScroll}
-          onMouseDown={handleDragStart}
-          style={{ overflowY: 'hidden' }}
-        >
+      {/* Timeline Header + Milestones - Sticky */}
+      <div className="sticky top-0 z-20 bg-background">
+        <div className="flex">
           <div
-            className="relative h-full"
-            style={{ width: totalWidth }}
-            onClick={handleMilestoneRowClick}
+            className="flex-shrink-0 bg-timeline-header border-r border-border"
+            style={{ width: SIDEBAR_WIDTH }}
           >
-            {sortedMilestones.map((milestone) => {
-              const dayIndex = visibleDayIndex.get(milestone.date);
-              if (dayIndex === undefined) return null;
-              const project = projectById.get(milestone.projectId);
-              const color = project?.color ?? '#94a3b8';
-              const dotColor = hexToRgba(color, 0.45) ?? color;
-              const dotBorder = hexToRgba(color, 0.8) ?? color;
-              const offset = milestoneOffsets.get(milestone.id) ?? 0;
-              const left = dayIndex * dayWidth + dayWidth / 2 + offset;
+            <div className="border-b border-border" style={{ height: HEADER_HEIGHT }} />
+            <div className="border-b border-border" style={{ height: milestoneRowHeight }} />
+          </div>
+          <div 
+            ref={containerRef}
+            className={`flex-1 overflow-x-auto scrollbar-hidden ${isDragScrolling ? 'cursor-grabbing' : 'cursor-grab'}`}
+            onScroll={handleScroll}
+            onMouseDown={handleDragStart}
+            style={{ overflowY: 'hidden' }}
+          >
+            <div className="border-b border-border" style={{ width: totalWidth }}>
+              <TimelineHeader 
+                visibleDays={visibleDays} 
+                dayWidth={dayWidth} 
+                viewMode={viewMode}
+                scrollLeft={scrollLeft}
+                viewportWidth={viewportWidth}
+              />
+            </div>
+            <div
+              className="relative border-b border-border"
+              style={{ width: totalWidth, height: milestoneRowHeight }}
+              onClick={handleMilestoneRowClick}
+            >
+              {sortedMilestones.map((milestone) => {
+                const dayIndex = visibleDayIndex.get(milestone.date);
+                if (dayIndex === undefined) return null;
+                const project = projectById.get(milestone.projectId);
+                const color = project?.color ?? '#94a3b8';
+                const dotColor = hexToRgba(color, 0.45) ?? color;
+                const dotBorder = hexToRgba(color, 0.8) ?? color;
+                const offset = milestoneOffsets.get(milestone.id) ?? 0;
+                const left = dayIndex * dayWidth + dayWidth / 2 + offset;
 
-              return (
-                <button
-                  key={milestone.id}
-                  type="button"
-                  className="milestone-dot absolute top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border transition-transform hover:scale-110"
-                  style={{ left, backgroundColor: dotColor, borderColor: dotBorder }}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    handleEditMilestone(milestone);
-                  }}
-                  onMouseEnter={() => handleMilestoneHover(milestone.date, color)}
-                  onMouseLeave={handleMilestoneHoverEnd}
-                />
-              );
-            })}
+                return (
+                  <button
+                    key={milestone.id}
+                    type="button"
+                    className="milestone-dot absolute top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border transition-transform hover:scale-110"
+                    style={{ left, backgroundColor: dotColor, borderColor: dotBorder }}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      handleEditMilestone(milestone);
+                    }}
+                    onMouseEnter={() => handleMilestoneHover(milestone.date, color)}
+                    onMouseLeave={handleMilestoneHoverEnd}
+                  />
+                );
+              })}
+            </div>
           </div>
         </div>
       </div>
@@ -587,7 +554,6 @@ export const TimelineGrid: React.FC = () => {
                       position={position}
                       dayWidth={dayWidth}
                       visibleDays={visibleDays}
-                      isOverlapping={overlappingTaskIds.has(task.id)}
                       lane={task.lane}
                       canEdit={canEdit}
                     />

@@ -374,7 +374,12 @@ export const CalendarTimeline: React.FC = () => {
                                             className="h-2 w-2 rounded-full"
                                             style={{ backgroundColor: dotColor }}
                                           />
-                                          <span className="truncate">{milestone.title}</span>
+                                          <div className="min-w-0">
+                                            <div className="truncate">{milestone.title}</div>
+                                            <div className="text-[10px] text-muted-foreground truncate">
+                                              {project?.name ?? 'Проект'}
+                                            </div>
+                                          </div>
                                         </div>
                                       );
                                     })}

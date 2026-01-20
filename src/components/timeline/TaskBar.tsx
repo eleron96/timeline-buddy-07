@@ -4,7 +4,6 @@ import { usePlannerStore } from '@/store/plannerStore';
 import { Task, TaskPriority } from '@/types/planner';
 import { cn } from '@/lib/utils';
 import { calculateNewDates, calculateResizedDates, formatDateRange, TASK_HEIGHT, TASK_GAP } from '@/utils/dateUtils';
-import { AlertTriangle } from 'lucide-react';
 import {
   ContextMenu,
   ContextMenuContent,
@@ -35,7 +34,6 @@ interface TaskBarProps {
   position: { left: number; width: number };
   dayWidth: number;
   visibleDays: Date[];
-  isOverlapping: boolean;
   lane: number;
   canEdit: boolean;
 }
@@ -86,7 +84,7 @@ const getBadgeStyle = (color?: string) => {
 const priorityStyles: Record<TaskPriority, { className: string; label: string }> = {
   low: { className: 'text-emerald-600', label: 'Low priority' },
   medium: { className: 'text-amber-500', label: 'Medium priority' },
-  high: { className: 'text-red-600 priority-blink', label: 'High priority' },
+  high: { className: 'text-red-600', label: 'High priority' },
 };
 
 export const TaskBar: React.FC<TaskBarProps> = ({
@@ -94,7 +92,6 @@ export const TaskBar: React.FC<TaskBarProps> = ({
   position,
   dayWidth,
   visibleDays,
-  isOverlapping,
   lane,
   canEdit,
 }) => {
@@ -133,7 +130,11 @@ export const TaskBar: React.FC<TaskBarProps> = ({
   const statusColor = status?.color || '#94a3b8';
   const isDarkBackground = isDarkColor(bgColor);
   const textColor = isDarkBackground ? '#f8fafc' : '#0f172a';
-  const iconColor = isDarkBackground ? 'rgba(248, 250, 252, 0.9)' : 'rgba(15, 23, 42, 0.8)';
+  const statusOutline = isDarkBackground ? 'rgba(248, 250, 252, 0.65)' : 'rgba(15, 23, 42, 0.25)';
+  const priorityBadgeStyle = {
+    backgroundColor: '#ffffff',
+    borderColor: 'rgba(15, 23, 42, 0.2)',
+  };
   const isFinal = status?.isFinal || false;
   const showTooltip = isHovering && !isDragging && !isResizing;
   
@@ -292,20 +293,20 @@ export const TaskBar: React.FC<TaskBarProps> = ({
           
           {/* Task content */}
           <div className="flex items-center gap-2 min-w-0 flex-1">
-            {isOverlapping && (
-              <AlertTriangle className="w-3 h-3 flex-shrink-0" style={{ color: iconColor }} />
-            )}
             <span
               className="inline-flex h-4 w-1.5 flex-shrink-0 rounded-[2px]"
-              style={{ backgroundColor: statusColor }}
+              style={{ backgroundColor: statusColor, boxShadow: `0 0 0 1px ${statusOutline}` }}
             />
             {priorityMeta && (
               <span
-                className={cn('text-base font-black leading-none', priorityMeta.className)}
+                className="inline-flex h-4 w-4 items-center justify-center rounded-full border shadow-[0_0_0_1px_rgba(0,0,0,0.06)]"
+                style={priorityBadgeStyle}
                 title={priorityMeta.label}
                 aria-label={priorityMeta.label}
               >
-                !
+                <span className={cn('text-[11px] font-black leading-none priority-blink', priorityMeta.className)}>
+                  !
+                </span>
               </span>
             )}
             <span
