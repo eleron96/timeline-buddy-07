@@ -4,6 +4,7 @@ import { usePlannerStore } from '@/store/plannerStore';
 import { Task, TaskPriority } from '@/types/planner';
 import { cn } from '@/lib/utils';
 import { calculateNewDates, calculateResizedDates, formatDateRange, TASK_HEIGHT, TASK_GAP } from '@/utils/dateUtils';
+import { Ban } from 'lucide-react';
 import {
   ContextMenu,
   ContextMenuContent,
@@ -81,10 +82,10 @@ const getBadgeStyle = (color?: string) => {
   return { backgroundColor: background, borderColor: border, color: text };
 };
 
-const priorityStyles: Record<TaskPriority, { className: string; label: string }> = {
-  low: { className: 'text-emerald-600', label: 'Low priority' },
-  medium: { className: 'text-amber-500', label: 'Medium priority' },
-  high: { className: 'text-red-600', label: 'High priority' },
+const priorityStyles: Record<TaskPriority, { className: string; label: string; color: string }> = {
+  low: { className: 'text-emerald-600', label: 'Low priority', color: '#16a34a' },
+  medium: { className: 'text-amber-500', label: 'Medium priority', color: '#f59e0b' },
+  high: { className: 'text-red-600', label: 'High priority', color: '#dc2626' },
 };
 
 export const TaskBar: React.FC<TaskBarProps> = ({
@@ -140,10 +141,16 @@ export const TaskBar: React.FC<TaskBarProps> = ({
   const isDarkBackground = isDarkColor(bgColor);
   const textColor = isDarkBackground ? '#f8fafc' : '#0f172a';
   const statusOutline = isDarkBackground ? 'rgba(248, 250, 252, 0.65)' : 'rgba(15, 23, 42, 0.25)';
-  const priorityBadgeStyle = {
-    backgroundColor: '#ffffff',
-    borderColor: 'rgba(15, 23, 42, 0.2)',
-  };
+  const priorityBadgeStyle = priorityMeta
+    ? {
+        backgroundColor: '#ffffff',
+        borderColor: priorityMeta.color,
+        boxShadow: task.priority === 'high'
+          ? `0 0 0 1px ${priorityMeta.color}, 0 0 8px ${hexToRgba(priorityMeta.color, 0.45) ?? priorityMeta.color}`
+          : `0 0 0 1px ${priorityMeta.color}`,
+      }
+    : undefined;
+  const prioritySymbol = task.priority === 'high' ? '‼' : '!';
   const isFinal = status?.isFinal || false;
   const showTooltip = isHovering && !isDragging && !isResizing;
   
@@ -307,9 +314,7 @@ export const TaskBar: React.FC<TaskBarProps> = ({
               style={{ backgroundColor: statusColor, boxShadow: `0 0 0 1px ${statusOutline}` }}
             />
             {isCancelled && (
-              <span className="text-xs leading-none" aria-label="Cancelled" title="Cancelled">
-                🚫
-              </span>
+              <Ban className="h-3 w-3 text-red-500" aria-label="Cancelled" title="Cancelled" />
             )}
             {priorityMeta && (
               <span
@@ -319,7 +324,7 @@ export const TaskBar: React.FC<TaskBarProps> = ({
                 aria-label={priorityMeta.label}
               >
                 <span className={cn('text-[11px] font-black leading-none priority-blink', priorityMeta.className)}>
-                  !
+                  {prioritySymbol}
                 </span>
               </span>
             )}

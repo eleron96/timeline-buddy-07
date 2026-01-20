@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Textarea } from '@/components/ui/textarea';
+import { RichTextEditor } from '@/components/RichTextEditor';
 import { Badge } from '@/components/ui/badge';
 import { Plus } from 'lucide-react';
 import { format, addDays } from '@/utils/dateUtils';
@@ -233,12 +233,11 @@ export const AddTaskDialog: React.FC<AddTaskDialogProps> = ({ open, onOpenChange
           
           <div className="space-y-2">
             <Label htmlFor="new-description">Description</Label>
-            <Textarea
+            <RichTextEditor
               id="new-description"
               value={description}
-              onChange={(e) => setDescription(e.target.value)}
+              onChange={setDescription}
               placeholder="Add a description..."
-              rows={3}
             />
           </div>
 

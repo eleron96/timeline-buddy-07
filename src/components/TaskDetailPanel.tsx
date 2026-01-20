@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { usePlannerStore } from '@/store/plannerStore';
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
+import { RichTextEditor } from '@/components/RichTextEditor';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -18,7 +18,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Trash2, X } from 'lucide-react';
+import { AlertTriangle, CircleDot, Layers, Trash2, User, X } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Task, TaskPriority } from '@/types/planner';
 import { useAuthStore } from '@/store/authStore';
 import { addYears, format, parseISO } from 'date-fns';
@@ -131,20 +132,16 @@ export const TaskDetailPanel: React.FC = () => {
   
   if (!task) {
     return (
-      <Sheet open={!!selectedTaskId} onOpenChange={(open) => !open && requestClose()}>
-        <SheetContent className="w-[400px] sm:w-[450px]">
-          <SheetHeader>
-            <SheetTitle>Task not found</SheetTitle>
-          </SheetHeader>
-        </SheetContent>
-      </Sheet>
+      <Dialog open={!!selectedTaskId} onOpenChange={(open) => !open && requestClose()}>
+        <DialogContent className="w-[90vw] max-w-[420px]">
+          <DialogHeader>
+            <DialogTitle>Task not found</DialogTitle>
+          </DialogHeader>
+        </DialogContent>
+      </Dialog>
     );
   }
   
-  const project = projects.find(p => p.id === task.projectId);
-  const assignee = assignees.find(a => a.id === task.assigneeId);
-  const status = statuses.find(s => s.id === task.statusId);
-  const taskType = taskTypes.find(t => t.id === task.typeId);
   const isRepeating = Boolean(task.repeatId);
   const hasFutureRepeats = isRepeating
     ? tasks.some((item) => item.repeatId === task.repeatId && item.startDate > task.startDate)
@@ -203,9 +200,9 @@ export const TaskDetailPanel: React.FC = () => {
   
   return (
     <>
-      <Sheet open={!!selectedTaskId} onOpenChange={(open) => !open && requestClose()}>
-        <SheetContent 
-          className="w-[400px] sm:w-[450px] overflow-y-auto"
+      <Dialog open={!!selectedTaskId} onOpenChange={(open) => !open && requestClose()}>
+        <DialogContent
+          className="w-[95vw] max-w-5xl max-h-[85vh] overflow-y-auto pt-10"
           onInteractOutside={(e) => {
             if (shouldIgnoreOutsideInteraction(e.target)) {
               e.preventDefault();
@@ -217,317 +214,350 @@ export const TaskDetailPanel: React.FC = () => {
             }
           }}
         >
-          <SheetHeader className="space-y-1">
-            <div className="flex items-center gap-2">
-              {project && (
-                <div 
-                  className="w-3 h-3 rounded-full flex-shrink-0"
-                  style={{ backgroundColor: project.color }}
-                />
-              )}
-              <SheetTitle className="text-lg">Task Details</SheetTitle>
-            </div>
-          </SheetHeader>
-          
-          <div className="space-y-6 mt-6">
-          {/* Title */}
-          <div className="space-y-2">
-            <Label htmlFor="title">Title</Label>
-            <Input
-              id="title"
-              value={task.title}
-              onChange={(e) => handleUpdate('title', e.target.value)}
-              className="text-base"
-              disabled={isReadOnly}
-            />
-          </div>
-          
-          {/* Project */}
-          <div className="space-y-2">
-            <Label>Project</Label>
-            <Select 
-              value={task.projectId || 'none'} 
-              onValueChange={(v) => handleUpdate('projectId', v === 'none' ? null : v)}
-              disabled={isReadOnly}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select project" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">No Project</SelectItem>
-                {projects.map(p => (
-                  <SelectItem key={p.id} value={p.id}>
-                    <div className="flex items-center gap-2">
-                      <div 
-                        className="w-2.5 h-2.5 rounded-full"
-                        style={{ backgroundColor: p.color }}
-                      />
-                      {p.name}
-                    </div>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          
-          {/* Assignee */}
-          <div className="space-y-2">
-            <Label>Assignee</Label>
-            <Select 
-              value={task.assigneeId || 'none'} 
-              onValueChange={(v) => handleUpdate('assigneeId', v === 'none' ? null : v)}
-              disabled={isReadOnly}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select assignee" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">Unassigned</SelectItem>
-                {assignees.map(a => (
-                  <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          
-          {/* Status */}
-          <div className="space-y-2">
-            <Label>Status</Label>
-            <Select 
-              value={task.statusId} 
-              onValueChange={(v) => handleUpdate('statusId', v)}
-              disabled={isReadOnly}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select status" />
-              </SelectTrigger>
-              <SelectContent>
-                {statuses.map(s => (
-                  <SelectItem key={s.id} value={s.id}>
-                    <div className="flex items-center gap-2">
-                      <div 
-                        className="w-2.5 h-2.5 rounded-full"
-                        style={{ backgroundColor: s.color }}
-                      />
-                      {s.name}
-                    </div>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          
-          {/* Type */}
-          <div className="space-y-2">
-            <Label>Type</Label>
-            <Select 
-              value={task.typeId} 
-              onValueChange={(v) => handleUpdate('typeId', v)}
-              disabled={isReadOnly}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select type" />
-              </SelectTrigger>
-              <SelectContent>
-                {taskTypes.map(t => (
-                  <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* Priority */}
-          <div className="space-y-2">
-            <Label>Priority</Label>
-            <Select
-              value={task.priority ?? 'none'}
-              onValueChange={(value) => handleUpdate('priority', value === 'none' ? null : (value as TaskPriority))}
-              disabled={isReadOnly}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select priority" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">No priority</SelectItem>
-                <SelectItem value="low">Low</SelectItem>
-                <SelectItem value="medium">Medium</SelectItem>
-                <SelectItem value="high">High</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          
-          {/* Dates */}
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="startDate">Start Date</Label>
-              <Input
-                id="startDate"
-                type="date"
-                value={task.startDate}
-                onChange={(e) => handleUpdate('startDate', e.target.value)}
-                disabled={isReadOnly}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="endDate">End Date</Label>
-              <Input
-                id="endDate"
-                type="date"
-                value={task.endDate}
-                onChange={(e) => handleUpdate('endDate', e.target.value)}
-                disabled={isReadOnly}
-              />
-            </div>
-          </div>
-
-          {/* Repeat */}
-          <div className="space-y-2">
-            <Label>Repeat</Label>
-            <div className="grid grid-cols-2 gap-4">
-              <Select
-                value={repeatFrequency}
-                onValueChange={(value) => setRepeatFrequency(value as typeof repeatFrequency)}
-                disabled={isReadOnly}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Repeat" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Does not repeat</SelectItem>
-                  <SelectItem value="daily">Daily</SelectItem>
-                  <SelectItem value="weekly">Weekly</SelectItem>
-                  <SelectItem value="monthly">Monthly</SelectItem>
-                  <SelectItem value="yearly">Yearly</SelectItem>
-                </SelectContent>
-              </Select>
-              <Select
-                value={repeatEnds}
-                onValueChange={(value) => setRepeatEnds(value as typeof repeatEnds)}
-                disabled={isReadOnly || repeatFrequency === 'none'}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Ends" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="never">Never</SelectItem>
-                  <SelectItem value="on">On date</SelectItem>
-                  <SelectItem value="after">After count</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            {repeatFrequency !== 'none' && repeatEnds === 'on' && (
+          <div className="grid gap-6 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
+            <div className="space-y-3">
               <div className="space-y-2">
-                <Label htmlFor="repeat-until">End date</Label>
+                <Label htmlFor="title">Title</Label>
                 <Input
-                  id="repeat-until"
-                  type="date"
-                  value={repeatUntil}
-                  onChange={(e) => setRepeatUntil(e.target.value)}
+                  id="title"
+                  value={task.title}
+                  onChange={(e) => handleUpdate('title', e.target.value)}
+                  className="text-lg font-semibold"
                   disabled={isReadOnly}
                 />
               </div>
-            )}
-            {repeatFrequency !== 'none' && repeatEnds === 'after' && (
+
               <div className="space-y-2">
-                <Label htmlFor="repeat-count">Occurrences</Label>
-                <Input
-                  id="repeat-count"
-                  type="number"
-                  min={1}
-                  value={repeatCount}
-                  onChange={(e) => setRepeatCount(Number(e.target.value))}
+                <Label>Project</Label>
+                <Select
+                  value={task.projectId || 'none'}
+                  onValueChange={(v) => handleUpdate('projectId', v === 'none' ? null : v)}
                   disabled={isReadOnly}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select project" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No Project</SelectItem>
+                    {projects.map(p => (
+                      <SelectItem key={p.id} value={p.id}>
+                        <div className="flex items-center gap-2">
+                          <div
+                            className="w-2.5 h-2.5 rounded-full"
+                            style={{ backgroundColor: p.color }}
+                          />
+                          {p.name}
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="description">Description</Label>
+                <RichTextEditor
+                  id="description"
+                  value={task.description || ''}
+                  onChange={(value) => handleUpdate('description', value || null)}
+                  placeholder="Add a description..."
+                  disabled={isReadOnly}
+                  className="max-h-[45vh] overflow-y-auto pr-2"
                 />
               </div>
-            )}
-            {repeatFrequency !== 'none' && repeatEnds === 'never' && (
-              <p className="text-xs text-muted-foreground">
-                Creates repeats for the next 12 months.
-              </p>
-            )}
-            {repeatError && (
-              <div className="text-sm text-destructive">{repeatError}</div>
-            )}
-            {repeatNotice && (
-              <div className="text-sm text-emerald-600">{repeatNotice}</div>
-            )}
-            <Button
-              type="button"
-              variant="outline"
-              onClick={handleCreateRepeats}
-              disabled={isReadOnly || repeatFrequency === 'none' || repeatCreating}
-            >
-              Create repeats
-            </Button>
-          </div>
-          
-          {/* Tags */}
-          <div className="space-y-2">
-            <Label>Tags</Label>
-            <div className="flex flex-wrap gap-2">
-              {tags.map(tag => {
-                const isSelected = task.tagIds.includes(tag.id);
-                return (
-                  <Badge
-                    key={tag.id}
-                    variant={isSelected ? 'default' : 'outline'}
-                    className={cn(
-                      'transition-all',
-                      isReadOnly ? 'cursor-not-allowed opacity-70' : 'cursor-pointer',
-                    )}
-                    style={isSelected ? { 
-                      backgroundColor: tag.color,
-                      borderColor: tag.color,
-                    } : {
-                      borderColor: tag.color,
-                      color: tag.color,
-                    }}
-                    onClick={canEdit ? () => handleTagToggle(tag.id) : undefined}
+            </div>
+
+            <div className="space-y-3 lg:border-l lg:pl-6">
+              <div className="grid gap-2 sm:grid-cols-2">
+                <div className="flex items-center gap-2">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="flex h-8 w-8 items-center justify-center rounded-md bg-muted/40">
+                        <User className="h-4 w-4 text-muted-foreground" />
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent>Исполнитель</TooltipContent>
+                  </Tooltip>
+                  <div className="flex-1">
+                    <Label className="sr-only">Assignee</Label>
+                    <Select
+                      value={task.assigneeId || 'none'}
+                      onValueChange={(v) => handleUpdate('assigneeId', v === 'none' ? null : v)}
+                      disabled={isReadOnly}
+                    >
+                      <SelectTrigger className="h-8 text-sm">
+                        <SelectValue placeholder="Select assignee" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Unassigned</SelectItem>
+                        {assignees.map(a => (
+                          <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="flex h-8 w-8 items-center justify-center rounded-md bg-muted/40">
+                        <CircleDot className="h-4 w-4 text-muted-foreground" />
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent>Статус</TooltipContent>
+                  </Tooltip>
+                  <div className="flex-1">
+                    <Label className="sr-only">Status</Label>
+                    <Select
+                      value={task.statusId}
+                      onValueChange={(v) => handleUpdate('statusId', v)}
+                      disabled={isReadOnly}
+                    >
+                      <SelectTrigger className="h-8 text-sm">
+                        <SelectValue placeholder="Select status" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {statuses.map(s => (
+                          <SelectItem key={s.id} value={s.id}>
+                            <div className="flex items-center gap-2">
+                              <div
+                                className="w-2.5 h-2.5 rounded-full"
+                                style={{ backgroundColor: s.color }}
+                              />
+                              {s.name}
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="flex h-8 w-8 items-center justify-center rounded-md bg-muted/40">
+                        <Layers className="h-4 w-4 text-muted-foreground" />
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent>Тип</TooltipContent>
+                  </Tooltip>
+                  <div className="flex-1">
+                    <Label className="sr-only">Type</Label>
+                    <Select
+                      value={task.typeId}
+                      onValueChange={(v) => handleUpdate('typeId', v)}
+                      disabled={isReadOnly}
+                    >
+                      <SelectTrigger className="h-8 text-sm">
+                        <SelectValue placeholder="Select type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {taskTypes.map(t => (
+                          <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="flex h-8 w-8 items-center justify-center rounded-md bg-muted/40">
+                        <AlertTriangle className="h-4 w-4 text-muted-foreground" />
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent>Приоритет</TooltipContent>
+                  </Tooltip>
+                  <div className="flex-1">
+                    <Label className="sr-only">Priority</Label>
+                    <Select
+                      value={task.priority ?? 'none'}
+                      onValueChange={(value) => handleUpdate('priority', value === 'none' ? null : (value as TaskPriority))}
+                      disabled={isReadOnly}
+                    >
+                      <SelectTrigger className="h-8 text-sm">
+                        <SelectValue placeholder="Select priority" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">No priority</SelectItem>
+                        <SelectItem value="low">Low</SelectItem>
+                        <SelectItem value="medium">Medium</SelectItem>
+                        <SelectItem value="high">High</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <Label htmlFor="startDate" className="text-xs text-muted-foreground">Start Date</Label>
+                  <Input
+                    id="startDate"
+                    type="date"
+                    value={task.startDate}
+                    onChange={(e) => handleUpdate('startDate', e.target.value)}
+                    disabled={isReadOnly}
+                    className="h-8 text-sm"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="endDate" className="text-xs text-muted-foreground">End Date</Label>
+                  <Input
+                    id="endDate"
+                    type="date"
+                    value={task.endDate}
+                    onChange={(e) => handleUpdate('endDate', e.target.value)}
+                    disabled={isReadOnly}
+                    className="h-8 text-sm"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">Repeat</Label>
+                <div className="grid grid-cols-2 gap-2">
+                  <Select
+                    value={repeatFrequency}
+                    onValueChange={(value) => setRepeatFrequency(value as typeof repeatFrequency)}
+                    disabled={isReadOnly}
                   >
-                    {tag.name}
-                    {isSelected && <X className="w-3 h-3 ml-1" />}
-                  </Badge>
-                );
-              })}
+                    <SelectTrigger className="h-8 text-sm">
+                      <SelectValue placeholder="Repeat" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Does not repeat</SelectItem>
+                      <SelectItem value="daily">Daily</SelectItem>
+                      <SelectItem value="weekly">Weekly</SelectItem>
+                      <SelectItem value="monthly">Monthly</SelectItem>
+                      <SelectItem value="yearly">Yearly</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Select
+                    value={repeatEnds}
+                    onValueChange={(value) => setRepeatEnds(value as typeof repeatEnds)}
+                    disabled={isReadOnly || repeatFrequency === 'none'}
+                  >
+                    <SelectTrigger className="h-8 text-sm">
+                      <SelectValue placeholder="Ends" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="never">Never</SelectItem>
+                      <SelectItem value="on">On date</SelectItem>
+                      <SelectItem value="after">After count</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                {repeatFrequency !== 'none' && repeatEnds === 'on' && (
+                  <div className="space-y-1">
+                    <Label htmlFor="repeat-until" className="text-xs text-muted-foreground">End date</Label>
+                    <Input
+                      id="repeat-until"
+                      type="date"
+                      value={repeatUntil}
+                      onChange={(e) => setRepeatUntil(e.target.value)}
+                      disabled={isReadOnly}
+                      className="h-8 text-sm"
+                    />
+                  </div>
+                )}
+                {repeatFrequency !== 'none' && repeatEnds === 'after' && (
+                  <div className="space-y-1">
+                    <Label htmlFor="repeat-count" className="text-xs text-muted-foreground">Occurrences</Label>
+                    <Input
+                      id="repeat-count"
+                      type="number"
+                      min={1}
+                      value={repeatCount}
+                      onChange={(e) => setRepeatCount(Number(e.target.value))}
+                      disabled={isReadOnly}
+                      className="h-8 text-sm"
+                    />
+                  </div>
+                )}
+                {repeatFrequency !== 'none' && repeatEnds === 'never' && (
+                  <p className="text-[11px] text-muted-foreground">
+                    Creates repeats for the next 12 months.
+                  </p>
+                )}
+                {repeatError && (
+                  <div className="text-xs text-destructive">{repeatError}</div>
+                )}
+                {repeatNotice && (
+                  <div className="text-xs text-emerald-600">{repeatNotice}</div>
+                )}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8"
+                  onClick={handleCreateRepeats}
+                  disabled={isReadOnly || repeatFrequency === 'none' || repeatCreating}
+                >
+                  Create repeats
+                </Button>
+              </div>
+
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">Tags</Label>
+                <div className="flex flex-wrap gap-1.5">
+                  {tags.map(tag => {
+                    const isSelected = task.tagIds.includes(tag.id);
+                    return (
+                      <Badge
+                        key={tag.id}
+                        variant={isSelected ? 'default' : 'outline'}
+                        className={cn(
+                          'transition-all text-xs px-2 py-0.5',
+                          isReadOnly ? 'cursor-not-allowed opacity-70' : 'cursor-pointer',
+                        )}
+                        style={isSelected ? {
+                          backgroundColor: tag.color,
+                          borderColor: tag.color,
+                        } : {
+                          borderColor: tag.color,
+                          color: tag.color,
+                        }}
+                        onClick={canEdit ? () => handleTagToggle(tag.id) : undefined}
+                      >
+                        {tag.name}
+                        {isSelected && <X className="w-3 h-3 ml-1" />}
+                      </Badge>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="pt-3 border-t border-border">
+                <div className="grid grid-cols-2 gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8"
+                    onClick={() => duplicateTask(task.id)}
+                    disabled={isReadOnly}
+                  >
+                    Duplicate
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    className="h-8"
+                    onClick={handleDelete}
+                    disabled={isReadOnly}
+                  >
+                    <Trash2 className="w-4 h-4 mr-2" />
+                    Delete
+                  </Button>
+                </div>
+              </div>
             </div>
           </div>
-          
-          {/* Description */}
-          <div className="space-y-2">
-            <Label htmlFor="description">Description</Label>
-            <Textarea
-              id="description"
-              value={task.description || ''}
-              onChange={(e) => handleUpdate('description', e.target.value)}
-              placeholder="Add a description..."
-              rows={4}
-              disabled={isReadOnly}
-            />
-          </div>
-          
-          {/* Actions */}
-          <div className="pt-4 border-t border-border space-y-2">
-            <Button
-              variant="outline"
-              className="w-full"
-              onClick={() => duplicateTask(task.id)}
-              disabled={isReadOnly}
-            >
-              Duplicate Task
-            </Button>
-            <Button 
-              variant="destructive" 
-              className="w-full"
-              onClick={handleDelete}
-              disabled={isReadOnly}
-            >
-              <Trash2 className="w-4 h-4 mr-2" />
-              Delete Task
-            </Button>
-          </div>
-          </div>
-        </SheetContent>
-      </Sheet>
+        </DialogContent>
+      </Dialog>
       <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
