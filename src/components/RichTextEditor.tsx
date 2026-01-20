@@ -184,8 +184,8 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
   const handleImageFile = useCallback((file: File) => {
     if (!file.type.startsWith('image/')) return;
     if (file.size > MAX_IMAGE_SIZE) {
-      toast('File too large', {
-        description: 'Max image size is 5 MB.',
+      toast('Слишком большой файл', {
+        description: 'Максимальный размер изображения — 5 МБ.',
       });
       return;
     }
@@ -195,7 +195,7 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
       insertImage(reader.result, file.name || 'Image');
     };
     reader.onerror = () => {
-      toast('Failed to load image');
+      toast('Не удалось загрузить изображение');
     };
     reader.readAsDataURL(file);
   }, [insertImage]);
