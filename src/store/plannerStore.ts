@@ -23,6 +23,7 @@ type TaskRow = {
   title: string;
   project_id: string | null;
   assignee_id: string | null;
+  assignee_ids: string[] | null;
   start_date: string;
   end_date: string;
   status_id: string;
@@ -88,7 +89,7 @@ interface PlannerStore extends PlannerState {
   refreshAssignees: () => Promise<void>;
   reset: () => void;
 
-  addTask: (task: Omit<Task, 'id'>) => Promise<void>;
+  addTask: (task: Omit<Task, 'id'>) => Promise<Task | null>;
   updateTask: (id: string, updates: Partial<Task>) => Promise<void>;
   deleteTask: (id: string) => Promise<void>;
   duplicateTask: (id: string) => Promise<void>;
@@ -140,11 +141,23 @@ const initialFilters: Filters = {
   hideUnassigned: false,
 };
 
+const normalizeAssigneeIds = (assigneeIds: string[] | null | undefined, legacyId: string | null | undefined) => {
+  const combined = [
+    ...(assigneeIds ?? []),
+    ...(legacyId ? [legacyId] : []),
+  ];
+  return Array.from(new Set(combined.filter(Boolean)));
+};
+
+const uniqueAssigneeIds = (assigneeIds: string[] | null | undefined) => (
+  Array.from(new Set((assigneeIds ?? []).filter(Boolean)))
+);
+
 const mapTaskRow = (row: TaskRow): Task => ({
   id: row.id,
   title: row.title,
   projectId: row.project_id,
-  assigneeId: row.assignee_id,
+  assigneeIds: normalizeAssigneeIds(row.assignee_ids, row.assignee_id),
   startDate: row.start_date,
   endDate: row.end_date,
   statusId: row.status_id,
@@ -197,7 +210,11 @@ const mapTaskUpdates = (updates: Partial<Task>) => {
   const payload: Record<string, unknown> = {};
   if ('title' in updates) payload.title = updates.title;
   if ('projectId' in updates) payload.project_id = updates.projectId;
-  if ('assigneeId' in updates) payload.assignee_id = updates.assigneeId;
+  if ('assigneeIds' in updates) {
+    const ids = uniqueAssigneeIds(updates.assigneeIds);
+    payload.assignee_ids = ids;
+    payload.assignee_id = ids[0] ?? null;
+  }
   if ('startDate' in updates) payload.start_date = updates.startDate;
   if ('endDate' in updates) payload.end_date = updates.endDate;
   if ('statusId' in updates) payload.status_id = updates.statusId;
@@ -278,7 +295,7 @@ export const usePlannerStore = create<PlannerStore>()(
         const taskRows = (tasksRes.data ?? []) as TaskRow[];
         const assigneeRows = (assigneesRes.data ?? []) as AssigneeRow[];
         const taskAssigneeIds = new Set(
-          taskRows.map((row) => row.assignee_id).filter((id): id is string => Boolean(id)),
+          taskRows.flatMap((row) => normalizeAssigneeIds(row.assignee_ids, row.assignee_id)),
         );
 
         const assignees = assigneeRows
@@ -312,7 +329,7 @@ export const usePlannerStore = create<PlannerStore>()(
         }
 
         const taskAssigneeIds = new Set(
-          get().tasks.map((task) => task.assigneeId).filter((id): id is string => Boolean(id)),
+          get().tasks.flatMap((task) => task.assigneeIds),
         );
 
         const assignees = (data ?? [])
@@ -325,7 +342,9 @@ export const usePlannerStore = create<PlannerStore>()(
 
       addTask: async (task) => {
         const workspaceId = get().workspaceId;
-        if (!workspaceId) return;
+        if (!workspaceId) return null;
+
+        const assigneeIds = uniqueAssigneeIds(task.assigneeIds);
 
         const { data, error } = await supabase
           .from('tasks')
@@ -333,7 +352,8 @@ export const usePlannerStore = create<PlannerStore>()(
             workspace_id: workspaceId,
             title: task.title,
             project_id: task.projectId,
-            assignee_id: task.assigneeId,
+            assignee_id: assigneeIds[0] ?? null,
+            assignee_ids: assigneeIds,
             start_date: task.startDate,
             end_date: task.endDate,
             status_id: task.statusId,
@@ -348,10 +368,12 @@ export const usePlannerStore = create<PlannerStore>()(
 
         if (error || !data) {
           console.error(error);
-          return;
+          return null;
         }
 
-        set((state) => ({ tasks: [...state.tasks, mapTaskRow(data as TaskRow)] }));
+        const mapped = mapTaskRow(data as TaskRow);
+        set((state) => ({ tasks: [...state.tasks, mapped] }));
+        return mapped;
       },
 
       updateTask: async (id, updates) => {
@@ -414,7 +436,7 @@ export const usePlannerStore = create<PlannerStore>()(
         await get().addTask({
           title: task.title,
           projectId: task.projectId,
-          assigneeId: task.assigneeId,
+          assigneeIds: [...task.assigneeIds],
           startDate: format(newStart, 'yyyy-MM-dd'),
           endDate: format(newEnd, 'yyyy-MM-dd'),
           statusId: task.statusId,
@@ -427,10 +449,29 @@ export const usePlannerStore = create<PlannerStore>()(
       },
 
       createRepeats: async (id, options) => {
-        const task = get().tasks.find((item) => item.id === id);
         const workspaceId = get().workspaceId;
-        if (!task) return { error: 'Task not found.' };
         if (!workspaceId) return { error: 'Workspace not selected.' };
+        let task = get().tasks.find((item) => item.id === id);
+        if (!task) {
+          const { data, error } = await supabase
+            .from('tasks')
+            .select('*')
+            .eq('id', id)
+            .eq('workspace_id', workspaceId)
+            .single();
+
+          if (error || !data) {
+            return { error: error?.message ?? 'Task not found.' };
+          }
+
+          const fetchedTask = mapTaskRow(data as TaskRow);
+          task = fetchedTask;
+          set((state) => (
+            state.tasks.some((item) => item.id === fetchedTask.id)
+              ? state
+              : { tasks: [...state.tasks, fetchedTask] }
+          ));
+        }
 
         const repeatId = task.repeatId ?? (typeof crypto !== 'undefined' && crypto.randomUUID
           ? crypto.randomUUID()
@@ -458,6 +499,18 @@ export const usePlannerStore = create<PlannerStore>()(
         const baseStart = parseISO(task.startDate);
         const baseEnd = parseISO(task.endDate);
         const duration = differenceInDays(baseEnd, baseStart) + 1;
+        const assigneeIds = uniqueAssigneeIds(task.assigneeIds);
+        const { data: existingRepeats, error: existingRepeatsError } = await supabase
+          .from('tasks')
+          .select('start_date')
+          .eq('workspace_id', workspaceId)
+          .eq('repeat_id', repeatId);
+        if (existingRepeatsError) {
+          console.error(existingRepeatsError);
+        }
+        const existingRepeatDates = new Set(
+          (existingRepeats ?? []).map((item: { start_date: string }) => item.start_date),
+        );
         const endsMode = options.ends;
         const targetCount = options.count && options.count > 0 ? options.count : 0;
         const untilDate = options.untilDate ? parseISO(options.untilDate) : null;
@@ -483,6 +536,7 @@ export const usePlannerStore = create<PlannerStore>()(
           title: string;
           project_id: string | null;
           assignee_id: string | null;
+          assignee_ids: string[];
           start_date: string;
           end_date: string;
           status_id: string;
@@ -499,13 +553,19 @@ export const usePlannerStore = create<PlannerStore>()(
           if (endsMode === 'on' && untilDate && nextStart > untilDate) break;
           if (endsMode === 'never' && nextStart > neverHorizon) break;
 
+          const startDate = format(nextStart, 'yyyy-MM-dd');
+          if (existingRepeatDates.has(startDate)) {
+            continue;
+          }
+          existingRepeatDates.add(startDate);
           const nextEnd = addDays(nextStart, Math.max(0, duration - 1));
           newTasks.push({
             workspace_id: workspaceId,
             title: task.title,
             project_id: task.projectId,
-            assignee_id: task.assigneeId,
-            start_date: format(nextStart, 'yyyy-MM-dd'),
+            assignee_id: assigneeIds[0] ?? null,
+            assignee_ids: [...assigneeIds],
+            start_date: startDate,
             end_date: format(nextEnd, 'yyyy-MM-dd'),
             status_id: task.statusId,
             type_id: task.typeId,
@@ -542,7 +602,7 @@ export const usePlannerStore = create<PlannerStore>()(
 
       reassignTask: async (id, assigneeId, projectId) => {
         await get().updateTask(id, {
-          assigneeId,
+          assigneeIds: assigneeId ? [assigneeId] : [],
           ...(projectId !== undefined ? { projectId } : {}),
         });
       },
@@ -712,7 +772,11 @@ export const usePlannerStore = create<PlannerStore>()(
 
         set((state) => ({
           assignees: state.assignees.filter((assignee) => assignee.id !== id),
-          tasks: state.tasks.map((task) => task.assigneeId === id ? { ...task, assigneeId: null } : task),
+          tasks: state.tasks.map((task) => (
+            task.assigneeIds.includes(id)
+              ? { ...task, assigneeIds: task.assigneeIds.filter((assigneeId) => assigneeId !== id) }
+              : task
+          )),
         }));
       },
 

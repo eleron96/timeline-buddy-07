@@ -127,10 +127,10 @@ export const TimelineGrid: React.FC = () => {
         return false;
       }
       if (filters.assigneeIds.length > 0) {
-        if (!task.assigneeId || !filters.assigneeIds.includes(task.assigneeId)) {
+        if (!task.assigneeIds.some((id) => filters.assigneeIds.includes(id))) {
           return false;
         }
-      } else if (filters.hideUnassigned && !task.assigneeId) {
+      } else if (filters.hideUnassigned && task.assigneeIds.length === 0) {
         return false;
       }
       if (filters.statusIds.length > 0 && !filters.statusIds.includes(task.statusId)) {
@@ -176,11 +176,25 @@ export const TimelineGrid: React.FC = () => {
     });
     tasksPerGroup['unassigned'] = [];
     
+    const visibleGroupIds = new Set(groupItems.map((item) => item.id));
+
     filteredTasks.forEach(task => {
-      const groupId = groupMode === 'assignee' 
-        ? (task.assigneeId || 'unassigned')
-        : (task.projectId || 'unassigned');
-      
+      if (groupMode === 'assignee') {
+        const matchingAssignees = Array.from(new Set(task.assigneeIds)).filter((id) => visibleGroupIds.has(id));
+        if (matchingAssignees.length === 0) {
+          tasksPerGroup['unassigned'].push(task);
+          return;
+        }
+        matchingAssignees.forEach((assigneeId) => {
+          if (!tasksPerGroup[assigneeId]) {
+            tasksPerGroup[assigneeId] = [];
+          }
+          tasksPerGroup[assigneeId].push(task);
+        });
+        return;
+      }
+
+      const groupId = task.projectId || 'unassigned';
       if (!tasksPerGroup[groupId]) {
         tasksPerGroup[groupId] = [];
       }

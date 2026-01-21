@@ -55,10 +55,10 @@ export const CalendarTimeline: React.FC = () => {
         return false;
       }
       if (filters.assigneeIds.length > 0) {
-        if (!task.assigneeId || !filters.assigneeIds.includes(task.assigneeId)) {
+        if (!task.assigneeIds.some((id) => filters.assigneeIds.includes(id))) {
           return false;
         }
-      } else if (filters.hideUnassigned && !task.assigneeId) {
+      } else if (filters.hideUnassigned && task.assigneeIds.length === 0) {
         return false;
       }
       if (filters.statusIds.length > 0 && !filters.statusIds.includes(task.statusId)) {
@@ -117,7 +117,7 @@ export const CalendarTimeline: React.FC = () => {
         const key = format(day, 'yyyy-MM-dd');
         const entry = counts.get(key) ?? { total: 0, mine: 0 };
         entry.total += 1;
-        if (myAssigneeId && task.assigneeId === myAssigneeId) {
+        if (myAssigneeId && task.assigneeIds.includes(myAssigneeId)) {
           entry.mine += 1;
         }
         counts.set(key, entry);

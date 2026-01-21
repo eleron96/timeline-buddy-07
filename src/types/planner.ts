@@ -4,7 +4,7 @@ export interface Task {
   id: string;
   title: string;
   projectId: string | null;
-  assigneeId: string | null;
+  assigneeIds: string[];
   startDate: string; // ISO date
   endDate: string; // ISO date
   statusId: string;

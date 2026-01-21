@@ -2,10 +2,13 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { usePlannerStore } from '@/store/plannerStore';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { RichTextEditor } from '@/components/RichTextEditor';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -18,11 +21,11 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { AlertTriangle, CircleDot, Layers, Trash2, User, X } from 'lucide-react';
+import { AlertTriangle, ChevronDown, CircleDot, Layers, RotateCw, Trash2, User, X } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Task, TaskPriority } from '@/types/planner';
 import { useAuthStore } from '@/store/authStore';
-import { addYears, format, parseISO } from 'date-fns';
+import { addDays, endOfMonth, format, isSameMonth, isSameYear, parseISO } from 'date-fns';
 
 const areArraysEqual = (left: string[], right: string[]) => {
   if (left.length !== right.length) return false;
@@ -32,7 +35,7 @@ const areArraysEqual = (left: string[], right: string[]) => {
 const areTasksEqual = (left: Task, right: Task) => (
   left.title === right.title &&
   left.projectId === right.projectId &&
-  left.assigneeId === right.assigneeId &&
+  areArraysEqual(left.assigneeIds, right.assigneeIds) &&
   left.statusId === right.statusId &&
   left.typeId === right.typeId &&
   left.priority === right.priority &&
@@ -68,6 +71,8 @@ export const TaskDetailPanel: React.FC = () => {
   const isReadOnly = !canEdit;
 
   const originalTaskRef = useRef<Task | null>(null);
+  const repeatInFlightRef = useRef(false);
+  const repeatUntilAutoRef = useRef(true);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [repeatFrequency, setRepeatFrequency] = useState<'none' | 'daily' | 'weekly' | 'monthly' | 'yearly'>('none');
   const [repeatEnds, setRepeatEnds] = useState<'never' | 'on' | 'after'>('never');
@@ -87,25 +92,71 @@ export const TaskDetailPanel: React.FC = () => {
     }
     if (originalTaskRef.current?.id === selectedTaskId) return;
     if (task) {
-      originalTaskRef.current = { ...task, tagIds: [...task.tagIds] };
+      originalTaskRef.current = {
+        ...task,
+        assigneeIds: [...task.assigneeIds],
+        tagIds: [...task.tagIds],
+      };
     }
   }, [selectedTaskId, task]);
+
+  const getDefaultRepeatUntil = (baseDate: string) => {
+    const start = parseISO(baseDate);
+    const next = addDays(start, 1);
+    if (isSameMonth(next, start) && isSameYear(next, start)) {
+      return format(next, 'yyyy-MM-dd');
+    }
+    return format(endOfMonth(start), 'yyyy-MM-dd');
+  };
 
   useEffect(() => {
     if (!task) return;
     setRepeatFrequency('none');
     setRepeatEnds('never');
-    setRepeatUntil(format(addYears(parseISO(task.startDate), 1), 'yyyy-MM-dd'));
+    repeatUntilAutoRef.current = true;
+    setRepeatUntil(getDefaultRepeatUntil(task.startDate));
     setRepeatCount(4);
     setRepeatError('');
     setRepeatNotice('');
     setRepeatCreating(false);
   }, [task?.id]);
 
+  useEffect(() => {
+    if (!task) return;
+    if (repeatFrequency === 'none' || repeatEnds !== 'on') return;
+    if (!repeatUntilAutoRef.current) return;
+    setRepeatUntil(getDefaultRepeatUntil(task.startDate));
+  }, [repeatEnds, repeatFrequency, task?.startDate]);
+
+  const handleRepeatFrequencyChange = (value: typeof repeatFrequency) => {
+    setRepeatFrequency(value);
+    if (value === 'none') return;
+    if (repeatEnds === 'on' && task) {
+      repeatUntilAutoRef.current = true;
+      setRepeatUntil(getDefaultRepeatUntil(task.startDate));
+    }
+  };
+
+  const handleRepeatEndsChange = (value: typeof repeatEnds) => {
+    setRepeatEnds(value);
+    if (value !== 'on' || !task) return;
+    repeatUntilAutoRef.current = true;
+    setRepeatUntil(getDefaultRepeatUntil(task.startDate));
+  };
+
   const isDirty = useMemo(() => {
     if (!task || !originalTaskRef.current) return false;
     return !areTasksEqual(originalTaskRef.current, task);
   }, [task]);
+
+  const assigneeLabel = useMemo(() => {
+    if (!task || task.assigneeIds.length === 0) return 'Unassigned';
+    const selected = assignees
+      .filter((assignee) => task.assigneeIds.includes(assignee.id))
+      .map((assignee) => assignee.name);
+    if (selected.length === 1 && task.assigneeIds.length === 1) return selected[0];
+    return `${task.assigneeIds.length} assignees`;
+  }, [assignees, task]);
 
   const requestClose = () => {
     if (!isDirty) {
@@ -151,6 +202,18 @@ export const TaskDetailPanel: React.FC = () => {
     if (!canEdit) return;
     updateTask(task.id, { [field]: value } as Partial<Task>);
   };
+
+  const handleAssigneeToggle = (assigneeId: string) => {
+    if (!canEdit) return;
+    const next = task.assigneeIds.includes(assigneeId)
+      ? task.assigneeIds.filter((id) => id !== assigneeId)
+      : [...task.assigneeIds, assigneeId];
+    const order = new Map(assignees.map((assignee, index) => [assignee.id, index]));
+    const sorted = [...new Set(next)].sort((left, right) => (
+      (order.get(left) ?? 0) - (order.get(right) ?? 0)
+    ));
+    updateTask(task.id, { assigneeIds: sorted });
+  };
   
   const handleTagToggle = (tagId: string) => {
     if (!canEdit) return;
@@ -167,18 +230,23 @@ export const TaskDetailPanel: React.FC = () => {
 
   const handleCreateRepeats = async () => {
     if (!canEdit) return;
+    if (repeatInFlightRef.current) return;
+    repeatInFlightRef.current = true;
     setRepeatError('');
     setRepeatNotice('');
     if (repeatFrequency === 'none') {
       setRepeatError('Select a repeat schedule.');
+      repeatInFlightRef.current = false;
       return;
     }
     if (repeatEnds === 'after' && (!repeatCount || repeatCount < 1)) {
       setRepeatError('Enter how many repeats to create.');
+      repeatInFlightRef.current = false;
       return;
     }
     if (repeatEnds === 'on' && !repeatUntil) {
       setRepeatError('Select an end date.');
+      repeatInFlightRef.current = false;
       return;
     }
 
@@ -189,6 +257,7 @@ export const TaskDetailPanel: React.FC = () => {
       untilDate: repeatEnds === 'on' ? repeatUntil : undefined,
       count: repeatEnds === 'after' ? repeatCount : undefined,
     });
+    repeatInFlightRef.current = false;
     if (result.error) {
       setRepeatError(result.error);
       setRepeatCreating(false);
@@ -218,13 +287,21 @@ export const TaskDetailPanel: React.FC = () => {
             <div className="space-y-3">
               <div className="space-y-2">
                 <Label htmlFor="title">Title</Label>
-                <Input
-                  id="title"
-                  value={task.title}
-                  onChange={(e) => handleUpdate('title', e.target.value)}
-                  className="text-lg font-semibold"
-                  disabled={isReadOnly}
-                />
+                <div className="space-y-1.5">
+                  <Input
+                    id="title"
+                    value={task.title}
+                    onChange={(e) => handleUpdate('title', e.target.value)}
+                    className="text-lg font-semibold"
+                    disabled={isReadOnly}
+                  />
+                  {task.repeatId && (
+                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <RotateCw className="h-3 w-3" aria-hidden="true" />
+                      <span>Repeat</span>
+                    </div>
+                  )}
+                </div>
               </div>
 
               <div className="space-y-2">
@@ -276,25 +353,38 @@ export const TaskDetailPanel: React.FC = () => {
                         <User className="h-4 w-4 text-muted-foreground" />
                       </span>
                     </TooltipTrigger>
-                    <TooltipContent>Исполнитель</TooltipContent>
+                    <TooltipContent>Исполнители</TooltipContent>
                   </Tooltip>
                   <div className="flex-1">
-                    <Label className="sr-only">Assignee</Label>
-                    <Select
-                      value={task.assigneeId || 'none'}
-                      onValueChange={(v) => handleUpdate('assigneeId', v === 'none' ? null : v)}
-                      disabled={isReadOnly}
-                    >
-                      <SelectTrigger className="h-8 text-sm">
-                        <SelectValue placeholder="Select assignee" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">Unassigned</SelectItem>
-                        {assignees.map(a => (
-                          <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <Label className="sr-only">Assignees</Label>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button variant="outline" className="h-8 w-full justify-between text-sm" disabled={isReadOnly}>
+                          <span className="truncate">{assigneeLabel}</span>
+                          <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-64 p-2" align="start">
+                        {assignees.length === 0 ? (
+                          <div className="text-xs text-muted-foreground">Нет доступных исполнителей.</div>
+                        ) : (
+                          <ScrollArea className="max-h-48 pr-2">
+                            <div className="space-y-1">
+                              {assignees.map((assignee) => (
+                                <label key={assignee.id} className="flex items-center gap-2 py-1 cursor-pointer">
+                                  <Checkbox
+                                    checked={task.assigneeIds.includes(assignee.id)}
+                                    onCheckedChange={() => handleAssigneeToggle(assignee.id)}
+                                    disabled={isReadOnly}
+                                  />
+                                  <span className="text-sm truncate">{assignee.name}</span>
+                                </label>
+                              ))}
+                            </div>
+                          </ScrollArea>
+                        )}
+                      </PopoverContent>
+                    </Popover>
                   </div>
                 </div>
 
@@ -422,7 +512,7 @@ export const TaskDetailPanel: React.FC = () => {
                 <div className="grid grid-cols-2 gap-2">
                   <Select
                     value={repeatFrequency}
-                    onValueChange={(value) => setRepeatFrequency(value as typeof repeatFrequency)}
+                    onValueChange={(value) => handleRepeatFrequencyChange(value as typeof repeatFrequency)}
                     disabled={isReadOnly}
                   >
                     <SelectTrigger className="h-8 text-sm">
@@ -438,7 +528,7 @@ export const TaskDetailPanel: React.FC = () => {
                   </Select>
                   <Select
                     value={repeatEnds}
-                    onValueChange={(value) => setRepeatEnds(value as typeof repeatEnds)}
+                    onValueChange={(value) => handleRepeatEndsChange(value as typeof repeatEnds)}
                     disabled={isReadOnly || repeatFrequency === 'none'}
                   >
                     <SelectTrigger className="h-8 text-sm">
@@ -458,7 +548,10 @@ export const TaskDetailPanel: React.FC = () => {
                       id="repeat-until"
                       type="date"
                       value={repeatUntil}
-                      onChange={(e) => setRepeatUntil(e.target.value)}
+                      onChange={(e) => {
+                        repeatUntilAutoRef.current = false;
+                        setRepeatUntil(e.target.value);
+                      }}
                       disabled={isReadOnly}
                       className="h-8 text-sm"
                     />
@@ -531,6 +624,19 @@ export const TaskDetailPanel: React.FC = () => {
                 </div>
               </div>
 
+              <div className="flex justify-end pt-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 text-destructive hover:text-destructive"
+                  onClick={handleDelete}
+                  disabled={isReadOnly}
+                >
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  Delete
+                </Button>
+              </div>
+
               <div className="pt-3 border-t border-border">
                 <div className="grid grid-cols-2 gap-2">
                   <Button
@@ -543,14 +649,12 @@ export const TaskDetailPanel: React.FC = () => {
                     Duplicate
                   </Button>
                   <Button
-                    variant="destructive"
+                    variant="default"
                     size="sm"
                     className="h-8"
-                    onClick={handleDelete}
-                    disabled={isReadOnly}
+                    onClick={handleSaveAndClose}
                   >
-                    <Trash2 className="w-4 h-4 mr-2" />
-                    Delete
+                    OK
                   </Button>
                 </div>
               </div>

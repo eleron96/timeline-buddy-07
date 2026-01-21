@@ -4,7 +4,7 @@ import { usePlannerStore } from '@/store/plannerStore';
 import { Task, TaskPriority } from '@/types/planner';
 import { cn } from '@/lib/utils';
 import { calculateNewDates, calculateResizedDates, formatDateRange, TASK_HEIGHT, TASK_GAP } from '@/utils/dateUtils';
-import { Ban } from 'lucide-react';
+import { Ban, RotateCw } from 'lucide-react';
 import {
   ContextMenu,
   ContextMenuContent,
@@ -124,7 +124,10 @@ export const TaskBar: React.FC<TaskBarProps> = ({
   const project = projects.find(p => p.id === task.projectId);
   const status = statuses.find(s => s.id === task.statusId);
   const taskType = taskTypes.find(t => t.id === task.typeId);
-  const assignee = assignees.find(a => a.id === task.assigneeId);
+  const assignedAssignees = assignees.filter((assignee) => task.assigneeIds.includes(assignee.id));
+  const assigneeLabel = assignedAssignees.length === 0
+    ? 'Unassigned'
+    : assignedAssignees.map((assignee) => assignee.name).join(', ');
   const isSelected = selectedTaskId === task.id;
   const priorityMeta = task.priority ? priorityStyles[task.priority] : null;
   const isCancelled = status
@@ -287,7 +290,7 @@ export const TaskBar: React.FC<TaskBarProps> = ({
             }
           }}
           className={cn(
-            'task-bar absolute flex items-center px-2 overflow-hidden select-none',
+            'task-bar absolute flex flex-col justify-center px-2 py-0.5 overflow-hidden select-none',
             isDragging && 'dragging z-50',
             isResizing && 'z-50',
             isSelected && 'ring-2 ring-primary ring-offset-1',
@@ -308,31 +311,47 @@ export const TaskBar: React.FC<TaskBarProps> = ({
           />
           
           {/* Task content */}
-          <div className="flex items-center gap-2 min-w-0 flex-1">
-            <span
-              className="inline-flex h-4 w-1.5 flex-shrink-0 rounded-[2px]"
-              style={{ backgroundColor: statusColor, boxShadow: `0 0 0 1px ${statusOutline}` }}
-            />
-            {isCancelled && (
-              <Ban className="h-3 w-3 text-red-500" aria-label="Cancelled" title="Cancelled" />
-            )}
-            {priorityMeta && (
+          <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+            <div className="flex items-center gap-2 min-w-0">
               <span
-                className="inline-flex h-4 w-4 items-center justify-center rounded-full border shadow-[0_0_0_1px_rgba(0,0,0,0.06)]"
-                style={priorityBadgeStyle}
-                title={priorityMeta.label}
-                aria-label={priorityMeta.label}
-              >
-                <span className={cn('text-[11px] font-black leading-none priority-blink', priorityMeta.className)}>
-                  {prioritySymbol}
+                className="inline-flex h-4 w-1.5 flex-shrink-0 rounded-[2px]"
+                style={{ backgroundColor: statusColor, boxShadow: `0 0 0 1px ${statusOutline}` }}
+              />
+              {isCancelled && (
+                <Ban className="h-3 w-3 text-red-500" aria-label="Cancelled" title="Cancelled" />
+              )}
+              {isRepeating && (
+                <RotateCw
+                  className="h-3 w-3 opacity-80"
+                  style={{ color: textColor }}
+                  aria-label="Repeat"
+                  title="Repeat"
+                />
+              )}
+              {priorityMeta && (
+                <span
+                  className="inline-flex h-4 w-4 items-center justify-center rounded-full border shadow-[0_0_0_1px_rgba(0,0,0,0.06)]"
+                  style={priorityBadgeStyle}
+                  title={priorityMeta.label}
+                  aria-label={priorityMeta.label}
+                >
+                  <span className={cn('text-[11px] font-black leading-none priority-blink', priorityMeta.className)}>
+                    {prioritySymbol}
+                  </span>
                 </span>
+              )}
+              <span
+                className={cn('task-label text-sm font-semibold leading-tight truncate', isFinal && 'line-through')}
+                style={{ color: textColor }}
+              >
+                {task.title}
               </span>
-            )}
+            </div>
             <span
-              className={cn('task-label text-sm font-semibold leading-tight truncate', isFinal && 'line-through')}
-              style={{ color: textColor }}
+              className="text-[11px] leading-tight truncate"
+              style={{ color: isDarkBackground ? 'rgba(248,250,252,0.8)' : 'rgba(15,23,42,0.7)' }}
             >
-              {task.title}
+              {project?.name || 'No Project'}
             </span>
           </div>
           
@@ -397,8 +416,14 @@ export const TaskBar: React.FC<TaskBarProps> = ({
             <div className="text-xs text-muted-foreground">
               {formatDateRange(task.startDate, task.endDate)}
             </div>
+            {isRepeating && (
+              <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                <RotateCw className="h-3 w-3" aria-hidden="true" />
+                <span>Repeat</span>
+              </div>
+            )}
             <div className="text-xs text-muted-foreground">
-              Assignee: <span className="text-foreground font-medium">{assignee?.name ?? 'Unassigned'}</span>
+              Assignees: <span className="text-foreground font-medium">{assigneeLabel}</span>
             </div>
             <div className="flex flex-wrap gap-1">
               {status && (

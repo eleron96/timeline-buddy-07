@@ -23,7 +23,7 @@ import { ViewMode } from '@/types/planner';
 export const DAY_WIDTH = 120; // pixels per day in day view
 export const WEEK_DAY_WIDTH = 48; // pixels per day in week view
 export const MIN_ROW_HEIGHT = 56; // minimum pixels per row
-export const TASK_HEIGHT = 28; // height of task bar
+export const TASK_HEIGHT = 40; // height of task bar
 export const TASK_GAP = 4; // gap between stacked tasks
 export const HEADER_HEIGHT = 96; // pixels for timeline header
 export const SIDEBAR_WIDTH = 200; // pixels for left sidebar
