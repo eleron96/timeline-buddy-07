@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -12,7 +13,8 @@ interface AccountSettingsDialogProps {
 }
 
 export const AccountSettingsDialog: React.FC<AccountSettingsDialogProps> = ({ open, onOpenChange }) => {
-  const { user, updateDisplayName, signOut } = useAuthStore();
+  const { user, updateDisplayName, signOut, currentWorkspaceRole, isReserveAdmin } = useAuthStore();
+  const navigate = useNavigate();
   const [displayName, setDisplayName] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -53,6 +55,8 @@ export const AccountSettingsDialog: React.FC<AccountSettingsDialogProps> = ({ op
     ?? user?.user_metadata?.name
     ?? user?.id
     ?? 'Unknown user';
+
+  const isAdmin = currentWorkspaceRole === 'admin' || isReserveAdmin;
 
   const handleSave = async () => {
     if (!user) return;
@@ -101,6 +105,18 @@ export const AccountSettingsDialog: React.FC<AccountSettingsDialogProps> = ({ op
           <Button onClick={handleSave} disabled={!user || loading}>
             Save
           </Button>
+          {isAdmin && (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                onOpenChange(false);
+                navigate('/admin/users');
+              }}
+            >
+              Admin users
+            </Button>
+          )}
           <Button
             type="button"
             variant="outline"

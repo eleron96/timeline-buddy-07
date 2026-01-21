@@ -14,6 +14,7 @@ import { useAuthStore } from '@/store/authStore';
 import { WorkspaceSwitcher } from '@/components/WorkspaceSwitcher';
 import { Filters } from '@/types/planner';
 import { format } from 'date-fns';
+import { Navigate } from 'react-router-dom';
 
 const normalizeFilterIds = (value: unknown) => (
   Array.isArray(value)
@@ -52,6 +53,7 @@ const Index = () => {
   const profileDisplayName = useAuthStore((state) => state.profileDisplayName);
   const currentWorkspaceId = useAuthStore((state) => state.currentWorkspaceId);
   const currentWorkspaceRole = useAuthStore((state) => state.currentWorkspaceRole);
+  const isReserveAdmin = useAuthStore((state) => state.isReserveAdmin);
   const canEdit = currentWorkspaceRole === 'editor' || currentWorkspaceRole === 'admin';
   const userLabel = profileDisplayName || user?.email || user?.id || '';
   const filtersHydratedRef = useRef(false);
@@ -104,6 +106,10 @@ const Index = () => {
     const storageKey = `planner-filters-${user.id}`;
     window.localStorage.setItem(storageKey, JSON.stringify(filters));
   }, [filters, user?.id]);
+
+  if (isReserveAdmin) {
+    return <Navigate to="/admin/users" replace />;
+  }
   
   return (
     <div className="flex flex-col h-screen overflow-hidden bg-background">

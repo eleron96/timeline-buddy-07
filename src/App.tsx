@@ -7,6 +7,7 @@ import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
 import AuthPage from "./pages/Auth";
 import InvitePage from "./pages/Invite";
+import AdminUsersPage from "./pages/AdminUsers";
 import { AuthProvider } from "@/providers/AuthProvider";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 
@@ -22,6 +23,14 @@ const App = () => (
           <Routes>
             <Route path="/auth" element={<AuthPage />} />
             <Route path="/invite/:workspaceId" element={<InvitePage />} />
+            <Route
+              path="/admin/users"
+              element={(
+                <ProtectedRoute>
+                  <AdminUsersPage />
+                </ProtectedRoute>
+              )}
+            />
             <Route
               path="/"
               element={(

@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import type { Session, User } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabaseClient';
 import { usePlannerStore } from '@/store/plannerStore';
+import { isReserveAdminEmail } from '@/lib/adminConfig';
 
 export type WorkspaceRole = 'viewer' | 'editor' | 'admin';
 
@@ -30,6 +31,13 @@ interface WorkspaceMemberProfileRow {
   profiles: { email: string; display_name: string | null } | null;
 }
 
+export interface AdminUser {
+  id: string;
+  email: string | null;
+  createdAt: string | null;
+  lastSignInAt: string | null;
+}
+
 interface AuthState {
   user: User | null;
   session: Session | null;
@@ -40,10 +48,19 @@ interface AuthState {
   members: WorkspaceMember[];
   membersLoading: boolean;
   profileDisplayName: string | null;
+  isReserveAdmin: boolean;
+  adminUsers: AdminUser[];
+  adminUsersLoading: boolean;
+  adminUsersError: string | null;
   setSession: (session: Session | null) => void;
   setLoading: (loading: boolean) => void;
   signIn: (email: string, password: string) => Promise<{ error?: string }>;
   signUp: (email: string, password: string) => Promise<{ error?: string }>;
+  sendPasswordReset: (email: string) => Promise<{ error?: string }>;
+  updatePassword: (password: string) => Promise<{ error?: string }>;
+  fetchAdminUsers: () => Promise<{ error?: string }>;
+  resetUserPassword: (userId: string, password: string) => Promise<{ error?: string }>;
+  deleteAdminUser: (userId: string) => Promise<{ error?: string }>;
   signOut: () => Promise<void>;
   fetchWorkspaces: () => Promise<void>;
   fetchProfile: () => Promise<void>;
@@ -70,7 +87,19 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   members: [],
   membersLoading: false,
   profileDisplayName: null,
-  setSession: (session) => set({ session, user: session?.user ?? null, profileDisplayName: null }),
+  isReserveAdmin: false,
+  adminUsers: [],
+  adminUsersLoading: false,
+  adminUsersError: null,
+  setSession: (session) => {
+    const user = session?.user ?? null;
+    set({
+      session,
+      user,
+      profileDisplayName: null,
+      isReserveAdmin: isReserveAdminEmail(user?.email ?? null),
+    });
+  },
   setLoading: (loading) => set({ loading }),
   signIn: async (email, password) => {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
@@ -82,6 +111,120 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     if (error) return { error: error.message };
     return {};
   },
+  sendPasswordReset: async (email) => {
+    const redirectTo = typeof window !== 'undefined'
+      ? `${window.location.origin}/auth`
+      : undefined;
+    const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo });
+    if (error) return { error: error.message };
+    return {};
+  },
+  updatePassword: async (password) => {
+    const { error } = await supabase.auth.updateUser({ password });
+    if (error) return { error: error.message };
+    return {};
+  },
+  fetchAdminUsers: async () => {
+    set({ adminUsersLoading: true, adminUsersError: null });
+    const { data, error, response } = await supabase.functions.invoke('admin-users', {
+      body: { page: 1, perPage: 200 },
+    });
+
+    if (error) {
+      let message = error.message;
+      if (response) {
+        try {
+          const body = await response.clone().json();
+          if (body && typeof body === 'object' && typeof (body as { error?: string }).error === 'string') {
+            message = (body as { error: string }).error;
+          }
+        } catch (_error) {
+          try {
+            const text = await response.clone().text();
+            if (text) message = text;
+          } catch (_innerError) {
+            // Ignore response parsing errors and keep the original message.
+          }
+        }
+      }
+      set({ adminUsersLoading: false, adminUsersError: message });
+      return { error: message };
+    }
+
+    if (data?.error) {
+      set({ adminUsersLoading: false, adminUsersError: data.error });
+      return { error: data.error };
+    }
+
+    set({
+      adminUsers: (data?.users ?? []) as AdminUser[],
+      adminUsersLoading: false,
+      adminUsersError: null,
+    });
+    return {};
+  },
+  resetUserPassword: async (userId, password) => {
+    const { data, error, response } = await supabase.functions.invoke('admin-reset', {
+      body: { userId, password },
+    });
+
+    if (error) {
+      let message = error.message;
+      if (response) {
+        try {
+          const body = await response.clone().json();
+          if (body && typeof body === 'object' && typeof (body as { error?: string }).error === 'string') {
+            message = (body as { error: string }).error;
+          }
+        } catch (_error) {
+          try {
+            const text = await response.clone().text();
+            if (text) message = text;
+          } catch (_innerError) {
+            // Ignore response parsing errors and keep the original message.
+          }
+        }
+      }
+      return { error: message };
+    }
+
+    if (data?.error) {
+      return { error: data.error };
+    }
+
+    return {};
+  },
+  deleteAdminUser: async (userId) => {
+    const { data, error, response } = await supabase.functions.invoke('admin-delete', {
+      body: { userId },
+    });
+
+    if (error) {
+      let message = error.message;
+      if (response) {
+        try {
+          const body = await response.clone().json();
+          if (body && typeof body === 'object' && typeof (body as { error?: string }).error === 'string') {
+            message = (body as { error: string }).error;
+          }
+        } catch (_error) {
+          try {
+            const text = await response.clone().text();
+            if (text) message = text;
+          } catch (_innerError) {
+            // Ignore response parsing errors and keep the original message.
+          }
+        }
+      }
+      return { error: message };
+    }
+
+    if (data?.error) {
+      return { error: data.error };
+    }
+
+    return {};
+  },
   signOut: async () => {
     await supabase.auth.signOut();
     set({
@@ -91,12 +234,24 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       currentWorkspaceId: null,
       currentWorkspaceRole: null,
       members: [],
+      adminUsers: [],
+      adminUsersLoading: false,
+      adminUsersError: null,
       profileDisplayName: null,
+      isReserveAdmin: false,
     });
   },
   fetchWorkspaces: async () => {
     const user = get().user;
     if (!user) return;
+    if (get().isReserveAdmin) {
+      set({
+        workspaces: [],
+        currentWorkspaceId: null,
+        currentWorkspaceRole: null,
+      });
+      return;
+    }
 
     const { data, error } = await supabase
       .from('workspace_members')

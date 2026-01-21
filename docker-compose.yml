@@ -41,6 +41,12 @@ services:
       GOTRUE_JWT_EXP: 3600
       GOTRUE_EXTERNAL_EMAIL_ENABLED: "true"
       GOTRUE_MAILER_AUTOCONFIRM: "true"
+      GOTRUE_SMTP_HOST: ${GOTRUE_SMTP_HOST}
+      GOTRUE_SMTP_PORT: ${GOTRUE_SMTP_PORT}
+      GOTRUE_SMTP_USER: ${GOTRUE_SMTP_USER}
+      GOTRUE_SMTP_PASS: ${GOTRUE_SMTP_PASS}
+      GOTRUE_SMTP_ADMIN_EMAIL: ${GOTRUE_SMTP_ADMIN_EMAIL}
+      GOTRUE_SMTP_SENDER_NAME: ${GOTRUE_SMTP_SENDER_NAME}
 
   rest:
     image: postgrest/postgrest:v12.2.3
@@ -73,6 +79,8 @@ services:
       APP_URL: ${APP_URL}
       RESEND_API_KEY: ${RESEND_API_KEY}
       RESEND_FROM: ${RESEND_FROM}
+      RESERVE_ADMIN_EMAIL: ${RESERVE_ADMIN_EMAIL}
+      RESERVE_ADMIN_PASSWORD: ${RESERVE_ADMIN_PASSWORD}
     volumes:
       - ./supabase/functions:/home/deno/functions:ro
     command: ["start", "--main-service", "/home/deno/functions/invite", "--port", "9000"]
@@ -103,6 +111,7 @@ services:
     environment:
       VITE_SUPABASE_URL: http://localhost:8080
       VITE_SUPABASE_ANON_KEY: ${ANON_KEY}
+      VITE_RESERVE_ADMIN_EMAIL: ${VITE_RESERVE_ADMIN_EMAIL}
       CHOKIDAR_USEPOLLING: "true"
     volumes:
       - ./:/app
