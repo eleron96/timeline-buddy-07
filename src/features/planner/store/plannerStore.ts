@@ -1,0 +1,1182 @@
+import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
+import {
+  addDays,
+  addMonths,
+  addWeeks,
+  addYears,
+  differenceInDays,
+  format,
+  parseISO,
+  subMonths,
+  subYears,
+} from 'date-fns';
+import { supabase } from '@/shared/lib/supabaseClient';
+import { reserveAdminEmail } from '@/shared/lib/adminConfig';
+import {
+  Task,
+  Milestone,
+  Project,
+  Assignee,
+  Status,
+  TaskType,
+  Tag,
+  TaskPriority,
+  ViewMode,
+  GroupMode,
+  Filters,
+  PlannerState,
+} from '@/features/planner/types/planner';
+
+type TaskRow = {
+  id: string;
+  workspace_id: string;
+  title: string;
+  project_id: string | null;
+  assignee_id: string | null;
+  assignee_ids: string[] | null;
+  start_date: string;
+  end_date: string;
+  status_id: string;
+  type_id: string;
+  priority: TaskPriority | null;
+  tag_ids: string[] | null;
+  description: string | null;
+  repeat_id: string | null;
+};
+
+type ProjectRow = {
+  id: string;
+  workspace_id: string;
+  name: string;
+  color: string;
+};
+
+type AssigneeRow = {
+  id: string;
+  workspace_id: string;
+  name: string;
+  user_id: string | null;
+};
+
+type StatusRow = {
+  id: string;
+  workspace_id: string;
+  name: string;
+  color: string;
+  is_final: boolean;
+};
+
+type TaskTypeRow = {
+  id: string;
+  workspace_id: string;
+  name: string;
+  icon: string | null;
+};
+
+type TagRow = {
+  id: string;
+  workspace_id: string;
+  name: string;
+  color: string;
+};
+
+type MilestoneRow = {
+  id: string;
+  workspace_id: string;
+  project_id: string;
+  date: string;
+  title: string;
+};
+
+interface PlannerStore extends PlannerState {
+  workspaceId: string | null;
+  loading: boolean;
+  error: string | null;
+  scrollRequestId: number;
+  scrollTargetDate: string | null;
+  setWorkspaceId: (id: string | null) => void;
+  loadWorkspaceData: (workspaceId: string) => Promise<void>;
+  refreshAssignees: () => Promise<void>;
+  reset: () => void;
+
+  addTask: (task: Omit<Task, 'id'>) => Promise<Task | null>;
+  updateTask: (id: string, updates: Partial<Task>) => Promise<void>;
+  deleteTask: (id: string) => Promise<void>;
+  duplicateTask: (id: string) => Promise<void>;
+  createRepeats: (id: string, options: { frequency: 'daily' | 'weekly' | 'monthly' | 'yearly'; ends: 'never' | 'on' | 'after'; untilDate?: string; count?: number }) => Promise<{ error?: string; created?: number }>;
+  moveTask: (id: string, startDate: string, endDate: string) => Promise<void>;
+  reassignTask: (id: string, assigneeId: string | null, projectId?: string | null) => Promise<void>;
+  deleteTaskSeries: (repeatId: string, fromDate: string) => Promise<void>;
+
+  addProject: (project: Omit<Project, 'id'>) => Promise<void>;
+  updateProject: (id: string, updates: Partial<Project>) => Promise<void>;
+  deleteProject: (id: string) => Promise<void>;
+
+  addAssignee: (assignee: Omit<Assignee, 'id'>) => Promise<void>;
+  updateAssignee: (id: string, updates: Partial<Assignee>) => Promise<void>;
+  deleteAssignee: (id: string) => Promise<void>;
+
+  addStatus: (status: Omit<Status, 'id'>) => Promise<void>;
+  updateStatus: (id: string, updates: Partial<Status>) => Promise<void>;
+  deleteStatus: (id: string) => Promise<void>;
+
+  addTaskType: (taskType: Omit<TaskType, 'id'>) => Promise<void>;
+  updateTaskType: (id: string, updates: Partial<TaskType>) => Promise<void>;
+  deleteTaskType: (id: string) => Promise<void>;
+
+  addTag: (tag: Omit<Tag, 'id'>) => Promise<void>;
+  updateTag: (id: string, updates: Partial<Tag>) => Promise<void>;
+  deleteTag: (id: string) => Promise<void>;
+
+  addMilestone: (milestone: Omit<Milestone, 'id'>) => Promise<void>;
+  updateMilestone: (id: string, updates: Partial<Milestone>) => Promise<void>;
+  deleteMilestone: (id: string) => Promise<void>;
+
+  setViewMode: (mode: ViewMode) => void;
+  setGroupMode: (mode: GroupMode) => void;
+  setCurrentDate: (date: string) => void;
+  requestScrollToDate: (date: string) => void;
+  setFilters: (filters: Partial<Filters>) => void;
+  clearFilterCriteria: () => void;
+  clearFilters: () => void;
+  setSelectedTaskId: (id: string | null) => void;
+}
+
+const initialFilters: Filters = {
+  projectIds: [],
+  assigneeIds: [],
+  statusIds: [],
+  typeIds: [],
+  tagIds: [],
+  hideUnassigned: false,
+};
+
+const buildTaskRange = (currentDate: string, viewMode: ViewMode) => {
+  const anchor = parseISO(currentDate);
+  switch (viewMode) {
+    case 'day': {
+      const start = subMonths(anchor, 2);
+      const end = addMonths(anchor, 2);
+      return { start: format(start, 'yyyy-MM-dd'), end: format(end, 'yyyy-MM-dd') };
+    }
+    case 'calendar': {
+      const start = subYears(anchor, 1);
+      const end = addYears(anchor, 1);
+      return { start: format(start, 'yyyy-MM-dd'), end: format(end, 'yyyy-MM-dd') };
+    }
+    default: {
+      const start = subMonths(anchor, 6);
+      const end = addMonths(anchor, 6);
+      return { start: format(start, 'yyyy-MM-dd'), end: format(end, 'yyyy-MM-dd') };
+    }
+  }
+};
+
+const normalizeAssigneeIds = (assigneeIds: string[] | null | undefined, legacyId: string | null | undefined) => {
+  const combined = [
+    ...(assigneeIds ?? []),
+    ...(legacyId ? [legacyId] : []),
+  ];
+  return Array.from(new Set(combined.filter(Boolean)));
+};
+
+const uniqueAssigneeIds = (assigneeIds: string[] | null | undefined) => (
+  Array.from(new Set((assigneeIds ?? []).filter(Boolean)))
+);
+
+const mapTaskRow = (row: TaskRow): Task => ({
+  id: row.id,
+  title: row.title,
+  projectId: row.project_id,
+  assigneeIds: normalizeAssigneeIds(row.assignee_ids, row.assignee_id),
+  startDate: row.start_date,
+  endDate: row.end_date,
+  statusId: row.status_id,
+  typeId: row.type_id,
+  priority: row.priority ?? null,
+  tagIds: row.tag_ids ?? [],
+  description: row.description,
+  repeatId: row.repeat_id ?? null,
+});
+
+const mapProjectRow = (row: ProjectRow): Project => ({
+  id: row.id,
+  name: row.name,
+  color: row.color,
+});
+
+const mapAssigneeRow = (row: AssigneeRow): Assignee => ({
+  id: row.id,
+  name: row.name,
+  userId: row.user_id,
+});
+
+const mapStatusRow = (row: StatusRow): Status => ({
+  id: row.id,
+  name: row.name,
+  color: row.color,
+  isFinal: row.is_final,
+});
+
+const mapTaskTypeRow = (row: TaskTypeRow): TaskType => ({
+  id: row.id,
+  name: row.name,
+  icon: row.icon,
+});
+
+const mapTagRow = (row: TagRow): Tag => ({
+  id: row.id,
+  name: row.name,
+  color: row.color,
+});
+
+const mapMilestoneRow = (row: MilestoneRow): Milestone => ({
+  id: row.id,
+  title: row.title,
+  projectId: row.project_id,
+  date: row.date,
+});
+
+const mapTaskUpdates = (updates: Partial<Task>) => {
+  const payload: Record<string, unknown> = {};
+  if ('title' in updates) payload.title = updates.title;
+  if ('projectId' in updates) payload.project_id = updates.projectId;
+  if ('assigneeIds' in updates) {
+    const ids = uniqueAssigneeIds(updates.assigneeIds);
+    payload.assignee_ids = ids;
+    payload.assignee_id = ids[0] ?? null;
+  }
+  if ('startDate' in updates) payload.start_date = updates.startDate;
+  if ('endDate' in updates) payload.end_date = updates.endDate;
+  if ('statusId' in updates) payload.status_id = updates.statusId;
+  if ('typeId' in updates) payload.type_id = updates.typeId;
+  if ('priority' in updates) payload.priority = updates.priority;
+  if ('tagIds' in updates) payload.tag_ids = updates.tagIds;
+  if ('description' in updates) payload.description = updates.description;
+  if ('repeatId' in updates) payload.repeat_id = updates.repeatId;
+  return payload;
+};
+
+export const usePlannerStore = create<PlannerStore>()(
+  persist(
+    (set, get) => ({
+      tasks: [],
+      milestones: [],
+      projects: [],
+      assignees: [],
+      statuses: [],
+      taskTypes: [],
+      tags: [],
+      viewMode: 'week',
+      groupMode: 'assignee',
+      currentDate: format(new Date(), 'yyyy-MM-dd'),
+      filters: initialFilters,
+      selectedTaskId: null,
+      workspaceId: null,
+      loading: false,
+      error: null,
+      scrollRequestId: 0,
+      scrollTargetDate: null,
+
+      setWorkspaceId: (id) => set({ workspaceId: id }),
+      reset: () => set({
+        tasks: [],
+        milestones: [],
+        projects: [],
+        assignees: [],
+        statuses: [],
+        taskTypes: [],
+        tags: [],
+        selectedTaskId: null,
+        workspaceId: null,
+        loading: false,
+        error: null,
+        scrollRequestId: 0,
+        scrollTargetDate: null,
+      }),
+
+      loadWorkspaceData: async (workspaceId) => {
+        set({ loading: true, error: null, workspaceId, selectedTaskId: null });
+
+        const { currentDate, viewMode } = get();
+        const { start, end } = buildTaskRange(currentDate, viewMode);
+
+        const [tasksRes, projectsRes, assigneesRes, statusesRes, taskTypesRes, tagsRes, milestonesRes] = await Promise.all([
+          supabase
+            .from('tasks')
+            .select('*')
+            .eq('workspace_id', workspaceId)
+            .gte('end_date', start)
+            .lte('start_date', end),
+          supabase.from('projects').select('*').eq('workspace_id', workspaceId),
+          supabase.from('assignees').select('*').eq('workspace_id', workspaceId),
+          supabase.from('statuses').select('*').eq('workspace_id', workspaceId),
+          supabase.from('task_types').select('*').eq('workspace_id', workspaceId),
+          supabase.from('tags').select('*').eq('workspace_id', workspaceId),
+          supabase
+            .from('milestones')
+            .select('*')
+            .eq('workspace_id', workspaceId)
+            .gte('date', start)
+            .lte('date', end),
+        ]);
+
+        if (tasksRes.error || projectsRes.error || assigneesRes.error || statusesRes.error || taskTypesRes.error || tagsRes.error || milestonesRes.error) {
+          set({
+            error: tasksRes.error?.message
+              || projectsRes.error?.message
+              || assigneesRes.error?.message
+              || statusesRes.error?.message
+              || taskTypesRes.error?.message
+              || tagsRes.error?.message
+              || milestonesRes.error?.message
+              || 'Failed to load workspace data.',
+            loading: false,
+          });
+          return;
+        }
+
+        const taskRows = (tasksRes.data ?? []) as TaskRow[];
+        const assigneeRows = (assigneesRes.data ?? []) as AssigneeRow[];
+        const taskAssigneeIds = new Set(
+          taskRows.flatMap((row) => normalizeAssigneeIds(row.assignee_ids, row.assignee_id)),
+        );
+
+        // Получаем user_id админа для фильтрации
+        let adminUserId: string | null = null;
+        if (reserveAdminEmail) {
+          const { data: adminProfile } = await supabase
+            .from('profiles')
+            .select('id')
+            .ilike('email', reserveAdminEmail)
+            .maybeSingle();
+          if (adminProfile) {
+            adminUserId = adminProfile.id;
+          }
+        }
+
+        const assignees = assigneeRows
+          .filter((row) => {
+            // Всегда исключаем админа из списка assignees, независимо от того, назначен ли он на задачи
+            if (adminUserId && row.user_id === adminUserId) return false;
+            return row.user_id !== null || taskAssigneeIds.has(row.id);
+          })
+          .sort((left, right) => left.name.localeCompare(right.name))
+          .map(mapAssigneeRow);
+
+        set({
+          tasks: taskRows.map(mapTaskRow),
+          milestones: (milestonesRes.data ?? []).map(mapMilestoneRow),
+          projects: (projectsRes.data ?? []).map(mapProjectRow),
+          assignees,
+          statuses: (statusesRes.data ?? []).map(mapStatusRow),
+          taskTypes: (taskTypesRes.data ?? []).map(mapTaskTypeRow),
+          tags: (tagsRes.data ?? []).map(mapTagRow),
+          loading: false,
+        });
+      },
+      refreshAssignees: async () => {
+        const workspaceId = get().workspaceId;
+        if (!workspaceId) return;
+
+        const { data, error } = await supabase
+          .from('assignees')
+          .select('*')
+          .eq('workspace_id', workspaceId);
+
+        if (error) {
+          console.error(error);
+          return;
+        }
+
+        // Получаем user_id админа для фильтрации
+        let adminUserId: string | null = null;
+        if (reserveAdminEmail) {
+          const { data: adminProfile } = await supabase
+            .from('profiles')
+            .select('id')
+            .ilike('email', reserveAdminEmail)
+            .maybeSingle();
+          if (adminProfile) {
+            adminUserId = adminProfile.id;
+          }
+        }
+
+        const taskAssigneeIds = new Set(
+          get().tasks.flatMap((task) => task.assigneeIds),
+        );
+
+        const assignees = (data ?? [])
+          .filter((row) => {
+            // Всегда исключаем админа из списка assignees, независимо от того, назначен ли он на задачи
+            if (adminUserId && row.user_id === adminUserId) return false;
+            return row.user_id !== null || taskAssigneeIds.has(row.id);
+          })
+          .sort((left, right) => left.name.localeCompare(right.name))
+          .map(mapAssigneeRow);
+
+        set({ assignees });
+      },
+
+      addTask: async (task) => {
+        const workspaceId = get().workspaceId;
+        if (!workspaceId) return null;
+
+        const assigneeIds = uniqueAssigneeIds(task.assigneeIds);
+
+        const { data, error } = await supabase
+          .from('tasks')
+          .insert({
+            workspace_id: workspaceId,
+            title: task.title,
+            project_id: task.projectId,
+            assignee_id: assigneeIds[0] ?? null,
+            assignee_ids: assigneeIds,
+            start_date: task.startDate,
+            end_date: task.endDate,
+            status_id: task.statusId,
+            type_id: task.typeId,
+            priority: task.priority,
+            tag_ids: task.tagIds,
+            description: task.description,
+            repeat_id: task.repeatId,
+          })
+          .select('*')
+          .single();
+
+        if (error || !data) {
+          console.error(error);
+          return null;
+        }
+
+        const mapped = mapTaskRow(data as TaskRow);
+        set((state) => ({ tasks: [...state.tasks, mapped] }));
+        return mapped;
+      },
+
+      updateTask: async (id, updates) => {
+        const workspaceId = get().workspaceId;
+        if (!workspaceId) return;
+
+        const payload = mapTaskUpdates(updates);
+        if (Object.keys(payload).length === 0) return;
+
+        const { data, error } = await supabase
+          .from('tasks')
+          .update(payload)
+          .eq('id', id)
+          .eq('workspace_id', workspaceId)
+          .select('*')
+          .single();
+
+        if (error || !data) {
+          console.error(error);
+          return;
+        }
+
+        const updated = mapTaskRow(data as TaskRow);
+        set((state) => ({
+          tasks: state.tasks.map((task) => (task.id === id ? updated : task)),
+        }));
+      },
+
+      deleteTask: async (id) => {
+        const workspaceId = get().workspaceId;
+        if (!workspaceId) return;
+
+        const { error } = await supabase
+          .from('tasks')
+          .delete()
+          .eq('id', id)
+          .eq('workspace_id', workspaceId);
+
+        if (error) {
+          console.error(error);
+          return;
+        }
+
+        set((state) => ({
+          tasks: state.tasks.filter((task) => task.id !== id),
+          selectedTaskId: state.selectedTaskId === id ? null : state.selectedTaskId,
+        }));
+      },
+
+      duplicateTask: async (id) => {
+        const task = get().tasks.find((item) => item.id === id);
+        if (!task) return;
+
+        const start = parseISO(task.startDate);
+        const end = parseISO(task.endDate);
+        const duration = differenceInDays(end, start) + 1;
+        const newStart = addDays(end, 1);
+        const newEnd = addDays(newStart, Math.max(0, duration - 1));
+
+        await get().addTask({
+          title: task.title,
+          projectId: task.projectId,
+          assigneeIds: [...task.assigneeIds],
+          startDate: format(newStart, 'yyyy-MM-dd'),
+          endDate: format(newEnd, 'yyyy-MM-dd'),
+          statusId: task.statusId,
+          typeId: task.typeId,
+          priority: task.priority,
+          tagIds: [...task.tagIds],
+          description: task.description,
+          repeatId: null,
+        });
+      },
+
+      createRepeats: async (id, options) => {
+        const workspaceId = get().workspaceId;
+        if (!workspaceId) return { error: 'Workspace not selected.' };
+        let task = get().tasks.find((item) => item.id === id);
+        if (!task) {
+          const { data, error } = await supabase
+            .from('tasks')
+            .select('*')
+            .eq('id', id)
+            .eq('workspace_id', workspaceId)
+            .single();
+
+          if (error || !data) {
+            return { error: error?.message ?? 'Task not found.' };
+          }
+
+          const fetchedTask = mapTaskRow(data as TaskRow);
+          task = fetchedTask;
+          set((state) => (
+            state.tasks.some((item) => item.id === fetchedTask.id)
+              ? state
+              : { tasks: [...state.tasks, fetchedTask] }
+          ));
+        }
+
+        const repeatId = task.repeatId ?? (typeof crypto !== 'undefined' && crypto.randomUUID
+          ? crypto.randomUUID()
+          : `${Date.now()}-${Math.random().toString(16).slice(2)}`);
+
+        if (!task.repeatId) {
+          const { data: repeatData, error: repeatError } = await supabase
+            .from('tasks')
+            .update({ repeat_id: repeatId })
+            .eq('id', task.id)
+            .eq('workspace_id', workspaceId)
+            .select('*')
+            .single();
+
+          if (repeatError || !repeatData) {
+            return { error: repeatError?.message ?? 'Failed to link repeat series.' };
+          }
+
+          const updatedTask = mapTaskRow(repeatData as TaskRow);
+          set((state) => ({
+            tasks: state.tasks.map((item) => (item.id === task.id ? updatedTask : item)),
+          }));
+        }
+
+        const baseStart = parseISO(task.startDate);
+        const baseEnd = parseISO(task.endDate);
+        const duration = differenceInDays(baseEnd, baseStart) + 1;
+        const assigneeIds = uniqueAssigneeIds(task.assigneeIds);
+        const { data: existingRepeats, error: existingRepeatsError } = await supabase
+          .from('tasks')
+          .select('start_date')
+          .eq('workspace_id', workspaceId)
+          .eq('repeat_id', repeatId);
+        if (existingRepeatsError) {
+          console.error(existingRepeatsError);
+        }
+        const existingRepeatDates = new Set(
+          (existingRepeats ?? []).map((item: { start_date: string }) => item.start_date),
+        );
+        const endsMode = options.ends;
+        const targetCount = options.count && options.count > 0 ? options.count : 0;
+        const untilDate = options.untilDate ? parseISO(options.untilDate) : null;
+        const neverHorizon = addYears(baseStart, 1);
+
+        const addInterval = (date: Date, step: number) => {
+          switch (options.frequency) {
+            case 'daily':
+              return addDays(date, step);
+            case 'weekly':
+              return addWeeks(date, step);
+            case 'monthly':
+              return addMonths(date, step);
+            case 'yearly':
+              return addYears(date, step);
+            default:
+              return addWeeks(date, step);
+          }
+        };
+
+        const newTasks: Array<{
+          workspace_id: string;
+          title: string;
+          project_id: string | null;
+          assignee_id: string | null;
+          assignee_ids: string[];
+          start_date: string;
+          end_date: string;
+          status_id: string;
+          type_id: string;
+          priority: TaskPriority | null;
+          tag_ids: string[];
+          description: string | null;
+          repeat_id: string;
+        }> = [];
+
+        for (let index = 1; index <= 500; index += 1) {
+          if (endsMode === 'after' && index > targetCount) break;
+          const nextStart = addInterval(baseStart, index);
+          if (endsMode === 'on' && untilDate && nextStart > untilDate) break;
+          if (endsMode === 'never' && nextStart > neverHorizon) break;
+
+          const startDate = format(nextStart, 'yyyy-MM-dd');
+          if (existingRepeatDates.has(startDate)) {
+            continue;
+          }
+          existingRepeatDates.add(startDate);
+          const nextEnd = addDays(nextStart, Math.max(0, duration - 1));
+          newTasks.push({
+            workspace_id: workspaceId,
+            title: task.title,
+            project_id: task.projectId,
+            assignee_id: assigneeIds[0] ?? null,
+            assignee_ids: [...assigneeIds],
+            start_date: startDate,
+            end_date: format(nextEnd, 'yyyy-MM-dd'),
+            status_id: task.statusId,
+            type_id: task.typeId,
+            priority: task.priority,
+            tag_ids: [...task.tagIds],
+            description: task.description,
+            repeat_id: repeatId,
+          });
+        }
+
+        if (newTasks.length === 0) {
+          return { error: 'No repeats created for the selected range.' };
+        }
+
+        const { data, error } = await supabase
+          .from('tasks')
+          .insert(newTasks)
+          .select('*');
+
+        if (error) {
+          return { error: error.message };
+        }
+
+        set((state) => ({
+          tasks: [...state.tasks, ...((data ?? []) as TaskRow[]).map(mapTaskRow)],
+        }));
+
+        return { created: newTasks.length };
+      },
+
+      moveTask: async (id, startDate, endDate) => {
+        await get().updateTask(id, { startDate, endDate });
+      },
+
+      reassignTask: async (id, assigneeId, projectId) => {
+        await get().updateTask(id, {
+          assigneeIds: assigneeId ? [assigneeId] : [],
+          ...(projectId !== undefined ? { projectId } : {}),
+        });
+      },
+
+      deleteTaskSeries: async (repeatId, fromDate) => {
+        const workspaceId = get().workspaceId;
+        if (!workspaceId) return;
+
+        const { error } = await supabase
+          .from('tasks')
+          .delete()
+          .eq('workspace_id', workspaceId)
+          .eq('repeat_id', repeatId)
+          .gte('start_date', fromDate);
+
+        if (error) {
+          console.error(error);
+          return;
+        }
+
+        set((state) => {
+          const deletedIds = new Set(
+            state.tasks
+              .filter((item) => item.repeatId === repeatId && item.startDate >= fromDate)
+              .map((item) => item.id)
+          );
+          return {
+            tasks: state.tasks.filter((item) => !(item.repeatId === repeatId && item.startDate >= fromDate)),
+            selectedTaskId: state.selectedTaskId && deletedIds.has(state.selectedTaskId) ? null : state.selectedTaskId,
+          };
+        });
+      },
+
+      addProject: async (project) => {
+        const workspaceId = get().workspaceId;
+        if (!workspaceId) return;
+
+        const { data, error } = await supabase
+          .from('projects')
+          .insert({
+            workspace_id: workspaceId,
+            name: project.name,
+            color: project.color,
+          })
+          .select('*')
+          .single();
+
+        if (error || !data) {
+          console.error(error);
+          return;
+        }
+
+        set((state) => ({ projects: [...state.projects, mapProjectRow(data as ProjectRow)] }));
+      },
+
+      updateProject: async (id, updates) => {
+        const workspaceId = get().workspaceId;
+        if (!workspaceId) return;
+
+        const payload: Record<string, unknown> = {};
+        if ('name' in updates) payload.name = updates.name;
+        if ('color' in updates) payload.color = updates.color;
+        if (Object.keys(payload).length === 0) return;
+
+        const { data, error } = await supabase
+          .from('projects')
+          .update(payload)
+          .eq('id', id)
+          .eq('workspace_id', workspaceId)
+          .select('*')
+          .single();
+
+        if (error || !data) {
+          console.error(error);
+          return;
+        }
+
+        const updated = mapProjectRow(data as ProjectRow);
+        set((state) => ({
+          projects: state.projects.map((project) => (project.id === id ? updated : project)),
+        }));
+      },
+
+      deleteProject: async (id) => {
+        const workspaceId = get().workspaceId;
+        if (!workspaceId) return;
+
+        const { error } = await supabase
+          .from('projects')
+          .delete()
+          .eq('id', id)
+          .eq('workspace_id', workspaceId);
+
+        if (error) {
+          console.error(error);
+          return;
+        }
+
+        set((state) => ({
+          projects: state.projects.filter((project) => project.id !== id),
+          tasks: state.tasks.map((task) => task.projectId === id ? { ...task, projectId: null } : task),
+        }));
+      },
+
+      addAssignee: async (assignee) => {
+        const workspaceId = get().workspaceId;
+        if (!workspaceId) return;
+
+        const { data, error } = await supabase
+          .from('assignees')
+          .insert({
+            workspace_id: workspaceId,
+            name: assignee.name,
+          })
+          .select('*')
+          .single();
+
+        if (error || !data) {
+          console.error(error);
+          return;
+        }
+
+        set((state) => ({ assignees: [...state.assignees, mapAssigneeRow(data as AssigneeRow)] }));
+      },
+
+      updateAssignee: async (id, updates) => {
+        const workspaceId = get().workspaceId;
+        if (!workspaceId) return;
+
+        const payload: Record<string, unknown> = {};
+        if ('name' in updates) payload.name = updates.name;
+        if (Object.keys(payload).length === 0) return;
+
+        const { data, error } = await supabase
+          .from('assignees')
+          .update(payload)
+          .eq('id', id)
+          .eq('workspace_id', workspaceId)
+          .select('*')
+          .single();
+
+        if (error || !data) {
+          console.error(error);
+          return;
+        }
+
+        const updated = mapAssigneeRow(data as AssigneeRow);
+        set((state) => ({
+          assignees: state.assignees.map((assignee) => (assignee.id === id ? updated : assignee)),
+        }));
+      },
+
+      deleteAssignee: async (id) => {
+        const workspaceId = get().workspaceId;
+        if (!workspaceId) return;
+
+        const { error } = await supabase
+          .from('assignees')
+          .delete()
+          .eq('id', id)
+          .eq('workspace_id', workspaceId);
+
+        if (error) {
+          console.error(error);
+          return;
+        }
+
+        set((state) => ({
+          assignees: state.assignees.filter((assignee) => assignee.id !== id),
+          tasks: state.tasks.map((task) => (
+            task.assigneeIds.includes(id)
+              ? { ...task, assigneeIds: task.assigneeIds.filter((assigneeId) => assigneeId !== id) }
+              : task
+          )),
+        }));
+      },
+
+      addStatus: async (status) => {
+        const workspaceId = get().workspaceId;
+        if (!workspaceId) return;
+
+        const { data, error } = await supabase
+          .from('statuses')
+          .insert({
+            workspace_id: workspaceId,
+            name: status.name,
+            color: status.color,
+            is_final: status.isFinal,
+          })
+          .select('*')
+          .single();
+
+        if (error || !data) {
+          console.error(error);
+          return;
+        }
+
+        set((state) => ({ statuses: [...state.statuses, mapStatusRow(data as StatusRow)] }));
+      },
+
+      updateStatus: async (id, updates) => {
+        const workspaceId = get().workspaceId;
+        if (!workspaceId) return;
+
+        const payload: Record<string, unknown> = {};
+        if ('name' in updates) payload.name = updates.name;
+        if ('color' in updates) payload.color = updates.color;
+        if ('isFinal' in updates) payload.is_final = updates.isFinal;
+        if (Object.keys(payload).length === 0) return;
+
+        const { data, error } = await supabase
+          .from('statuses')
+          .update(payload)
+          .eq('id', id)
+          .eq('workspace_id', workspaceId)
+          .select('*')
+          .single();
+
+        if (error || !data) {
+          console.error(error);
+          return;
+        }
+
+        const updated = mapStatusRow(data as StatusRow);
+        set((state) => ({
+          statuses: state.statuses.map((status) => (status.id === id ? updated : status)),
+        }));
+      },
+
+      deleteStatus: async (id) => {
+        const workspaceId = get().workspaceId;
+        if (!workspaceId) return;
+
+        const { error } = await supabase
+          .from('statuses')
+          .delete()
+          .eq('id', id)
+          .eq('workspace_id', workspaceId);
+
+        if (error) {
+          console.error(error);
+          return;
+        }
+
+        set((state) => ({
+          statuses: state.statuses.filter((status) => status.id !== id),
+        }));
+      },
+
+      addTaskType: async (taskType) => {
+        const workspaceId = get().workspaceId;
+        if (!workspaceId) return;
+
+        const { data, error } = await supabase
+          .from('task_types')
+          .insert({
+            workspace_id: workspaceId,
+            name: taskType.name,
+            icon: taskType.icon,
+          })
+          .select('*')
+          .single();
+
+        if (error || !data) {
+          console.error(error);
+          return;
+        }
+
+        set((state) => ({ taskTypes: [...state.taskTypes, mapTaskTypeRow(data as TaskTypeRow)] }));
+      },
+
+      updateTaskType: async (id, updates) => {
+        const workspaceId = get().workspaceId;
+        if (!workspaceId) return;
+
+        const payload: Record<string, unknown> = {};
+        if ('name' in updates) payload.name = updates.name;
+        if ('icon' in updates) payload.icon = updates.icon;
+        if (Object.keys(payload).length === 0) return;
+
+        const { data, error } = await supabase
+          .from('task_types')
+          .update(payload)
+          .eq('id', id)
+          .eq('workspace_id', workspaceId)
+          .select('*')
+          .single();
+
+        if (error || !data) {
+          console.error(error);
+          return;
+        }
+
+        const updated = mapTaskTypeRow(data as TaskTypeRow);
+        set((state) => ({
+          taskTypes: state.taskTypes.map((taskType) => (taskType.id === id ? updated : taskType)),
+        }));
+      },
+
+      deleteTaskType: async (id) => {
+        const workspaceId = get().workspaceId;
+        if (!workspaceId) return;
+
+        const { error } = await supabase
+          .from('task_types')
+          .delete()
+          .eq('id', id)
+          .eq('workspace_id', workspaceId);
+
+        if (error) {
+          console.error(error);
+          return;
+        }
+
+        set((state) => ({
+          taskTypes: state.taskTypes.filter((taskType) => taskType.id !== id),
+        }));
+      },
+
+      addTag: async (tag) => {
+        const workspaceId = get().workspaceId;
+        if (!workspaceId) return;
+
+        const { data, error } = await supabase
+          .from('tags')
+          .insert({
+            workspace_id: workspaceId,
+            name: tag.name,
+            color: tag.color,
+          })
+          .select('*')
+          .single();
+
+        if (error || !data) {
+          console.error(error);
+          return;
+        }
+
+        set((state) => ({ tags: [...state.tags, mapTagRow(data as TagRow)] }));
+      },
+
+      updateTag: async (id, updates) => {
+        const workspaceId = get().workspaceId;
+        if (!workspaceId) return;
+
+        const payload: Record<string, unknown> = {};
+        if ('name' in updates) payload.name = updates.name;
+        if ('color' in updates) payload.color = updates.color;
+        if (Object.keys(payload).length === 0) return;
+
+        const { data, error } = await supabase
+          .from('tags')
+          .update(payload)
+          .eq('id', id)
+          .eq('workspace_id', workspaceId)
+          .select('*')
+          .single();
+
+        if (error || !data) {
+          console.error(error);
+          return;
+        }
+
+        const updated = mapTagRow(data as TagRow);
+        set((state) => ({
+          tags: state.tags.map((tag) => (tag.id === id ? updated : tag)),
+        }));
+      },
+
+      deleteTag: async (id) => {
+        const workspaceId = get().workspaceId;
+        if (!workspaceId) return;
+
+        const { error } = await supabase
+          .from('tags')
+          .delete()
+          .eq('id', id)
+          .eq('workspace_id', workspaceId);
+
+        if (error) {
+          console.error(error);
+          return;
+        }
+
+        set((state) => ({
+          tags: state.tags.filter((tag) => tag.id !== id),
+          tasks: state.tasks.map((task) => ({
+            ...task,
+            tagIds: task.tagIds.filter((tagId) => tagId !== id),
+          })),
+        }));
+      },
+
+      addMilestone: async (milestone) => {
+        const workspaceId = get().workspaceId;
+        if (!workspaceId) return;
+
+        const { data, error } = await supabase
+          .from('milestones')
+          .insert({
+            workspace_id: workspaceId,
+            project_id: milestone.projectId,
+            date: milestone.date,
+            title: milestone.title,
+          })
+          .select('*')
+          .single();
+
+        if (error || !data) {
+          console.error(error);
+          return;
+        }
+
+        set((state) => ({ milestones: [...state.milestones, mapMilestoneRow(data as MilestoneRow)] }));
+      },
+
+      updateMilestone: async (id, updates) => {
+        const workspaceId = get().workspaceId;
+        if (!workspaceId) return;
+
+        const payload: Record<string, unknown> = {};
+        if ('title' in updates) payload.title = updates.title;
+        if ('projectId' in updates) payload.project_id = updates.projectId;
+        if ('date' in updates) payload.date = updates.date;
+        if (Object.keys(payload).length === 0) return;
+
+        const { data, error } = await supabase
+          .from('milestones')
+          .update(payload)
+          .eq('id', id)
+          .eq('workspace_id', workspaceId)
+          .select('*')
+          .single();
+
+        if (error || !data) {
+          console.error(error);
+          return;
+        }
+
+        const updated = mapMilestoneRow(data as MilestoneRow);
+        set((state) => ({
+          milestones: state.milestones.map((item) => (item.id === id ? updated : item)),
+        }));
+      },
+
+      deleteMilestone: async (id) => {
+        const workspaceId = get().workspaceId;
+        if (!workspaceId) return;
+
+        const { error } = await supabase
+          .from('milestones')
+          .delete()
+          .eq('id', id)
+          .eq('workspace_id', workspaceId);
+
+        if (error) {
+          console.error(error);
+          return;
+        }
+
+        set((state) => ({
+          milestones: state.milestones.filter((item) => item.id !== id),
+        }));
+      },
+
+      setViewMode: (mode) => set({ viewMode: mode }),
+      setGroupMode: (mode) => set({ groupMode: mode }),
+      setCurrentDate: (date) => set({ currentDate: date }),
+      requestScrollToDate: (date) => set((state) => ({
+        scrollTargetDate: date,
+        scrollRequestId: state.scrollRequestId + 1,
+      })),
+      setFilters: (filters) => set((state) => ({
+        filters: { ...state.filters, ...filters },
+      })),
+      clearFilterCriteria: () => set((state) => ({
+        filters: {
+          ...state.filters,
+          projectIds: [],
+          assigneeIds: [],
+          statusIds: [],
+          typeIds: [],
+          tagIds: [],
+        },
+      })),
+      clearFilters: () => set({ filters: initialFilters }),
+      setSelectedTaskId: (id) => set({ selectedTaskId: id }),
+    }),
+    {
+      name: 'planner-storage',
+      partialize: (state) => ({
+        viewMode: state.viewMode,
+        groupMode: state.groupMode,
+        currentDate: state.currentDate,
+      }),
+    }
+  )
+);

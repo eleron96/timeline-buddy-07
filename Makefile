@@ -4,10 +4,10 @@ help:
 	@printf "Targets:\n  up\n  down\n  logs\n"
 
 up:
-	./scripts/dev-compose.sh
+	./infra/scripts/dev-compose.sh
 
 down:
-	docker compose down
+	docker compose -f infra/docker-compose.yml --env-file .env down
 
 logs:
-	docker compose logs -f
+	docker compose -f infra/docker-compose.yml --env-file .env logs -f

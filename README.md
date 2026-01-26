@@ -84,7 +84,7 @@ make up
 
 This starts a local Supabase stack (db/auth/rest/functions/gateway) and the Vite frontend in separate containers.
 Data is persisted in the `supabase_db_data` volume, so it survives frontend rebuilds and restarts.
-On first run, `.env.compose` is generated automatically. You can edit it to set `RESEND_API_KEY` and `RESEND_FROM` for invites.
+On first run, `.env` is generated automatically. You can edit it to set `RESEND_API_KEY` and `RESEND_FROM` for invites.
 Keep `API_EXTERNAL_URL` set (default: `http://localhost:8080/auth/v1`) so auth links resolve correctly.
 
 Stop everything (data preserved):
@@ -100,12 +100,12 @@ make logs
 ```
 
 1) Create a Supabase project (Postgres).
-2) Apply the schema from `supabase/migrations/0001_init.sql` (SQL editor or `supabase db push`).
+2) Apply the schema from `infra/supabase/migrations/0001_init.sql` (SQL editor or `supabase db push` from `infra/`).
 3) Create `.env` from `.env.example` and fill:
    - `VITE_SUPABASE_URL`
    - `VITE_SUPABASE_ANON_KEY`
 4) Deploy the edge function for invites:
-   - `supabase functions deploy invite`
+   - `cd infra && supabase functions deploy invite`
    - Configure function env vars:
      - `APP_URL` (e.g. `http://localhost:5173`)
      - `RESEND_API_KEY` (optional, for sending magic links to existing users)
