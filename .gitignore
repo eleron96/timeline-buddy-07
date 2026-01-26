@@ -7,6 +7,10 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+bun.lockb
+date-fns-*.tgz
+vite.config.ts.timestamp-*.mjs
+
 node_modules
 dist
 dist-ssr
@@ -15,8 +19,7 @@ dist-ssr
 .supabase
 .supabase-functions.log
 .supabase-functions.env
-.env.compose
-.env.local
+infra/backups/
 
 # Editor directories and files
 .vscode/*
