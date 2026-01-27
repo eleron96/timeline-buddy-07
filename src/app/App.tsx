@@ -8,6 +8,7 @@ import NotFoundPage from "@/app/NotFoundPage";
 import AuthPage from "@/features/auth/pages/AuthPage";
 import InvitePage from "@/features/auth/pages/InvitePage";
 import AdminUsersPage from "@/features/admin/pages/AdminUsersPage";
+import DashboardPage from "@/features/dashboard/pages/DashboardPage";
 import { AuthProvider } from "@/features/auth/providers/AuthProvider";
 import { ProtectedRoute } from "@/app/ProtectedRoute";
 
@@ -19,7 +20,12 @@ const App = () => (
       <Toaster />
       <Sonner />
       <AuthProvider>
-        <BrowserRouter>
+        <BrowserRouter
+          future={{
+            v7_startTransition: true,
+            v7_relativeSplatPath: true,
+          }}
+        >
           <Routes>
             <Route path="/auth" element={<AuthPage />} />
             <Route path="/invite/:workspaceId" element={<InvitePage />} />
@@ -36,6 +42,14 @@ const App = () => (
               element={(
                 <ProtectedRoute>
                   <PlannerPage />
+                </ProtectedRoute>
+              )}
+            />
+            <Route
+              path="/dashboard"
+              element={(
+                <ProtectedRoute>
+                  <DashboardPage />
                 </ProtectedRoute>
               )}
             />

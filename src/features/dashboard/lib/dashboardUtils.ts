@@ -1,0 +1,164 @@
+import { format, subDays, subMonths, subWeeks } from 'date-fns';
+import {
+  DashboardBarPalette,
+  DashboardFilterField,
+  DashboardFilterGroup,
+  DashboardFilterOperator,
+  DashboardPeriod,
+  DashboardStatus,
+  DashboardStatsRow,
+  DashboardWidget,
+  DashboardWidgetData,
+} from '@/features/dashboard/types/dashboard';
+
+export const DEFAULT_BAR_PALETTE: DashboardBarPalette = 'pastel-sky';
+
+export const BAR_PALETTES: Record<DashboardBarPalette, { label: string; colors: string[] }> = {
+  'pastel-sky': {
+    label: 'Pastel sky',
+    colors: ['#A7C7E7', '#BDE0FE', '#CDB4DB', '#FFC8DD', '#FFAFCC'],
+  },
+  'pastel-dawn': {
+    label: 'Pastel dawn',
+    colors: ['#F4C2C2', '#FFD8BE', '#FFE5B4', '#FFF1C1', '#FDE2E4'],
+  },
+  'pastel-mint': {
+    label: 'Pastel mint',
+    colors: ['#B5EAD7', '#C7F9CC', '#E2F0CB', '#C3FBD8', '#D4F0F0'],
+  },
+  mono: {
+    label: 'Monochrome',
+    colors: ['#1F2937', '#374151', '#4B5563', '#6B7280', '#9CA3AF'],
+  },
+  checker: {
+    label: 'Checkerboard',
+    colors: ['#CBD5E1', '#94A3B8'],
+  },
+};
+
+export const getBarPalette = (palette?: DashboardBarPalette) => {
+  const key = palette && BAR_PALETTES[palette] ? palette : DEFAULT_BAR_PALETTE;
+  return BAR_PALETTES[key].colors;
+};
+
+export const createWidgetId = () => {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
+    return crypto.randomUUID();
+  }
+  return `widget-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+};
+
+export const getPeriodRange = (period: DashboardPeriod) => {
+  const end = new Date();
+  const start =
+    period === 'day'
+      ? subDays(end, 0)
+      : period === 'week'
+        ? subWeeks(end, 1)
+        : subMonths(end, 1);
+  return {
+    startDate: format(start, 'yyyy-MM-dd'),
+    endDate: format(end, 'yyyy-MM-dd'),
+  };
+};
+
+export const isCancelledStatusName = (name: string) => {
+  const value = name.trim().toLowerCase();
+  return value.includes('\u043e\u0442\u043c\u0435\u043d') || value.includes('cancel');
+};
+
+const buildStatusSets = (statuses: DashboardStatus[]) => {
+  const cancelled = statuses.filter((status) => isCancelledStatusName(status.name)).map((status) => status.id);
+  const closed = statuses
+    .filter((status) => status.isFinal && !isCancelledStatusName(status.name))
+    .map((status) => status.id);
+  const active = statuses.filter((status) => !status.isFinal).map((status) => status.id);
+  const all = statuses.map((status) => status.id);
+
+  return {
+    all: new Set(all),
+    active: new Set(active),
+    final: new Set(closed),
+    cancelled: new Set(cancelled),
+  };
+};
+
+const resolveStatusFilter = (widget: DashboardWidget, statuses: DashboardStatus[]) => {
+  const sets = buildStatusSets(statuses);
+  if (widget.statusFilter === 'custom') {
+    const customIds = widget.statusIds ?? [];
+    return customIds.length > 0 ? new Set(customIds) : sets.all;
+  }
+  if (widget.statusFilter === 'active') return sets.active;
+  if (widget.statusFilter === 'final') return sets.final;
+  if (widget.statusFilter === 'cancelled') return sets.cancelled;
+  return sets.all;
+};
+
+const getFieldValue = (row: DashboardStatsRow, field: DashboardFilterField) => {
+  if (field === 'assignee') return row.assignee_id ?? null;
+  if (field === 'project') return row.project_id ?? null;
+  return row.status_id;
+};
+
+const matchesOperator = (value: string | null, operator: DashboardFilterOperator, target: string) => {
+  const isMatch = value === target;
+  return operator === 'eq' ? isMatch : !isMatch;
+};
+
+const matchesGroup = (row: DashboardStatsRow, group: DashboardFilterGroup) => {
+  const rules = group.rules.filter((rule) => rule.value);
+  if (!rules.length) return true;
+  const matches = rules.map((rule) => (
+    matchesOperator(getFieldValue(row, rule.field), rule.operator, rule.value)
+  ));
+  return group.match === 'and' ? matches.every(Boolean) : matches.some(Boolean);
+};
+
+const matchesFilterGroups = (row: DashboardStatsRow, groups?: DashboardFilterGroup[]) => {
+  if (!groups || groups.length === 0) return true;
+  const meaningfulGroups = groups.filter((group) => group.rules.some((rule) => rule.value));
+  if (!meaningfulGroups.length) return true;
+  return meaningfulGroups.some((group) => matchesGroup(row, group));
+};
+
+export const buildWidgetData = (
+  rows: DashboardStatsRow[],
+  widget: DashboardWidget,
+  statuses: DashboardStatus[],
+): DashboardWidgetData => {
+  const groupBy = widget.groupBy ?? 'none';
+  const statusFilter = statuses.length > 0
+    ? resolveStatusFilter(widget, statuses)
+    : new Set(rows.map((row) => row.status_id));
+  const filtered = rows.filter((row) => (
+    statusFilter.has(row.status_id) && matchesFilterGroups(row, widget.filterGroups)
+  ));
+  const seriesMap = new Map<string, { name: string; value: number }>();
+
+  if (groupBy === 'assignee') {
+    filtered.forEach((row) => {
+      if (!widget.includeUnassigned && !row.assignee_id) return;
+      const key = row.assignee_id ?? 'unassigned';
+      const name = row.assignee_name ?? 'Unassigned';
+      const existing = seriesMap.get(key) ?? { name, value: 0 };
+      existing.value += row.total;
+      seriesMap.set(key, existing);
+    });
+  } else if (groupBy === 'status') {
+    filtered.forEach((row) => {
+      const key = row.status_id;
+      const name = row.status_name;
+      const existing = seriesMap.get(key) ?? { name, value: 0 };
+      existing.value += row.total;
+      seriesMap.set(key, existing);
+    });
+  }
+
+  const series = Array.from(seriesMap.values()).sort((a, b) => b.value - a.value);
+  const total = groupBy === 'none'
+    ? filtered.reduce((sum, row) => sum + row.total, 0)
+    : series.reduce((sum, item) => sum + item.value, 0);
+
+  return { total, series };
+};
