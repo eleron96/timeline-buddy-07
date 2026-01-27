@@ -161,6 +161,31 @@
     font-family: 'Open Sans', 'Inter', system-ui, sans-serif;
   }
 
+  .react-grid-item {
+    transition: transform 160ms ease, width 160ms ease, height 160ms ease;
+  }
+
+  .react-grid-item.resizing {
+    transition: none;
+  }
+
+  .react-grid-item > .dashboard-grid-item {
+    height: 100%;
+    width: 100%;
+    min-height: 0;
+  }
+
+  .react-grid-item .react-resizable-handle {
+    bottom: 6px;
+    right: 6px;
+    z-index: 10;
+    opacity: 0.7;
+  }
+
+  .react-grid-item .react-resizable-handle:hover {
+    opacity: 1;
+  }
+
   .rich-text-editor {
     @apply min-h-[96px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2;
     @apply whitespace-pre-wrap break-words;

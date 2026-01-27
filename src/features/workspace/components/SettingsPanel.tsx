@@ -7,6 +7,7 @@ import { Input } from '@/shared/ui/input';
 import { Label } from '@/shared/ui/label';
 import { Switch } from '@/shared/ui/switch';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/shared/ui/sheet';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/shared/ui/accordion';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/shared/ui/tabs';
 import {
   AlertDialog,
@@ -21,6 +22,7 @@ import {
 import { Plus, Trash2, Settings2 } from 'lucide-react';
 import { supabase } from '@/shared/lib/supabaseClient';
 import { ColorPicker } from '@/shared/ui/color-picker';
+import { WorkspaceMembersSheet } from '@/features/workspace/components/WorkspaceMembersSheet';
 
 interface SettingsPanelProps {
   open: boolean;
@@ -78,6 +80,8 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ open, onOpenChange
   const [templateApplyError, setTemplateApplyError] = useState('');
   const [templateApplying, setTemplateApplying] = useState(false);
   const [templateApplied, setTemplateApplied] = useState(false);
+  const [deleteConfirmValue, setDeleteConfirmValue] = useState('');
+  const [membersOpen, setMembersOpen] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -85,7 +89,17 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ open, onOpenChange
     setWorkspaceError('');
     setTemplateApplyError('');
     setTemplateApplied(false);
+    setDeleteConfirmValue('');
   }, [open, currentWorkspace?.name]);
+
+  const deleteConfirmName = currentWorkspace?.name ?? '';
+  const canDeleteWorkspace = Boolean(
+    isAdmin
+      && currentWorkspaceId
+      && deleteConfirmName
+      && deleteConfirmValue.trim() === deleteConfirmName,
+  );
+  const generalDefaultSections = isAdmin ? ['name'] : ['access', 'name'];
 
   const handleAddStatus = () => {
     if (!newStatusName.trim()) return;
@@ -248,279 +262,373 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ open, onOpenChange
             </SheetTitle>
           </SheetHeader>
 
-          <Tabs defaultValue="workspace" className="flex-1 flex flex-col mt-4">
+          <Tabs defaultValue="general" className="flex-1 flex flex-col mt-4">
             <TabsList className="flex flex-wrap w-full h-auto items-start justify-start gap-2 mb-4">
-              <TabsTrigger value="workspace" className="whitespace-nowrap">Workspace</TabsTrigger>
-              <TabsTrigger value="statuses" className="whitespace-nowrap">Statuses</TabsTrigger>
-              <TabsTrigger value="types" className="whitespace-nowrap">Types</TabsTrigger>
-              <TabsTrigger value="tags" className="whitespace-nowrap">Tags</TabsTrigger>
-              <TabsTrigger value="projects" className="whitespace-nowrap">Projects</TabsTrigger>
+              <TabsTrigger value="general" className="whitespace-nowrap">General</TabsTrigger>
+              <TabsTrigger value="workflow" className="whitespace-nowrap">Workflow</TabsTrigger>
+              <TabsTrigger value="classification" className="whitespace-nowrap">Classification</TabsTrigger>
               <TabsTrigger value="people" className="whitespace-nowrap">People</TabsTrigger>
             </TabsList>
 
             <div className="flex-1 space-y-4">
-              {/* Workspace */}
-              <TabsContent value="workspace" className="space-y-4 m-0">
-                {!isAdmin && (
-                  <SectionCard title="Access">
-                    <p className="text-sm text-muted-foreground">
-                      You have view access and cannot edit this workspace.
-                    </p>
-                  </SectionCard>
-                )}
-
-                <SectionCard title="Name">
-                  <div className="space-y-2">
-                    <Label htmlFor="workspace-name">Workspace name</Label>
-                    <Input
-                      id="workspace-name"
-                      value={workspaceName}
-                      onChange={(e) => setWorkspaceName(e.target.value)}
-                      disabled={!isAdmin || !currentWorkspaceId || workspaceSaving}
-                    />
-                    {workspaceError && (
-                      <div className="text-sm text-destructive">{workspaceError}</div>
-                    )}
-                    <Button
-                      onClick={handleSaveWorkspaceName}
-                      disabled={!isAdmin || !currentWorkspaceId || workspaceSaving || !workspaceName.trim()}
-                    >
-                      Save
-                    </Button>
-                  </div>
-                </SectionCard>
-
-                <SectionCard title="Template">
-                  <p className="text-xs text-muted-foreground">
-                    Apply your saved template to this workspace (adds missing items by name).
-                  </p>
-                  {templateApplyError && (
-                    <div className="text-sm text-destructive">{templateApplyError}</div>
+              {/* General */}
+              <TabsContent value="general" className="m-0">
+                <Accordion type="multiple" defaultValue={generalDefaultSections} className="space-y-3">
+                  {!isAdmin && (
+                    <AccordionItem value="access" className="border-0">
+                      <SectionCard>
+                        <AccordionTrigger className="py-0 hover:no-underline">
+                          <span className="text-sm font-semibold">Access</span>
+                        </AccordionTrigger>
+                        <AccordionContent>
+                          <p className="text-sm text-muted-foreground">
+                            You have view access and cannot edit this workspace.
+                          </p>
+                        </AccordionContent>
+                      </SectionCard>
+                    </AccordionItem>
                   )}
-                  {templateApplied && (
-                    <div className="text-sm text-emerald-600">Template applied.</div>
-                  )}
-                  <Button
-                    variant="secondary"
-                    onClick={handleApplyTemplate}
-                    disabled={!user || !currentWorkspaceId || templateApplying}
-                  >
-                    Apply template
-                  </Button>
-                </SectionCard>
 
-                <SectionCard title="Danger zone">
-                  <Button
-                    variant="destructive"
-                    onClick={() => setDeleteOpen(true)}
-                    disabled={!isAdmin || !currentWorkspaceId}
-                  >
-                    Delete workspace
-                  </Button>
-                </SectionCard>
-              </TabsContent>
-
-              {/* Statuses */}
-              <TabsContent value="statuses" className="space-y-4 m-0">
-                <SectionCard title="Add status">
-                  <div className="flex gap-2">
-                    <Input
-                      placeholder="New status name..."
-                      value={newStatusName}
-                      onChange={(e) => setNewStatusName(e.target.value)}
-                      onKeyDown={(e) => e.key === 'Enter' && handleAddStatus()}
-                    />
-                    <Button onClick={handleAddStatus} size="icon">
-                      <Plus className="w-4 h-4" />
-                    </Button>
-                  </div>
-                </SectionCard>
-
-                <SectionCard title="Statuses">
-                  <div className="space-y-2">
-                    {statuses.map(status => (
-                      <div key={status.id} className="flex items-center gap-2 p-2 bg-muted/50 rounded-lg">
-                        <ColorPicker
-                          value={status.color}
-                          onChange={(color) => updateStatus(status.id, { color })}
-                        />
-                        <Input
-                          value={status.name}
-                          onChange={(e) => updateStatus(status.id, { name: e.target.value })}
-                          className="flex-1 h-8"
-                        />
-                        <div className="flex items-center gap-1">
-                          <Switch
-                            id={`final-${status.id}`}
-                            checked={status.isFinal}
-                            onCheckedChange={(isFinal) => updateStatus(status.id, { isFinal })}
+                  <AccordionItem value="name" className="border-0">
+                    <SectionCard>
+                      <AccordionTrigger className="py-0 hover:no-underline">
+                        <span className="text-sm font-semibold">Workspace name</span>
+                      </AccordionTrigger>
+                      <AccordionContent>
+                        <div className="space-y-2">
+                          <Label htmlFor="workspace-name">Workspace name</Label>
+                          <Input
+                            id="workspace-name"
+                            value={workspaceName}
+                            onChange={(e) => setWorkspaceName(e.target.value)}
+                            disabled={!isAdmin || !currentWorkspaceId || workspaceSaving}
                           />
-                          <Label htmlFor={`final-${status.id}`} className="text-xs text-muted-foreground">
-                            Final
-                          </Label>
+                          {workspaceError && (
+                            <div className="text-sm text-destructive">{workspaceError}</div>
+                          )}
+                          <Button
+                            onClick={handleSaveWorkspaceName}
+                            disabled={!isAdmin || !currentWorkspaceId || workspaceSaving || !workspaceName.trim()}
+                          >
+                            Save
+                          </Button>
                         </div>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => deleteStatus(status.id)}
-                          className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                </SectionCard>
+                      </AccordionContent>
+                    </SectionCard>
+                  </AccordionItem>
+
+                  <AccordionItem value="template" className="border-0">
+                    <SectionCard>
+                      <AccordionTrigger className="py-0 hover:no-underline">
+                        <span className="text-sm font-semibold">Template</span>
+                      </AccordionTrigger>
+                      <AccordionContent>
+                        <div className="space-y-2">
+                          <p className="text-xs text-muted-foreground">
+                            Apply your saved template to this workspace (adds missing items by name).
+                          </p>
+                          {templateApplyError && (
+                            <div className="text-sm text-destructive">{templateApplyError}</div>
+                          )}
+                          {templateApplied && (
+                            <div className="text-sm text-emerald-600">Template applied.</div>
+                          )}
+                          <Button
+                            variant="secondary"
+                            onClick={handleApplyTemplate}
+                            disabled={!user || !currentWorkspaceId || templateApplying}
+                          >
+                            Apply template
+                          </Button>
+                        </div>
+                      </AccordionContent>
+                    </SectionCard>
+                  </AccordionItem>
+
+                  <AccordionItem value="danger" className="border-0">
+                    <SectionCard>
+                      <AccordionTrigger className="py-0 text-destructive hover:no-underline">
+                        <span className="text-sm font-semibold">Danger zone</span>
+                      </AccordionTrigger>
+                      <AccordionContent>
+                        <div className="space-y-3">
+                          <p className="text-xs text-muted-foreground">
+                            Deleting a workspace is permanent. Type the workspace name to enable deletion.
+                          </p>
+                          <div className="space-y-2">
+                            <Label htmlFor="delete-workspace-confirm">Workspace name</Label>
+                            <Input
+                              id="delete-workspace-confirm"
+                              placeholder={deleteConfirmName || 'Workspace name'}
+                              value={deleteConfirmValue}
+                              onChange={(event) => setDeleteConfirmValue(event.target.value)}
+                              disabled={!isAdmin || !currentWorkspaceId}
+                            />
+                          </div>
+                          <Button
+                            variant="destructive"
+                            onClick={() => setDeleteOpen(true)}
+                            disabled={!canDeleteWorkspace}
+                          >
+                            Delete workspace
+                          </Button>
+                        </div>
+                      </AccordionContent>
+                    </SectionCard>
+                  </AccordionItem>
+                </Accordion>
               </TabsContent>
 
-              {/* Types */}
-              <TabsContent value="types" className="space-y-4 m-0">
-                <SectionCard title="Add type">
-                  <div className="flex gap-2">
-                    <Input
-                      placeholder="New type name..."
-                      value={newTypeName}
-                      onChange={(e) => setNewTypeName(e.target.value)}
-                      onKeyDown={(e) => e.key === 'Enter' && handleAddType()}
-                    />
-                    <Button onClick={handleAddType} size="icon">
-                      <Plus className="w-4 h-4" />
-                    </Button>
-                  </div>
-                </SectionCard>
+              {/* Workflow */}
+              <TabsContent value="workflow" className="m-0">
+                <Accordion type="multiple" defaultValue={['statuses']} className="space-y-3">
+                  <AccordionItem value="statuses" className="border-0">
+                    <SectionCard>
+                      <AccordionTrigger className="py-0 hover:no-underline">
+                        <span className="text-sm font-semibold">Statuses</span>
+                      </AccordionTrigger>
+                      <AccordionContent>
+                        <div className="space-y-3">
+                          <div className="flex gap-2">
+                            <Input
+                              placeholder="New status name..."
+                              value={newStatusName}
+                              onChange={(e) => setNewStatusName(e.target.value)}
+                              onKeyDown={(e) => e.key === 'Enter' && handleAddStatus()}
+                            />
+                            <Button onClick={handleAddStatus} size="icon">
+                              <Plus className="w-4 h-4" />
+                            </Button>
+                          </div>
 
-                <SectionCard title="Types">
-                  <div className="space-y-2">
-                    {taskTypes.map(type => (
-                      <div key={type.id} className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg">
-                        <Input
-                          value={type.name}
-                          onChange={(e) => updateTaskType(type.id, { name: e.target.value })}
-                          className="flex-1"
-                        />
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => deleteTaskType(type.id)}
-                          className="text-muted-foreground hover:text-destructive"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                </SectionCard>
+                          <div className="flex items-center gap-2 px-2 text-xs text-muted-foreground">
+                            <span className="w-6" aria-hidden="true" />
+                            <span className="flex-1">Status</span>
+                            <span className="w-11 text-right">Final</span>
+                            <span className="w-8" aria-hidden="true" />
+                          </div>
+
+                          <div className="space-y-2">
+                            {statuses.map((status) => (
+                              <div key={status.id} className="flex items-center gap-2 p-2 bg-muted/50 rounded-lg">
+                                <ColorPicker
+                                  value={status.color}
+                                  onChange={(color) => updateStatus(status.id, { color })}
+                                />
+                                <Input
+                                  value={status.name}
+                                  onChange={(e) => updateStatus(status.id, { name: e.target.value })}
+                                  className="flex-1 h-8"
+                                />
+                                <Switch
+                                  checked={status.isFinal}
+                                  onCheckedChange={(isFinal) => updateStatus(status.id, { isFinal })}
+                                  aria-label="Final status"
+                                  title="Final status"
+                                />
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => deleteStatus(status.id)}
+                                  className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </Button>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </AccordionContent>
+                    </SectionCard>
+                  </AccordionItem>
+
+                  <AccordionItem value="types" className="border-0">
+                    <SectionCard>
+                      <AccordionTrigger className="py-0 hover:no-underline">
+                        <span className="text-sm font-semibold">Task types</span>
+                      </AccordionTrigger>
+                      <AccordionContent>
+                        <div className="space-y-3">
+                          <div className="flex gap-2">
+                            <Input
+                              placeholder="New type name..."
+                              value={newTypeName}
+                              onChange={(e) => setNewTypeName(e.target.value)}
+                              onKeyDown={(e) => e.key === 'Enter' && handleAddType()}
+                            />
+                            <Button onClick={handleAddType} size="icon">
+                              <Plus className="w-4 h-4" />
+                            </Button>
+                          </div>
+
+                          <div className="space-y-2">
+                            {taskTypes.map((type) => (
+                              <div key={type.id} className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg">
+                                <Input
+                                  value={type.name}
+                                  onChange={(e) => updateTaskType(type.id, { name: e.target.value })}
+                                  className="flex-1"
+                                />
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => deleteTaskType(type.id)}
+                                  className="text-muted-foreground hover:text-destructive"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </Button>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </AccordionContent>
+                    </SectionCard>
+                  </AccordionItem>
+                </Accordion>
               </TabsContent>
 
-              {/* Tags */}
-              <TabsContent value="tags" className="space-y-4 m-0">
-                <SectionCard title="Add tag">
-                  <div className="flex gap-2">
-                    <Input
-                      placeholder="New tag name..."
-                      value={newTagName}
-                      onChange={(e) => setNewTagName(e.target.value)}
-                      onKeyDown={(e) => e.key === 'Enter' && handleAddTag()}
-                    />
-                    <Button onClick={handleAddTag} size="icon">
-                      <Plus className="w-4 h-4" />
-                    </Button>
-                  </div>
-                </SectionCard>
+              {/* Classification */}
+              <TabsContent value="classification" className="m-0">
+                <Accordion type="multiple" defaultValue={['tags']} className="space-y-3">
+                  <AccordionItem value="tags" className="border-0">
+                    <SectionCard>
+                      <AccordionTrigger className="py-0 hover:no-underline">
+                        <span className="text-sm font-semibold">Tags</span>
+                      </AccordionTrigger>
+                      <AccordionContent>
+                        <div className="space-y-3">
+                          <div className="flex gap-2">
+                            <Input
+                              placeholder="New tag name..."
+                              value={newTagName}
+                              onChange={(e) => setNewTagName(e.target.value)}
+                              onKeyDown={(e) => e.key === 'Enter' && handleAddTag()}
+                            />
+                            <Button onClick={handleAddTag} size="icon">
+                              <Plus className="w-4 h-4" />
+                            </Button>
+                          </div>
 
-                <SectionCard title="Tags">
-                  <div className="space-y-2">
-                    {tags.map(tag => (
-                      <div key={tag.id} className="flex items-center gap-2 p-2 bg-muted/50 rounded-lg">
-                        <ColorPicker
-                          value={tag.color}
-                          onChange={(color) => updateTag(tag.id, { color })}
-                        />
-                        <Input
-                          value={tag.name}
-                          onChange={(e) => updateTag(tag.id, { name: e.target.value })}
-                          className="flex-1 h-8"
-                        />
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => deleteTag(tag.id)}
-                          className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                </SectionCard>
-              </TabsContent>
+                          <div className="space-y-2">
+                            {tags.map((tag) => (
+                              <div key={tag.id} className="flex items-center gap-2 p-2 bg-muted/50 rounded-lg">
+                                <ColorPicker
+                                  value={tag.color}
+                                  onChange={(color) => updateTag(tag.id, { color })}
+                                />
+                                <Input
+                                  value={tag.name}
+                                  onChange={(e) => updateTag(tag.id, { name: e.target.value })}
+                                  className="flex-1 h-8"
+                                />
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => deleteTag(tag.id)}
+                                  className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </Button>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </AccordionContent>
+                    </SectionCard>
+                  </AccordionItem>
 
-              {/* Projects */}
-              <TabsContent value="projects" className="space-y-4 m-0">
-                <SectionCard title="Add project">
-                  <div className="flex gap-2">
-                    <Input
-                      placeholder="New project name..."
-                      value={newProjectName}
-                      onChange={(e) => setNewProjectName(e.target.value)}
-                      onKeyDown={(e) => e.key === 'Enter' && handleAddProject()}
-                    />
-                    <Button onClick={handleAddProject} size="icon">
-                      <Plus className="w-4 h-4" />
-                    </Button>
-                  </div>
-                </SectionCard>
+                  <AccordionItem value="projects" className="border-0">
+                    <SectionCard>
+                      <AccordionTrigger className="py-0 hover:no-underline">
+                        <span className="text-sm font-semibold">Projects</span>
+                      </AccordionTrigger>
+                      <AccordionContent>
+                        <div className="space-y-3">
+                          <div className="flex gap-2">
+                            <Input
+                              placeholder="New project name..."
+                              value={newProjectName}
+                              onChange={(e) => setNewProjectName(e.target.value)}
+                              onKeyDown={(e) => e.key === 'Enter' && handleAddProject()}
+                            />
+                            <Button onClick={handleAddProject} size="icon">
+                              <Plus className="w-4 h-4" />
+                            </Button>
+                          </div>
 
-                <SectionCard title="Projects">
-                  <div className="space-y-2">
-                    {projects.map(project => (
-                      <div key={project.id} className="flex items-center gap-2 p-2 bg-muted/50 rounded-lg">
-                        <ColorPicker
-                          value={project.color}
-                          onChange={(color) => updateProject(project.id, { color })}
-                        />
-                        <Input
-                          value={project.name}
-                          onChange={(e) => updateProject(project.id, { name: e.target.value })}
-                          className="flex-1 h-8"
-                        />
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => deleteProject(project.id)}
-                          className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                </SectionCard>
+                          <div className="space-y-2">
+                            {projects.map((project) => (
+                              <div key={project.id} className="flex items-center gap-2 p-2 bg-muted/50 rounded-lg">
+                                <ColorPicker
+                                  value={project.color}
+                                  onChange={(color) => updateProject(project.id, { color })}
+                                />
+                                <Input
+                                  value={project.name}
+                                  onChange={(e) => updateProject(project.id, { name: e.target.value })}
+                                  className="flex-1 h-8"
+                                />
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => deleteProject(project.id)}
+                                  className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </Button>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </AccordionContent>
+                    </SectionCard>
+                  </AccordionItem>
+                </Accordion>
               </TabsContent>
 
               {/* People */}
-              <TabsContent value="people" className="space-y-4 m-0">
-                <SectionCard title="People">
-                  <p className="text-sm text-muted-foreground">
-                    People are workspace members. Manage members from the workspace menu.
-                  </p>
+              <TabsContent value="people" className="m-0">
+                <Accordion type="multiple" defaultValue={['members']} className="space-y-3">
+                  <AccordionItem value="members" className="border-0">
+                    <SectionCard>
+                      <AccordionTrigger className="py-0 hover:no-underline">
+                        <span className="text-sm font-semibold">Members</span>
+                      </AccordionTrigger>
+                      <AccordionContent>
+                        <div className="space-y-3">
+                          <p className="text-sm text-muted-foreground">
+                            Manage invites and roles in the members panel.
+                          </p>
+                          <Button
+                            variant="secondary"
+                            onClick={() => setMembersOpen(true)}
+                            disabled={!currentWorkspaceId}
+                          >
+                            Manage members
+                          </Button>
 
-                  <div className="space-y-2">
-                    {filteredAssignees.length === 0 && (
-                      <div className="text-sm text-muted-foreground">No members yet.</div>
-                    )}
-                    {filteredAssignees.map((assignee) => (
-                      <div key={assignee.id} className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg">
-                        <span className="text-sm font-medium truncate">{assignee.name}</span>
-                      </div>
-                    ))}
-                  </div>
-                </SectionCard>
+                          <div className="space-y-2">
+                            {filteredAssignees.length === 0 && (
+                              <div className="text-sm text-muted-foreground">No members yet.</div>
+                            )}
+                            {filteredAssignees.map((assignee) => (
+                              <div key={assignee.id} className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg">
+                                <span className="text-sm font-medium truncate">{assignee.name}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </AccordionContent>
+                    </SectionCard>
+                  </AccordionItem>
+                </Accordion>
               </TabsContent>
             </div>
           </Tabs>
         </SheetContent>
       </Sheet>
+
+      <WorkspaceMembersSheet open={membersOpen} onOpenChange={setMembersOpen} />
 
       <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <AlertDialogContent>

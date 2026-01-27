@@ -12,6 +12,7 @@ import { Plus, Settings, User } from 'lucide-react';
 import { usePlannerStore } from '@/features/planner/store/plannerStore';
 import { useAuthStore } from '@/features/auth/store/authStore';
 import { WorkspaceSwitcher } from '@/features/workspace/components/WorkspaceSwitcher';
+import { WorkspaceNav } from '@/features/workspace/components/WorkspaceNav';
 import { Filters } from '@/features/planner/types/planner';
 import { format } from 'date-fns';
 import { Navigate } from 'react-router-dom';
@@ -118,18 +119,15 @@ const PlannerPage = () => {
       <header className="flex items-center justify-between px-4 py-3 border-b border-border bg-card">
         <div className="flex items-center gap-3">
           <WorkspaceSwitcher />
-          <div className="h-6 w-px bg-border" />
-          <div className="flex flex-col min-w-0">
-            <h1 className="text-xl font-semibold text-foreground">Timeline Planner</h1>
-            {userLabel && (
-              <span className="text-xs text-muted-foreground truncate" title={userLabel}>
-                {userLabel}
-              </span>
-            )}
-          </div>
+          <WorkspaceNav />
         </div>
         
         <div className="flex items-center gap-2">
+          {userLabel && (
+            <span className="max-w-[220px] truncate text-xs text-muted-foreground" title={userLabel}>
+              {userLabel}
+            </span>
+          )}
           <Button onClick={() => setShowAddTask(true)} className="gap-2" disabled={!canEdit}>
             <Plus className="h-4 w-4" />
             Add Task
