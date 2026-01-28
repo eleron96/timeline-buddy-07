@@ -50,6 +50,7 @@ type ProjectRow = {
   workspace_id: string;
   name: string;
   color: string;
+  archived: boolean;
 };
 
 type AssigneeRow = {
@@ -57,6 +58,7 @@ type AssigneeRow = {
   workspace_id: string;
   name: string;
   user_id: string | null;
+  is_active: boolean;
 };
 
 type StatusRow = {
@@ -89,10 +91,31 @@ type MilestoneRow = {
   title: string;
 };
 
+type DashboardTaskCountRow = {
+  assignee_id: string | null;
+  assignee_name: string | null;
+  project_id: string | null;
+  project_name: string | null;
+  status_id: string | null;
+  status_name: string | null;
+  status_is_final: boolean | null;
+  total: number | string | null;
+};
+
 interface PlannerStore extends PlannerState {
   workspaceId: string | null;
   loading: boolean;
   error: string | null;
+  dataRequestId: number;
+  loadedRange: {
+    start: string;
+    end: string;
+    viewMode: ViewMode;
+    workspaceId: string;
+  } | null;
+  assigneeTaskCounts: Record<string, number>;
+  assigneeCountsDate: string | null;
+  assigneeCountsWorkspaceId: string | null;
   scrollRequestId: number;
   scrollTargetDate: string | null;
   setWorkspaceId: (id: string | null) => void;
@@ -103,6 +126,7 @@ interface PlannerStore extends PlannerState {
   addTask: (task: Omit<Task, 'id'>) => Promise<Task | null>;
   updateTask: (id: string, updates: Partial<Task>) => Promise<void>;
   deleteTask: (id: string) => Promise<void>;
+  deleteTasks: (ids: string[]) => Promise<{ error?: string }>;
   duplicateTask: (id: string) => Promise<void>;
   createRepeats: (id: string, options: { frequency: 'daily' | 'weekly' | 'monthly' | 'yearly'; ends: 'never' | 'on' | 'after'; untilDate?: string; count?: number }) => Promise<{ error?: string; created?: number }>;
   moveTask: (id: string, startDate: string, endDate: string) => Promise<void>;
@@ -152,12 +176,14 @@ const initialFilters: Filters = {
   hideUnassigned: false,
 };
 
+const LOAD_WINDOW_MONTHS = 6;
+
 const buildTaskRange = (currentDate: string, viewMode: ViewMode) => {
   const anchor = parseISO(currentDate);
   switch (viewMode) {
     case 'day': {
-      const start = subMonths(anchor, 2);
-      const end = addMonths(anchor, 2);
+      const start = subMonths(anchor, LOAD_WINDOW_MONTHS);
+      const end = addMonths(anchor, LOAD_WINDOW_MONTHS);
       return { start: format(start, 'yyyy-MM-dd'), end: format(end, 'yyyy-MM-dd') };
     }
     case 'calendar': {
@@ -166,11 +192,16 @@ const buildTaskRange = (currentDate: string, viewMode: ViewMode) => {
       return { start: format(start, 'yyyy-MM-dd'), end: format(end, 'yyyy-MM-dd') };
     }
     default: {
-      const start = subMonths(anchor, 6);
-      const end = addMonths(anchor, 6);
+      const start = subMonths(anchor, LOAD_WINDOW_MONTHS);
+      const end = addMonths(anchor, LOAD_WINDOW_MONTHS);
       return { start: format(start, 'yyyy-MM-dd'), end: format(end, 'yyyy-MM-dd') };
     }
   }
+};
+
+const isDateWithinRange = (date: string, start: string, end: string) => {
+  const target = parseISO(date);
+  return target >= parseISO(start) && target <= parseISO(end);
 };
 
 const normalizeAssigneeIds = (assigneeIds: string[] | null | undefined, legacyId: string | null | undefined) => {
@@ -204,12 +235,14 @@ const mapProjectRow = (row: ProjectRow): Project => ({
   id: row.id,
   name: row.name,
   color: row.color,
+  archived: row.archived ?? false,
 });
 
 const mapAssigneeRow = (row: AssigneeRow): Assignee => ({
   id: row.id,
   name: row.name,
   userId: row.user_id,
+  isActive: row.is_active ?? true,
 });
 
 const mapStatusRow = (row: StatusRow): Status => ({
@@ -276,6 +309,11 @@ export const usePlannerStore = create<PlannerStore>()(
       workspaceId: null,
       loading: false,
       error: null,
+      dataRequestId: 0,
+      loadedRange: null,
+      assigneeTaskCounts: {},
+      assigneeCountsDate: null,
+      assigneeCountsWorkspaceId: null,
       scrollRequestId: 0,
       scrollTargetDate: null,
 
@@ -292,17 +330,59 @@ export const usePlannerStore = create<PlannerStore>()(
         workspaceId: null,
         loading: false,
         error: null,
+        dataRequestId: 0,
+        loadedRange: null,
+        assigneeTaskCounts: {},
+        assigneeCountsDate: null,
+        assigneeCountsWorkspaceId: null,
         scrollRequestId: 0,
         scrollTargetDate: null,
       }),
 
       loadWorkspaceData: async (workspaceId) => {
-        set({ loading: true, error: null, workspaceId, selectedTaskId: null });
+        const { currentDate, viewMode, loadedRange } = get();
+        if (
+          loadedRange
+          && loadedRange.workspaceId === workspaceId
+          && loadedRange.viewMode === viewMode
+          && isDateWithinRange(currentDate, loadedRange.start, loadedRange.end)
+        ) {
+          return;
+        }
 
-        const { currentDate, viewMode } = get();
+        const requestId = get().dataRequestId + 1;
+        set({
+          loading: true,
+          error: null,
+          workspaceId,
+          selectedTaskId: null,
+          dataRequestId: requestId,
+        });
+
         const { start, end } = buildTaskRange(currentDate, viewMode);
+        const today = format(new Date(), 'yyyy-MM-dd');
+        const countsEnd = format(addYears(parseISO(today), 10), 'yyyy-MM-dd');
+        const { assigneeCountsDate, assigneeCountsWorkspaceId } = get();
+        const shouldFetchCounts = assigneeCountsDate !== today || assigneeCountsWorkspaceId !== workspaceId;
 
-        const [tasksRes, projectsRes, assigneesRes, statusesRes, taskTypesRes, tagsRes, milestonesRes] = await Promise.all([
+        const countsPromise = shouldFetchCounts
+          ? supabase.rpc('dashboard_task_counts', {
+            p_workspace_id: workspaceId,
+            p_start_date: today,
+            p_end_date: countsEnd,
+          })
+          : Promise.resolve({ data: null, error: null });
+
+        const [
+          tasksRes,
+          projectsRes,
+          assigneesRes,
+          statusesRes,
+          taskTypesRes,
+          tagsRes,
+          milestonesRes,
+          countsRes,
+        ] = await Promise.all([
           supabase
             .from('tasks')
             .select('*')
@@ -320,7 +400,10 @@ export const usePlannerStore = create<PlannerStore>()(
             .eq('workspace_id', workspaceId)
             .gte('date', start)
             .lte('date', end),
+          countsPromise,
         ]);
+
+        if (get().dataRequestId !== requestId) return;
 
         if (tasksRes.error || projectsRes.error || assigneesRes.error || statusesRes.error || taskTypesRes.error || tagsRes.error || milestonesRes.error) {
           set({
@@ -336,6 +419,8 @@ export const usePlannerStore = create<PlannerStore>()(
           });
           return;
         }
+
+        if (get().dataRequestId !== requestId) return;
 
         const taskRows = (tasksRes.data ?? []) as TaskRow[];
         const assigneeRows = (assigneesRes.data ?? []) as AssigneeRow[];
@@ -356,6 +441,8 @@ export const usePlannerStore = create<PlannerStore>()(
           }
         }
 
+        if (get().dataRequestId !== requestId) return;
+
         const assignees = assigneeRows
           .filter((row) => {
             // Всегда исключаем админа из списка assignees, независимо от того, назначен ли он на задачи
@@ -365,16 +452,49 @@ export const usePlannerStore = create<PlannerStore>()(
           .sort((left, right) => left.name.localeCompare(right.name))
           .map(mapAssigneeRow);
 
-        set({
+        const nextProjects = (projectsRes.data ?? []).map(mapProjectRow);
+        const activeProjectIds = new Set(nextProjects.filter((project) => !project.archived).map((project) => project.id));
+
+        let nextAssigneeCounts = get().assigneeTaskCounts;
+        let nextAssigneeCountsDate = get().assigneeCountsDate;
+        let nextAssigneeCountsWorkspaceId = get().assigneeCountsWorkspaceId;
+
+        if (shouldFetchCounts) {
+          if (countsRes.error) {
+            console.error(countsRes.error);
+          } else {
+            const totals: Record<string, number> = {};
+            (countsRes.data as DashboardTaskCountRow[] | null | undefined ?? []).forEach((row) => {
+              if (!row.assignee_id) return;
+              const value = typeof row.total === 'string' ? Number(row.total) : (row.total ?? 0);
+              totals[row.assignee_id] = (totals[row.assignee_id] ?? 0) + value;
+            });
+            nextAssigneeCounts = totals;
+            nextAssigneeCountsDate = today;
+            nextAssigneeCountsWorkspaceId = workspaceId;
+          }
+        }
+
+        if (get().dataRequestId !== requestId) return;
+
+        set((state) => ({
           tasks: taskRows.map(mapTaskRow),
           milestones: (milestonesRes.data ?? []).map(mapMilestoneRow),
-          projects: (projectsRes.data ?? []).map(mapProjectRow),
+          projects: nextProjects,
           assignees,
           statuses: (statusesRes.data ?? []).map(mapStatusRow),
           taskTypes: (taskTypesRes.data ?? []).map(mapTaskTypeRow),
           tags: (tagsRes.data ?? []).map(mapTagRow),
+          loadedRange: { start, end, viewMode, workspaceId },
+          assigneeTaskCounts: nextAssigneeCounts,
+          assigneeCountsDate: nextAssigneeCountsDate,
+          assigneeCountsWorkspaceId: nextAssigneeCountsWorkspaceId,
+          filters: {
+            ...state.filters,
+            projectIds: state.filters.projectIds.filter((id) => activeProjectIds.has(id)),
+          },
           loading: false,
-        });
+        }));
       },
       refreshAssignees: async () => {
         const workspaceId = get().workspaceId;
@@ -500,6 +620,31 @@ export const usePlannerStore = create<PlannerStore>()(
           tasks: state.tasks.filter((task) => task.id !== id),
           selectedTaskId: state.selectedTaskId === id ? null : state.selectedTaskId,
         }));
+      },
+
+      deleteTasks: async (ids) => {
+        const workspaceId = get().workspaceId;
+        if (!workspaceId || ids.length === 0) return {};
+
+        const { error } = await supabase
+          .from('tasks')
+          .delete()
+          .eq('workspace_id', workspaceId)
+          .in('id', ids);
+
+        if (error) {
+          console.error(error);
+          return { error: error.message };
+        }
+
+        set((state) => ({
+          tasks: state.tasks.filter((task) => !ids.includes(task.id)),
+          selectedTaskId: state.selectedTaskId && ids.includes(state.selectedTaskId)
+            ? null
+            : state.selectedTaskId,
+        }));
+
+        return {};
       },
 
       duplicateTask: async (id) => {
@@ -725,6 +870,7 @@ export const usePlannerStore = create<PlannerStore>()(
             workspace_id: workspaceId,
             name: project.name,
             color: project.color,
+            archived: project.archived ?? false,
           })
           .select('*')
           .single();
@@ -744,6 +890,7 @@ export const usePlannerStore = create<PlannerStore>()(
         const payload: Record<string, unknown> = {};
         if ('name' in updates) payload.name = updates.name;
         if ('color' in updates) payload.color = updates.color;
+        if ('archived' in updates) payload.archived = updates.archived;
         if (Object.keys(payload).length === 0) return;
 
         const { data, error } = await supabase
@@ -760,9 +907,19 @@ export const usePlannerStore = create<PlannerStore>()(
         }
 
         const updated = mapProjectRow(data as ProjectRow);
-        set((state) => ({
-          projects: state.projects.map((project) => (project.id === id ? updated : project)),
-        }));
+        set((state) => {
+          const projects = state.projects.map((project) => (project.id === id ? updated : project));
+          if (!updated.archived) {
+            return { projects };
+          }
+          return {
+            projects,
+            filters: {
+              ...state.filters,
+              projectIds: state.filters.projectIds.filter((projectId) => projectId !== id),
+            },
+          };
+        });
       },
 
       deleteProject: async (id) => {
@@ -783,6 +940,10 @@ export const usePlannerStore = create<PlannerStore>()(
         set((state) => ({
           projects: state.projects.filter((project) => project.id !== id),
           tasks: state.tasks.map((task) => task.projectId === id ? { ...task, projectId: null } : task),
+          filters: {
+            ...state.filters,
+            projectIds: state.filters.projectIds.filter((projectId) => projectId !== id),
+          },
         }));
       },
 
@@ -795,6 +956,7 @@ export const usePlannerStore = create<PlannerStore>()(
           .insert({
             workspace_id: workspaceId,
             name: assignee.name,
+            is_active: assignee.isActive ?? true,
           })
           .select('*')
           .single();
@@ -813,6 +975,7 @@ export const usePlannerStore = create<PlannerStore>()(
 
         const payload: Record<string, unknown> = {};
         if ('name' in updates) payload.name = updates.name;
+        if ('isActive' in updates) payload.is_active = updates.isActive;
         if (Object.keys(payload).length === 0) return;
 
         const { data, error } = await supabase

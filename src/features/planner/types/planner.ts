@@ -19,6 +19,7 @@ export interface Project {
   id: string;
   name: string;
   color: string; // hex
+  archived: boolean;
 }
 
 export interface Assignee {
@@ -26,6 +27,7 @@ export interface Assignee {
   name: string;
   avatar?: string;
   userId?: string | null;
+  isActive: boolean;
 }
 
 export interface Status {

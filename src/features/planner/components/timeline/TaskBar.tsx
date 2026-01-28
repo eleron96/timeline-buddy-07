@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { usePlannerStore } from '@/features/planner/store/plannerStore';
 import { useFilteredAssignees } from '@/features/planner/hooks/useFilteredAssignees';
@@ -125,6 +125,12 @@ export const TaskBar: React.FC<TaskBarProps> = ({
   const barRef = useRef<HTMLDivElement>(null);
   
   const project = projects.find(p => p.id === task.projectId);
+  const activeProjects = useMemo(() => projects.filter((item) => !item.archived), [projects]);
+  const archivedProject = project?.archived ? project : null;
+  const projectOptions = useMemo(() => {
+    if (!archivedProject) return activeProjects;
+    return [archivedProject, ...activeProjects.filter((item) => item.id !== archivedProject.id)];
+  }, [activeProjects, archivedProject]);
   const status = statuses.find(s => s.id === task.statusId);
   const taskType = taskTypes.find(t => t.id === task.typeId);
   const assignedAssignees = filteredAssignees.filter((assignee) => task.assigneeIds.includes(assignee.id));
@@ -293,7 +299,7 @@ export const TaskBar: React.FC<TaskBarProps> = ({
             }
           }}
           className={cn(
-            'task-bar absolute flex flex-col justify-center px-2 py-0.5 overflow-hidden select-none',
+            'task-bar absolute flex flex-col justify-center px-2 py-0.5 overflow-hidden select-none pointer-events-auto',
             isDragging && 'dragging z-50',
             isResizing && 'z-50',
             isSelected && 'ring-2 ring-primary ring-offset-1',
@@ -393,10 +399,13 @@ export const TaskBar: React.FC<TaskBarProps> = ({
               <ContextMenuRadioItem value="none" disabled={!canEdit}>
                 No Project
               </ContextMenuRadioItem>
-              {projects.map((project) => (
-                <ContextMenuRadioItem key={project.id} value={project.id} disabled={!canEdit}>
-                  <span className="mr-2 inline-flex h-2 w-2 rounded-full" style={{ backgroundColor: project.color }} />
-                  {project.name}
+              {projectOptions.map((item) => (
+                <ContextMenuRadioItem key={item.id} value={item.id} disabled={!canEdit}>
+                  <span className="mr-2 inline-flex h-2 w-2 rounded-full" style={{ backgroundColor: item.color }} />
+                  {item.name}
+                  {item.archived && (
+                    <span className="ml-1 text-[10px] text-muted-foreground">(archived)</span>
+                  )}
                 </ContextMenuRadioItem>
               ))}
             </ContextMenuRadioGroup>

@@ -9,6 +9,8 @@ import AuthPage from "@/features/auth/pages/AuthPage";
 import InvitePage from "@/features/auth/pages/InvitePage";
 import AdminUsersPage from "@/features/admin/pages/AdminUsersPage";
 import DashboardPage from "@/features/dashboard/pages/DashboardPage";
+import ProjectsPage from "@/features/projects/pages/ProjectsPage";
+import MembersPage from "@/features/members/pages/MembersPage";
 import { AuthProvider } from "@/features/auth/providers/AuthProvider";
 import { ProtectedRoute } from "@/app/ProtectedRoute";
 
@@ -50,6 +52,22 @@ const App = () => (
               element={(
                 <ProtectedRoute>
                   <DashboardPage />
+                </ProtectedRoute>
+              )}
+            />
+            <Route
+              path="/projects"
+              element={(
+                <ProtectedRoute>
+                  <ProjectsPage />
+                </ProtectedRoute>
+              )}
+            />
+            <Route
+              path="/members"
+              element={(
+                <ProtectedRoute>
+                  <MembersPage />
                 </ProtectedRoute>
               )}
             />

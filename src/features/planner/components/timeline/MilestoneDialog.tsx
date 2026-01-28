@@ -28,7 +28,17 @@ export const MilestoneDialog: React.FC<MilestoneDialogProps> = ({
   const [projectId, setProjectId] = useState('');
 
   const mode = milestone ? 'edit' : 'create';
-  const hasProjects = projects.length > 0;
+  const activeProjects = useMemo(() => projects.filter((project) => !project.archived), [projects]);
+  const currentProject = useMemo(
+    () => projects.find((project) => project.id === milestone?.projectId),
+    [projects, milestone?.projectId],
+  );
+  const archivedProject = currentProject?.archived ? currentProject : null;
+  const projectOptions = useMemo(() => {
+    if (!archivedProject) return activeProjects;
+    return [archivedProject, ...activeProjects.filter((project) => project.id !== archivedProject.id)];
+  }, [activeProjects, archivedProject]);
+  const hasProjects = activeProjects.length > 0 || Boolean(archivedProject);
   const selectedDate = milestone?.date ?? date;
   const formattedDate = useMemo(() => {
     if (!selectedDate) return '';
@@ -43,8 +53,8 @@ export const MilestoneDialog: React.FC<MilestoneDialogProps> = ({
       return;
     }
     setTitle('');
-    setProjectId(projects[0]?.id ?? '');
-  }, [milestone, open, projects]);
+    setProjectId(activeProjects[0]?.id ?? '');
+  }, [milestone, open, activeProjects]);
 
   const handleSave = async () => {
     if (!canEdit || !selectedDate || !projectId || !title.trim()) return;
@@ -101,7 +111,7 @@ export const MilestoneDialog: React.FC<MilestoneDialogProps> = ({
                 <SelectValue placeholder={hasProjects ? 'Select project' : 'No projects'} />
               </SelectTrigger>
               <SelectContent>
-                {projects.map((project) => (
+                {projectOptions.map((project) => (
                   <SelectItem key={project.id} value={project.id}>
                     <div className="flex items-center gap-2">
                       <div
@@ -109,6 +119,9 @@ export const MilestoneDialog: React.FC<MilestoneDialogProps> = ({
                         style={{ backgroundColor: project.color }}
                       />
                       {project.name}
+                      {project.archived && (
+                        <span className="ml-1 text-[10px] text-muted-foreground">(archived)</span>
+                      )}
                     </div>
                   </SelectItem>
                 ))}

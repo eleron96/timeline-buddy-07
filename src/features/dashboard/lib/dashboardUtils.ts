@@ -126,6 +126,14 @@ const matchesFilterGroups = (row: FilterRow, groups?: DashboardFilterGroup[]) =>
   return meaningfulGroups.some((group) => matchesGroup(row, group));
 };
 
+const widgetUsesAssigneeFilters = (widget: DashboardWidget) => (
+  widget.filterGroups?.some((group) => group.rules.some((rule) => rule.field === 'assignee' && rule.value))
+);
+
+export const shouldUseAssigneeRows = (widget: DashboardWidget) => (
+  widget.groupBy === 'assignee' || widgetUsesAssigneeFilters(widget)
+);
+
 const buildDateRange = (period: DashboardPeriod) => {
   const { startDate, endDate } = getPeriodRange(period);
   const dates: string[] = [];

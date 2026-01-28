@@ -1,7 +1,14 @@
-import React from 'react';
+import React, { useCallback, useState } from 'react';
+import { format } from 'date-fns';
 import { isToday, isWeekend } from '@/features/planner/lib/dateUtils';
 import { ViewMode } from '@/features/planner/types/planner';
 import { cn } from '@/shared/lib/classNames';
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from '@/shared/ui/context-menu';
 
 interface TimelineRowProps {
   rowId: string;
@@ -11,6 +18,8 @@ interface TimelineRowProps {
   viewMode: ViewMode;
   height: number;
   children: React.ReactNode;
+  canEdit?: boolean;
+  onCreateTask?: (date: string, rowId: string) => void;
 }
 
 export const TimelineRow: React.FC<TimelineRowProps> = ({
@@ -21,34 +30,77 @@ export const TimelineRow: React.FC<TimelineRowProps> = ({
   viewMode,
   height,
   children,
+  canEdit = false,
+  onCreateTask,
 }) => {
+  const [contextDate, setContextDate] = useState<string | null>(null);
+
+  const getDateFromEvent = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const offsetX = event.clientX - rect.left;
+    const index = Math.floor(offsetX / dayWidth);
+    if (index < 0 || index >= visibleDays.length) return null;
+    return format(visibleDays[index], 'yyyy-MM-dd');
+  }, [dayWidth, visibleDays]);
+
+  const handleDoubleClick = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    if (!canEdit || !onCreateTask) return;
+    const date = getDateFromEvent(event);
+    if (!date) return;
+    onCreateTask(date, rowId);
+  }, [canEdit, getDateFromEvent, onCreateTask, rowId]);
+
+  const handleContextMenu = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    const date = getDateFromEvent(event);
+    setContextDate(date);
+  }, [getDateFromEvent]);
+
   return (
     <div 
       className="relative border-b border-border"
       style={{ height }}
     >
       {/* Grid background */}
-      <div className="absolute inset-0 flex">
-        {visibleDays.map((day, index) => {
-          const today = isToday(day);
-          const weekend = isWeekend(day);
-          
-          return (
-            <div
-              key={index}
-              className={cn(
-                'h-full border-r border-timeline-grid transition-colors relative',
-                weekend && 'bg-timeline-weekend/50',
-                today && 'today-hatch'
-              )}
-              style={{ width: dayWidth }}
-            />
-          );
-        })}
-      </div>
+      <ContextMenu>
+        <ContextMenuTrigger asChild>
+          <div
+            className="absolute inset-0 flex"
+            onDoubleClick={handleDoubleClick}
+            onContextMenu={handleContextMenu}
+          >
+            {visibleDays.map((day, index) => {
+              const today = isToday(day);
+              const weekend = isWeekend(day);
+              
+              return (
+                <div
+                  key={index}
+                  className={cn(
+                    'h-full border-r border-timeline-grid transition-colors relative',
+                    weekend && 'bg-timeline-weekend/50',
+                    today && 'today-hatch'
+                  )}
+                  style={{ width: dayWidth }}
+                />
+              );
+            })}
+          </div>
+        </ContextMenuTrigger>
+        <ContextMenuContent>
+          <ContextMenuItem
+            disabled={!canEdit || !contextDate}
+            onSelect={() => {
+              if (!contextDate || !onCreateTask) return;
+              onCreateTask(contextDate, rowId);
+            }}
+          >
+            Create task
+          </ContextMenuItem>
+        </ContextMenuContent>
+      </ContextMenu>
       
       {/* Task bars container */}
-      <div className="absolute inset-0 py-2 px-0.5">
+      <div className="absolute inset-0 py-2 px-0.5 pointer-events-none">
         {children}
       </div>
     </div>

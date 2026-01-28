@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { usePlannerStore } from '@/features/planner/store/plannerStore';
 import { useFilteredAssignees } from '@/features/planner/hooks/useFilteredAssignees';
 import { Button } from '@/shared/ui/button';
@@ -82,6 +82,8 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({ collapsed, onToggle })
   } = usePlannerStore();
   
   const filteredAssignees = useFilteredAssignees(assignees);
+  const activeProjects = useMemo(() => projects.filter((project) => !project.archived), [projects]);
+  const archivedProjectsCount = projects.length - activeProjects.length;
   
   const hasActiveFilters = 
     filters.projectIds.length > 0 ||
@@ -176,7 +178,10 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({ collapsed, onToggle })
           title="Projects" 
           icon={<FolderKanban className="w-4 h-4 text-muted-foreground" />}
         >
-          {projects.map(project => (
+          {activeProjects.length === 0 && (
+            <div className="text-xs text-muted-foreground">No active projects.</div>
+          )}
+          {activeProjects.map(project => (
             <label
               key={project.id}
               className="flex items-center gap-2 py-1 cursor-pointer"
@@ -192,6 +197,11 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({ collapsed, onToggle })
               <span className="text-sm truncate">{project.name}</span>
             </label>
           ))}
+          {archivedProjectsCount > 0 && (
+            <div className="pt-1 text-[11px] text-muted-foreground">
+              Archived projects are hidden from filters.
+            </div>
+          )}
         </FilterSection>
         
         <FilterSection 
@@ -207,7 +217,12 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({ collapsed, onToggle })
                 checked={filters.assigneeIds.includes(assignee.id)}
                 onCheckedChange={() => toggleFilter('assigneeIds', assignee.id)}
               />
-              <span className="text-sm truncate">{assignee.name}</span>
+              <span className="text-sm truncate">
+                {assignee.name}
+                {!assignee.isActive && (
+                  <span className="ml-1 text-[10px] text-muted-foreground">(disabled)</span>
+                )}
+              </span>
             </label>
           ))}
         </FilterSection>

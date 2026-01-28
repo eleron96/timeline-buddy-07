@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ChevronDown, Plus, Users } from 'lucide-react';
+import { ChevronDown, Plus } from 'lucide-react';
 import { Button } from '@/shared/ui/button';
 import {
   DropdownMenu,
@@ -15,7 +15,6 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { Input } from '@/shared/ui/input';
 import { Label } from '@/shared/ui/label';
 import { useAuthStore } from '@/features/auth/store/authStore';
-import { WorkspaceMembersSheet } from '@/features/workspace/components/WorkspaceMembersSheet';
 import { usePlannerStore } from '@/features/planner/store/plannerStore';
 import { ColorPicker } from '@/shared/ui/color-picker';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/shared/ui/accordion';
@@ -27,14 +26,12 @@ export const WorkspaceSwitcher: React.FC = () => {
     user,
     workspaces,
     currentWorkspaceId,
-    currentWorkspaceRole,
     setCurrentWorkspaceId,
     createWorkspace,
   } = useAuthStore();
   const { statuses, taskTypes, tags } = usePlannerStore();
 
   const [createOpen, setCreateOpen] = useState(false);
-  const [membersOpen, setMembersOpen] = useState(false);
   const [workspaceName, setWorkspaceName] = useState('');
   const [createError, setCreateError] = useState('');
   const [creating, setCreating] = useState(false);
@@ -51,7 +48,6 @@ export const WorkspaceSwitcher: React.FC = () => {
   const [newTemplateTagColor, setNewTemplateTagColor] = useState('#3b82f6');
 
   const currentWorkspace = workspaces.find((workspace) => workspace.id === currentWorkspaceId);
-  const isAdmin = currentWorkspaceRole === 'admin';
   const canCreateWorkspace = workspaces.length < 5;
 
   useEffect(() => {
@@ -206,13 +202,6 @@ export const WorkspaceSwitcher: React.FC = () => {
           >
             <Plus className="mr-2 h-4 w-4" />
             Create workspace
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            onSelect={(event) => { event.preventDefault(); setMembersOpen(true); }}
-            disabled={!isAdmin}
-          >
-            <Users className="mr-2 h-4 w-4" />
-            Manage members
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
@@ -456,7 +445,6 @@ export const WorkspaceSwitcher: React.FC = () => {
         </DialogContent>
       </Dialog>
 
-      <WorkspaceMembersSheet open={membersOpen} onOpenChange={setMembersOpen} />
     </>
   );
 };

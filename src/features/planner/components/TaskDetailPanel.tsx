@@ -71,6 +71,7 @@ export const TaskDetailPanel: React.FC = () => {
   const canEdit = currentWorkspaceRole === 'editor' || currentWorkspaceRole === 'admin';
   const isReadOnly = !canEdit;
   const filteredAssignees = useFilteredAssignees(assignees);
+  const activeProjects = useMemo(() => projects.filter((project) => !project.archived), [projects]);
 
   const originalTaskRef = useRef<Task | null>(null);
   const repeatInFlightRef = useRef(false);
@@ -86,6 +87,21 @@ export const TaskDetailPanel: React.FC = () => {
   const [deleteOpen, setDeleteOpen] = useState(false);
   
   const task = tasks.find(t => t.id === selectedTaskId);
+  const currentProject = useMemo(
+    () => projects.find((project) => project.id === task?.projectId),
+    [projects, task?.projectId],
+  );
+  const archivedProject = currentProject?.archived ? currentProject : null;
+  const projectOptions = useMemo(() => {
+    if (!archivedProject) return activeProjects;
+    return [archivedProject, ...activeProjects.filter((project) => project.id !== archivedProject.id)];
+  }, [activeProjects, archivedProject]);
+  const selectableAssignees = useMemo(() => {
+    if (!task) return filteredAssignees.filter((assignee) => assignee.isActive);
+    return filteredAssignees.filter(
+      (assignee) => assignee.isActive || task.assigneeIds.includes(assignee.id),
+    );
+  }, [filteredAssignees, task]);
 
   useEffect(() => {
     if (!selectedTaskId) {
@@ -207,6 +223,10 @@ export const TaskDetailPanel: React.FC = () => {
 
   const handleAssigneeToggle = (assigneeId: string) => {
     if (!canEdit) return;
+    const targetAssignee = assignees.find((assignee) => assignee.id === assigneeId);
+    if (targetAssignee && !targetAssignee.isActive && !task.assigneeIds.includes(assigneeId)) {
+      return;
+    }
     const next = task.assigneeIds.includes(assigneeId)
       ? task.assigneeIds.filter((id) => id !== assigneeId)
       : [...task.assigneeIds, assigneeId];
@@ -318,14 +338,17 @@ export const TaskDetailPanel: React.FC = () => {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">No Project</SelectItem>
-                    {projects.map(p => (
-                      <SelectItem key={p.id} value={p.id}>
+                    {projectOptions.map((project) => (
+                      <SelectItem key={project.id} value={project.id}>
                         <div className="flex items-center gap-2">
                           <div
                             className="w-2.5 h-2.5 rounded-full"
-                            style={{ backgroundColor: p.color }}
+                            style={{ backgroundColor: project.color }}
                           />
-                          {p.name}
+                          {project.name}
+                          {project.archived && (
+                            <span className="ml-1 text-[10px] text-muted-foreground">(archived)</span>
+                          )}
                         </div>
                       </SelectItem>
                     ))}
@@ -367,21 +390,30 @@ export const TaskDetailPanel: React.FC = () => {
                         </Button>
                       </PopoverTrigger>
                       <PopoverContent className="w-64 p-2" align="start">
-                        {filteredAssignees.length === 0 ? (
+                        {selectableAssignees.length === 0 ? (
                           <div className="text-xs text-muted-foreground">Нет доступных исполнителей.</div>
                         ) : (
                           <ScrollArea className="max-h-48 pr-2">
                             <div className="space-y-1">
-                              {filteredAssignees.map((assignee) => (
+                              {selectableAssignees.map((assignee) => {
+                                const isAssigned = task.assigneeIds.includes(assignee.id);
+                                const isDisabled = isReadOnly || (!assignee.isActive && !isAssigned);
+                                return (
                                 <label key={assignee.id} className="flex items-center gap-2 py-1 cursor-pointer">
                                   <Checkbox
-                                    checked={task.assigneeIds.includes(assignee.id)}
+                                    checked={isAssigned}
                                     onCheckedChange={() => handleAssigneeToggle(assignee.id)}
-                                    disabled={isReadOnly}
+                                    disabled={isDisabled}
                                   />
-                                  <span className="text-sm truncate">{assignee.name}</span>
+                                  <span className="text-sm truncate">
+                                    {assignee.name}
+                                    {!assignee.isActive && (
+                                      <span className="ml-1 text-[10px] text-muted-foreground">(disabled)</span>
+                                    )}
+                                  </span>
                                 </label>
-                              ))}
+                              );
+                              })}
                             </div>
                           </ScrollArea>
                         )}

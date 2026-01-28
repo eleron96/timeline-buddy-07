@@ -11,15 +11,20 @@ const PRESET_COLORS = [
 interface ColorPickerProps {
   value: string;
   onChange: (color: string) => void;
+  disabled?: boolean;
 }
 
-export const ColorPicker: React.FC<ColorPickerProps> = ({ value, onChange }) => {
+export const ColorPicker: React.FC<ColorPickerProps> = ({ value, onChange, disabled = false }) => {
   return (
     <Popover>
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="w-6 h-6 rounded-full border-2 border-border hover:scale-110 transition-transform flex-shrink-0"
+          disabled={disabled}
+          className={cn(
+            'w-6 h-6 rounded-full border-2 border-border transition-transform flex-shrink-0',
+            disabled ? 'opacity-50 cursor-not-allowed' : 'hover:scale-110',
+          )}
           style={{ backgroundColor: value }}
         />
       </PopoverTrigger>
@@ -30,6 +35,7 @@ export const ColorPicker: React.FC<ColorPickerProps> = ({ value, onChange }) => 
               key={color}
               type="button"
               onClick={() => onChange(color)}
+              disabled={disabled}
               className={cn(
                 'w-6 h-6 rounded-full border-2 transition-transform hover:scale-110',
                 value === color ? 'border-foreground scale-110' : 'border-transparent'
@@ -41,6 +47,7 @@ export const ColorPicker: React.FC<ColorPickerProps> = ({ value, onChange }) => 
             type="color"
             value={value}
             onChange={(e) => onChange(e.target.value)}
+            disabled={disabled}
             className="w-6 h-6 p-0 border-0 cursor-pointer"
           />
         </div>
