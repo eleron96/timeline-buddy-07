@@ -3,7 +3,7 @@ import { ResponsiveGridLayout, noCompactor, useContainerWidth } from 'react-grid
 import type { Layout, Layouts } from 'react-grid-layout';
 import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
-import { Settings, User, LayoutGrid, Plus } from 'lucide-react';
+import { Settings, User, Plus } from 'lucide-react';
 import { Button } from '@/shared/ui/button';
 import {
   ContextMenu,
@@ -23,7 +23,7 @@ import {
   DASHBOARD_COLS,
   getClosestWidgetSize,
 } from '@/features/dashboard/store/dashboardStore';
-import { buildWidgetData } from '@/features/dashboard/lib/dashboardUtils';
+import { buildTimeSeriesData, buildWidgetData } from '@/features/dashboard/lib/dashboardUtils';
 import { DashboardWidgetCard } from '@/features/dashboard/components/DashboardWidgetCard';
 import { WidgetEditorDialog } from '@/features/dashboard/components/WidgetEditorDialog';
 import { DashboardLayouts, DashboardWidget } from '@/features/dashboard/types/dashboard';
@@ -31,7 +31,6 @@ import { Navigate } from 'react-router-dom';
 import { usePlannerStore } from '@/features/planner/store/plannerStore';
 
 const DashboardPage = () => {
-  const [editing, setEditing] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showAccountSettings, setShowAccountSettings] = useState(false);
   const [editorOpen, setEditorOpen] = useState(false);
@@ -46,6 +45,7 @@ const DashboardPage = () => {
     statuses,
     projects,
     assignees,
+    milestones,
     loading,
     saving,
     dirty,
@@ -58,6 +58,7 @@ const DashboardPage = () => {
     removeWidget,
     setLayouts,
     loadFilterOptions,
+    loadMilestones,
     loadStats,
   } = useDashboardStore();
 
@@ -74,25 +75,55 @@ const DashboardPage = () => {
     if (!currentWorkspaceId) return;
     loadDashboard(currentWorkspaceId);
     loadFilterOptions(currentWorkspaceId);
-  }, [currentWorkspaceId, loadDashboard, loadFilterOptions]);
+    loadMilestones(currentWorkspaceId);
+  }, [currentWorkspaceId, loadDashboard, loadFilterOptions, loadMilestones]);
 
   useEffect(() => {
     if (!showSettings || !currentWorkspaceId) return;
     loadWorkspaceData(currentWorkspaceId);
   }, [currentWorkspaceId, loadWorkspaceData, showSettings]);
 
+  const taskWidgetPeriods = useMemo(() => (
+    widgets
+      .filter((widget) => (
+        widget.type === 'kpi'
+        || widget.type === 'bar'
+        || widget.type === 'line'
+        || widget.type === 'area'
+        || widget.type === 'pie'
+      ))
+      .map((widget) => widget.period)
+  ), [widgets]);
+
   const periodsKey = useMemo(() => (
-    Array.from(new Set(widgets.map((widget) => widget.period))).sort().join('|')
+    Array.from(new Set(taskWidgetPeriods)).sort().join('|')
+  ), [taskWidgetPeriods]);
+
+  const seriesPeriodsKey = useMemo(() => (
+    Array.from(
+      new Set(
+        widgets
+          .filter((widget) => widget.type === 'line' || widget.type === 'area')
+          .map((widget) => widget.period),
+      ),
+    )
+      .sort()
+      .join('|')
   ), [widgets]);
 
   useEffect(() => {
     if (!currentWorkspaceId) return;
     const periods = periodsKey ? periodsKey.split('|') : [];
-    periods.forEach((period) => loadStats(currentWorkspaceId, period as DashboardWidget['period']));
-  }, [currentWorkspaceId, loadStats, periodsKey]);
+    const seriesPeriods = new Set(seriesPeriodsKey ? seriesPeriodsKey.split('|') : []);
+    periods.forEach((period) => loadStats(
+      currentWorkspaceId,
+      period as DashboardWidget['period'],
+      seriesPeriods.has(period),
+    ));
+  }, [currentWorkspaceId, loadStats, periodsKey, seriesPeriodsKey]);
 
   useEffect(() => {
-    if (!editing || !canEdit || !dirty || !currentWorkspaceId) return;
+    if (!canEdit || !dirty || !currentWorkspaceId) return;
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current);
     }
@@ -102,24 +133,25 @@ const DashboardPage = () => {
     return () => {
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     };
-  }, [editing, canEdit, dirty, widgets, layouts, currentWorkspaceId, saveDashboard]);
+  }, [canEdit, dirty, widgets, layouts, currentWorkspaceId, saveDashboard]);
 
   if (isSuperAdmin) {
     return <Navigate to="/admin/users" replace />;
   }
 
   const handleLayoutChange = (_layout: Layout[], allLayouts: Layouts) => {
-    if (!canEdit || !editing) return;
+    if (!canEdit) return;
     setLayouts(allLayouts as DashboardLayouts);
   };
 
-  const handleResizeStop = (_layout: Layout[], _oldItem: Layout, newItem: Layout) => {
-    if (!canEdit || !editing) return;
-    const cols = DASHBOARD_COLS[currentBreakpoint] ?? DASHBOARD_COLS.lg;
-    const nextSize = getClosestWidgetSize(newItem.w, newItem.h, cols);
-    const currentWidget = widgets.find((widget) => widget.id === newItem.i);
-    if (!currentWidget || currentWidget.size === nextSize) return;
-    updateWidget(newItem.i, { size: nextSize });
+  const handleResizeStop = () => {
+    if (!canEdit) return;
+    if (typeof window !== 'undefined') {
+      window.getSelection?.()?.removeAllRanges();
+    }
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
   };
 
   const handleBreakpointChange = (breakpoint: string) => {
@@ -131,14 +163,6 @@ const DashboardPage = () => {
   const persistDashboard = () => {
     if (!currentWorkspaceId || !canEdit) return;
     saveDashboard(currentWorkspaceId);
-  };
-
-  const handleToggleEditing = () => {
-    if (!canEdit) return;
-    if (editing && dirty && currentWorkspaceId) {
-      saveDashboard(currentWorkspaceId);
-    }
-    setEditing((prev) => !prev);
   };
 
   const handleAddWidget = () => {
@@ -154,33 +178,51 @@ const DashboardPage = () => {
   const handleSaveWidget = (widget: DashboardWidget) => {
     if (editingWidget) {
       updateWidget(widget.id, widget);
-      if (!editing) persistDashboard();
+      persistDashboard();
     } else {
       addWidget(widget);
-      if (!editing) persistDashboard();
+      persistDashboard();
     }
   };
 
   const handleRemoveWidget = (widgetId: string) => {
     removeWidget(widgetId);
-    if (!editing) persistDashboard();
+    persistDashboard();
   };
 
   const renderWidget = (widget: DashboardWidget) => {
+    const cols = DASHBOARD_COLS[currentBreakpoint] ?? DASHBOARD_COLS.lg;
+    const layoutItem = (layouts[currentBreakpoint] ?? []).find((item) => item.i === widget.id);
+    const effectiveSize = layoutItem
+      ? getClosestWidgetSize(layoutItem.w, layoutItem.h, cols, widget.type)
+      : (widget.size ?? (widget.type === 'kpi' ? 'small' : 'medium'));
     const statsState = statsByPeriod[widget.period];
-    const data = statsState?.rows ? buildWidgetData(statsState.rows, widget, statuses) : null;
+    const isTaskWidget = widget.type === 'kpi'
+      || widget.type === 'bar'
+      || widget.type === 'line'
+      || widget.type === 'area'
+      || widget.type === 'pie';
+    const data = statsState && isTaskWidget
+      ? (widget.type === 'line' || widget.type === 'area'
+        ? buildTimeSeriesData(statsState.seriesRows ?? [], widget, statuses)
+        : buildWidgetData(statsState.rows ?? [], widget, statuses))
+      : null;
+    const loading = isTaskWidget ? (statsState?.loading ?? false) : false;
+    const widgetError = isTaskWidget ? (statsState?.error ?? null) : null;
+    const widgetWithSize = { ...widget, size: effectiveSize };
     return (
       <ContextMenu>
         <ContextMenuTrigger asChild>
           <div className="h-full w-full" onContextMenu={(event) => event.stopPropagation()}>
             <DashboardWidgetCard
-              widget={widget}
+              widget={widgetWithSize}
               data={data}
-              loading={statsState?.loading ?? false}
-              error={statsState?.error ?? null}
-              editing={editing && canEdit}
+              loading={loading}
+              error={widgetError}
+              editing={canEdit}
+              milestones={milestones}
+              projects={projects}
               onEdit={() => handleEditWidget(widget)}
-              onRemove={() => handleRemoveWidget(widget.id)}
             />
           </div>
         </ContextMenuTrigger>
@@ -216,17 +258,6 @@ const DashboardPage = () => {
             </span>
           )}
           {canEdit && (
-            <Button
-              variant={editing ? 'default' : 'outline'}
-              size="sm"
-              className="gap-2"
-              onClick={handleToggleEditing}
-            >
-              <LayoutGrid className="h-4 w-4" />
-              {editing ? 'Done' : 'Edit'}
-            </Button>
-          )}
-          {canEdit && editing && (
             <Button size="sm" className="gap-2" onClick={handleAddWidget}>
               <Plus className="h-4 w-4" />
               Widget
@@ -254,7 +285,7 @@ const DashboardPage = () => {
       <div className="flex items-center justify-between px-4 py-2 border-b border-border text-xs text-muted-foreground">
         <div>
           {saving && 'Saving...'}
-          {!saving && dirty && canEdit && editing && 'Unsaved changes'}
+          {!saving && dirty && canEdit && 'Unsaved changes'}
           {!saving && !dirty && canEdit && 'All changes saved'}
         </div>
         {error && <div className="text-destructive">{error}</div>}
@@ -283,15 +314,14 @@ const DashboardPage = () => {
                 width={width}
                 rowHeight={80}
                 margin={[16, 16]}
-                isResizable={editing && canEdit}
-                isDraggable={editing && canEdit}
+                isResizable={canEdit}
+                isDraggable={canEdit}
                 onLayoutChange={handleLayoutChange}
                 onResizeStop={handleResizeStop}
                 onBreakpointChange={handleBreakpointChange}
                 draggableHandle=".dashboard-widget-handle"
                 measureBeforeMount={false}
                 compactor={noCompactor}
-                preventCollision={true}
                 resizeHandles={['se']}
               >
                 {widgets.map((widget) => (

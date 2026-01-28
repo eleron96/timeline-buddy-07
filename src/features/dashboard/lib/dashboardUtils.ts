@@ -1,4 +1,4 @@
-import { format, subDays, subMonths, subWeeks } from 'date-fns';
+import { addDays, format, parseISO, subDays, subMonths, subWeeks } from 'date-fns';
 import {
   DashboardBarPalette,
   DashboardFilterField,
@@ -6,7 +6,9 @@ import {
   DashboardFilterOperator,
   DashboardPeriod,
   DashboardStatus,
+  DashboardSeriesRow,
   DashboardStatsRow,
+  DashboardSeriesKey,
   DashboardWidget,
   DashboardWidgetData,
 } from '@/features/dashboard/types/dashboard';
@@ -95,7 +97,7 @@ const resolveStatusFilter = (widget: DashboardWidget, statuses: DashboardStatus[
   return sets.all;
 };
 
-const getFieldValue = (row: DashboardStatsRow, field: DashboardFilterField) => {
+const getFieldValue = (row: Pick<DashboardStatsRow, 'assignee_id' | 'project_id' | 'status_id'>, field: DashboardFilterField) => {
   if (field === 'assignee') return row.assignee_id ?? null;
   if (field === 'project') return row.project_id ?? null;
   return row.status_id;
@@ -106,7 +108,9 @@ const matchesOperator = (value: string | null, operator: DashboardFilterOperator
   return operator === 'eq' ? isMatch : !isMatch;
 };
 
-const matchesGroup = (row: DashboardStatsRow, group: DashboardFilterGroup) => {
+type FilterRow = Pick<DashboardStatsRow, 'assignee_id' | 'project_id' | 'status_id'>;
+
+const matchesGroup = (row: FilterRow, group: DashboardFilterGroup) => {
   const rules = group.rules.filter((rule) => rule.value);
   if (!rules.length) return true;
   const matches = rules.map((rule) => (
@@ -115,12 +119,26 @@ const matchesGroup = (row: DashboardStatsRow, group: DashboardFilterGroup) => {
   return group.match === 'and' ? matches.every(Boolean) : matches.some(Boolean);
 };
 
-const matchesFilterGroups = (row: DashboardStatsRow, groups?: DashboardFilterGroup[]) => {
+const matchesFilterGroups = (row: FilterRow, groups?: DashboardFilterGroup[]) => {
   if (!groups || groups.length === 0) return true;
   const meaningfulGroups = groups.filter((group) => group.rules.some((rule) => rule.value));
   if (!meaningfulGroups.length) return true;
   return meaningfulGroups.some((group) => matchesGroup(row, group));
 };
+
+const buildDateRange = (period: DashboardPeriod) => {
+  const { startDate, endDate } = getPeriodRange(period);
+  const dates: string[] = [];
+  let cursor = parseISO(startDate);
+  const end = parseISO(endDate);
+  while (cursor <= end) {
+    dates.push(format(cursor, 'yyyy-MM-dd'));
+    cursor = addDays(cursor, 1);
+  }
+  return dates;
+};
+
+const toSeriesKey = (value: string) => `series_${value.replace(/[^a-z0-9]/gi, '_')}`;
 
 export const buildWidgetData = (
   rows: DashboardStatsRow[],
@@ -153,6 +171,14 @@ export const buildWidgetData = (
       existing.value += row.total;
       seriesMap.set(key, existing);
     });
+  } else if (groupBy === 'project') {
+    filtered.forEach((row) => {
+      const key = row.project_id ?? 'no-project';
+      const name = row.project_name ?? 'No project';
+      const existing = seriesMap.get(key) ?? { name, value: 0 };
+      existing.value += row.total;
+      seriesMap.set(key, existing);
+    });
   }
 
   const series = Array.from(seriesMap.values()).sort((a, b) => b.value - a.value);
@@ -161,4 +187,72 @@ export const buildWidgetData = (
     : series.reduce((sum, item) => sum + item.value, 0);
 
   return { total, series };
+};
+
+export const buildTimeSeriesData = (
+  rows: DashboardSeriesRow[],
+  widget: DashboardWidget,
+  statuses: DashboardStatus[],
+): DashboardWidgetData => {
+  const groupBy = widget.groupBy ?? 'none';
+  const statusFilter = statuses.length > 0
+    ? resolveStatusFilter(widget, statuses)
+    : new Set(rows.map((row) => row.status_id));
+  const filtered = rows.filter((row) => (
+    statusFilter.has(row.status_id) && matchesFilterGroups(row, widget.filterGroups)
+  ));
+  const seriesKeysMap = new Map<string, DashboardSeriesKey>();
+  const totalsByKey = new Map<string, number>();
+  const dateMap = new Map<string, Record<string, number>>();
+  let total = 0;
+
+  const pushValue = (date: string, key: string, value: number) => {
+    if (!dateMap.has(date)) dateMap.set(date, {});
+    const entry = dateMap.get(date) ?? {};
+    entry[key] = (entry[key] ?? 0) + value;
+    dateMap.set(date, entry);
+  };
+
+  filtered.forEach((row) => {
+    if (groupBy === 'assignee' && !widget.includeUnassigned && !row.assignee_id) return;
+    let rawKey = 'total';
+    let label = 'Total';
+    if (groupBy === 'assignee') {
+      rawKey = row.assignee_id ?? 'unassigned';
+      label = row.assignee_name ?? 'Unassigned';
+    } else if (groupBy === 'status') {
+      rawKey = row.status_id;
+      label = row.status_name;
+    } else if (groupBy === 'project') {
+      rawKey = row.project_id ?? 'no-project';
+      label = row.project_name ?? 'No project';
+    }
+    const seriesKey = toSeriesKey(rawKey);
+    if (!seriesKeysMap.has(seriesKey)) {
+      seriesKeysMap.set(seriesKey, { key: seriesKey, label });
+    }
+    totalsByKey.set(seriesKey, (totalsByKey.get(seriesKey) ?? 0) + row.total);
+    pushValue(row.bucket_date, seriesKey, row.total);
+    total += row.total;
+  });
+
+  const seriesKeys = Array.from(seriesKeysMap.values())
+    .map((item) => ({ ...item, total: totalsByKey.get(item.key) ?? 0 }))
+    .sort((a, b) => b.total - a.total);
+
+  const dates = buildDateRange(widget.period);
+  const timeSeries = dates.map((date) => {
+    const point: Record<string, number | string> = { date };
+    seriesKeys.forEach((seriesKey) => {
+      point[seriesKey.key] = dateMap.get(date)?.[seriesKey.key] ?? 0;
+    });
+    return point as { date: string };
+  });
+
+  const series = seriesKeys.map((item) => ({
+    name: item.label,
+    value: item.total,
+  }));
+
+  return { total, series, timeSeries, seriesKeys: seriesKeys.map(({ total: _total, ...rest }) => rest) };
 };

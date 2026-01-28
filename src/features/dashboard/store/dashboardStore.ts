@@ -7,6 +7,8 @@ import {
   DashboardPeriod,
   DashboardOption,
   DashboardStatus,
+  DashboardMilestone,
+  DashboardSeriesRow,
   DashboardStatsRow,
   DashboardWidget,
   DashboardWidgetSize,
@@ -18,6 +20,7 @@ const DASHBOARD_COLS = { lg: 12, md: 10, sm: 6, xs: 2 };
 
 type DashboardStatsState = {
   rows: DashboardStatsRow[];
+  seriesRows: DashboardSeriesRow[];
   loading: boolean;
   error: string | null;
   lastLoaded: number | null;
@@ -29,6 +32,7 @@ type DashboardState = {
   statuses: DashboardStatus[];
   projects: DashboardOption[];
   assignees: DashboardOption[];
+  milestones: DashboardMilestone[];
   loading: boolean;
   saving: boolean;
   error: string | null;
@@ -41,7 +45,8 @@ type DashboardState = {
   removeWidget: (id: string) => void;
   setLayouts: (layouts: DashboardLayouts) => void;
   loadFilterOptions: (workspaceId: string) => Promise<void>;
-  loadStats: (workspaceId: string, period: DashboardPeriod) => Promise<void>;
+  loadMilestones: (workspaceId: string) => Promise<void>;
+  loadStats: (workspaceId: string, period: DashboardPeriod, includeSeries?: boolean) => Promise<void>;
 };
 
 const SIZE_PRESETS: Record<DashboardWidgetSize, { w: number; h: number }> = {
@@ -50,16 +55,34 @@ const SIZE_PRESETS: Record<DashboardWidgetSize, { w: number; h: number }> = {
   large: { w: 12, h: 6 },
 };
 
+const KPI_SMALL_PRESET = { w: 2, h: 2 };
+const MILESTONE_PRESETS: Record<DashboardWidgetSize, { w: number; h: number }> = {
+  small: { w: 2, h: 3 },
+  medium: { w: 6, h: 4 },
+  large: { w: 12, h: 6 },
+};
+
 const getDefaultSize = (widget: DashboardWidget) => (widget.type === 'kpi' ? 'small' : 'medium');
 
-const getSizeForCols = (size: DashboardWidgetSize, cols: number) => ({
-  w: Math.min(SIZE_PRESETS[size].w, cols),
-  h: SIZE_PRESETS[size].h,
+const normalizeWidgetSize = (
+  type: DashboardWidget['type'],
+  size?: DashboardWidgetSize,
+): DashboardWidgetSize => (size ?? (type === 'kpi' ? 'small' : 'medium'));
+
+const getPresetForWidget = (type: DashboardWidget['type'], size: DashboardWidgetSize) => {
+  if (type === 'kpi' && size === 'small') return KPI_SMALL_PRESET;
+  if (type === 'milestone' || type === 'milestone_calendar') return MILESTONE_PRESETS[size];
+  return SIZE_PRESETS[size];
+};
+
+const getSizeForCols = (size: { w: number; h: number }, cols: number) => ({
+  w: Math.min(size.w, cols),
+  h: size.h,
 });
 
-const getLayoutBounds = (cols: number) => {
-  const min = getSizeForCols('small', cols);
-  const max = getSizeForCols('large', cols);
+const getLayoutBoundsForSize = (cols: number, minSize: DashboardWidgetSize) => {
+  const min = getSizeForCols(SIZE_PRESETS[minSize], cols);
+  const max = getSizeForCols(SIZE_PRESETS.large, cols);
   return {
     minW: min.w,
     minH: min.h,
@@ -68,10 +91,29 @@ const getLayoutBounds = (cols: number) => {
   };
 };
 
+const getLayoutBoundsForWidget = (widget: DashboardWidget | null, cols: number) => {
+  const type = widget?.type ?? 'kpi';
+  const min = getSizeForCols(getPresetForWidget(type, 'small'), cols);
+  const max = getSizeForCols(getPresetForWidget(type, 'large'), cols);
+  return {
+    minW: min.w,
+    minH: min.h,
+    maxW: max.w,
+    maxH: max.h,
+  };
+};
+
+const toFiniteNumber = (value: unknown, fallback: number) => {
+  const numeric = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(numeric) ? numeric : fallback;
+};
+
+const clampNumber = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
+
 const getWidgetLayoutSize = (widget: DashboardWidget, cols: number) => {
-  const size = widget.size ?? getDefaultSize(widget);
-  const base = getSizeForCols(size, cols);
-  const bounds = getLayoutBounds(cols);
+  const size = normalizeWidgetSize(widget.type, widget.size ?? getDefaultSize(widget));
+  const base = getSizeForCols(getPresetForWidget(widget.type, size), cols);
+  const bounds = getLayoutBoundsForWidget(widget, cols);
   return { ...base, ...bounds };
 };
 
@@ -102,15 +144,22 @@ const findAvailablePosition = (
   return { x: 0, y: maxY };
 };
 
-const getClosestWidgetSize = (w: number, h: number, cols: number): DashboardWidgetSize => {
+const getClosestWidgetSize = (
+  w: number,
+  h: number,
+  cols: number,
+  widgetType?: DashboardWidget['type'],
+): DashboardWidgetSize => {
+  const type = widgetType ?? 'kpi';
   const candidates = (Object.keys(SIZE_PRESETS) as DashboardWidgetSize[]).map((size) => {
-    const preset = getSizeForCols(size, cols);
+    const preset = getSizeForCols(getPresetForWidget(type, size), cols);
     const distance = Math.abs(preset.w - w) + Math.abs(preset.h - h);
     return { size, distance };
   });
   candidates.sort((a, b) => a.distance - b.distance);
   return candidates[0]?.size ?? 'small';
 };
+
 
 const buildStackedLayout = (widgets: DashboardWidget[], cols: number) => {
   let y = 0;
@@ -176,15 +225,25 @@ const buildDefaultLayouts = (widgets: DashboardWidget[]): DashboardLayouts => {
 const createDefaultWidgets = (): DashboardWidget[] => [];
 
 const normalizeWidget = (widget: Partial<DashboardWidget>): DashboardWidget => {
-  const type = widget.type ?? 'kpi';
+  const rawType = widget.type ?? 'kpi';
+  const type = rawType === 'milestone_calendar' ? 'milestone' : rawType;
+  const hasPalette = type === 'bar' || type === 'line' || type === 'area' || type === 'pie';
+  const milestoneView = type === 'milestone'
+    ? (widget.milestoneView ?? (rawType === 'milestone_calendar' ? 'calendar' : 'list'))
+    : undefined;
+  const milestoneCalendarMode = type === 'milestone'
+    ? (widget.milestoneCalendarMode ?? 'month')
+    : undefined;
   const normalized: DashboardWidget = {
     id: widget.id ?? createWidgetId(),
     title: widget.title ?? 'Widget',
     type,
     period: widget.period ?? 'week',
     groupBy: widget.groupBy ?? 'none',
-    size: widget.size ?? (type === 'kpi' ? 'small' : 'medium'),
-    barPalette: widget.barPalette ?? (type === 'bar' ? DEFAULT_BAR_PALETTE : undefined),
+    size: normalizeWidgetSize(type, widget.size),
+    barPalette: hasPalette ? (widget.barPalette ?? DEFAULT_BAR_PALETTE) : undefined,
+    milestoneView,
+    milestoneCalendarMode,
     statusFilter: widget.statusFilter ?? 'all',
     statusIds: widget.statusIds ?? [],
     includeUnassigned: widget.includeUnassigned ?? true,
@@ -193,26 +252,26 @@ const normalizeWidget = (widget: Partial<DashboardWidget>): DashboardWidget => {
   return normalized;
 };
 
-const applyWidgetSize = (layouts: DashboardLayouts, widget: DashboardWidget): DashboardLayouts => {
+const applyWidgetConstraints = (layouts: DashboardLayouts, widget: DashboardWidget): DashboardLayouts => {
   const nextLayouts: DashboardLayouts = {};
   Object.entries(DASHBOARD_COLS).forEach(([breakpoint, cols]) => {
     const currentLayout = layouts[breakpoint] ?? [];
-    const otherItems = currentLayout.filter((item) => item.i !== widget.id);
-    const size = getWidgetLayoutSize(widget, cols);
+    const bounds = getLayoutBoundsForWidget(widget, cols);
     nextLayouts[breakpoint] = currentLayout.map((item) => {
       if (item.i !== widget.id) return item;
-      const nextItem = {
+      const w = clampNumber(Math.round(toFiniteNumber(item.w, bounds.minW)), bounds.minW, bounds.maxW);
+      const h = clampNumber(Math.round(toFiniteNumber(item.h, bounds.minH)), bounds.minH, bounds.maxH);
+      const x = clampNumber(Math.round(toFiniteNumber(item.x, 0)), 0, Math.max(cols - w, 0));
+      return {
         ...item,
-        w: size.w,
-        h: size.h,
-        minW: size.minW,
-        minH: size.minH,
-        maxW: size.maxW,
-        maxH: size.maxH,
+        x,
+        w,
+        h,
+        minW: bounds.minW,
+        minH: bounds.minH,
+        maxW: bounds.maxW,
+        maxH: bounds.maxH,
       };
-      if (!hasCollision(nextItem, otherItems)) return nextItem;
-      const maxY = otherItems.reduce((acc, other) => Math.max(acc, other.y + other.h), 0);
-      return { ...nextItem, y: maxY };
     });
   });
   return nextLayouts;
@@ -246,7 +305,39 @@ const normalizeLayouts = (layouts: DashboardLayouts, widgets: DashboardWidget[])
   const normalized: DashboardLayouts = {};
 
   Object.entries(DASHBOARD_COLS).forEach(([breakpoint, cols]) => {
-    const currentLayout = (layouts[breakpoint] ?? []).filter((item) => widgetIds.has(item.i));
+    const rawLayout = (layouts[breakpoint] ?? []).filter((item) => widgetIds.has(item.i));
+    const currentLayout: DashboardLayoutItem[] = [];
+    rawLayout.forEach((item) => {
+      const widget = widgetMap.get(item.i) ?? null;
+      const size = widget ? getWidgetLayoutSize(widget, cols) : getLayoutBoundsForSize(cols, 'small');
+      const rawW = toFiniteNumber(item.w, size.w);
+      const rawH = toFiniteNumber(item.h, size.h);
+      const w = clampNumber(Math.round(rawW), 1, cols);
+      const h = Math.max(1, Math.round(rawH));
+      const rawX = toFiniteNumber(item.x, Number.NaN);
+      const rawY = toFiniteNumber(item.y, Number.NaN);
+      const shouldAutoPlace = !Number.isFinite(rawX) || !Number.isFinite(rawY);
+      let x = Number.isFinite(rawX) ? Math.round(rawX) : 0;
+      let y = Number.isFinite(rawY) ? Math.round(rawY) : 0;
+      x = clampNumber(x, 0, Math.max(cols - w, 0));
+      y = Math.max(0, y);
+      let nextItem: DashboardLayoutItem = {
+        ...item,
+        x,
+        y,
+        w,
+        h,
+        minW: size.minW,
+        minH: size.minH,
+        maxW: size.maxW,
+        maxH: size.maxH,
+      };
+      if (shouldAutoPlace || hasCollision(nextItem, currentLayout)) {
+        const position = findAvailablePosition(currentLayout, nextItem, cols);
+        nextItem = { ...nextItem, x: position.x, y: position.y };
+      }
+      currentLayout.push(nextItem);
+    });
     const existingIds = new Set(currentLayout.map((item) => item.i));
     const missingWidgets = widgets.filter((widget) => !existingIds.has(widget.id));
     const layoutWithAll = missingWidgets.reduce((acc, widget) => {
@@ -267,11 +358,18 @@ const normalizeLayouts = (layouts: DashboardLayouts, widgets: DashboardWidget[])
     }, currentLayout);
 
     normalized[breakpoint] = layoutWithAll.map((item) => {
-      const widget = widgetMap.get(item.i);
-      const size = widget ? getWidgetLayoutSize(widget, cols) : getLayoutBounds(cols);
+      const widget = widgetMap.get(item.i) ?? null;
+      const size = widget ? getWidgetLayoutSize(widget, cols) : getLayoutBoundsForSize(cols, 'small');
+      const w = clampNumber(Math.round(toFiniteNumber(item.w, size.w)), 1, cols);
+      const h = Math.max(1, Math.round(toFiniteNumber(item.h, size.h)));
+      const x = clampNumber(Math.round(toFiniteNumber(item.x, 0)), 0, Math.max(cols - w, 0));
+      const y = Math.max(0, Math.round(toFiniteNumber(item.y, 0)));
       return {
         ...item,
-        w: Math.min(item.w, cols),
+        x,
+        y,
+        w,
+        h,
         minW: size.minW,
         minH: size.minH,
         maxW: size.maxW,
@@ -285,6 +383,7 @@ const normalizeLayouts = (layouts: DashboardLayouts, widgets: DashboardWidget[])
 
 const emptyStatsState: DashboardStatsState = {
   rows: [],
+  seriesRows: [],
   loading: false,
   error: null,
   lastLoaded: null,
@@ -296,6 +395,7 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
   statuses: [],
   projects: [],
   assignees: [],
+  milestones: [],
   loading: false,
   saving: false,
   error: null,
@@ -341,10 +441,7 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
       : buildDefaultLayouts(widgets);
     set({
       widgets,
-      layouts: widgets.reduce(
-        (acc, widget) => applyWidgetSize(acc, widget),
-        normalizeLayouts(layouts, widgets),
-      ),
+      layouts: normalizeLayouts(layouts, widgets),
       loading: false,
       dirty: false,
     });
@@ -369,17 +466,26 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
       dirty: true,
     };
   }),
-  updateWidget: (id, updates) => set((state) => ({
-    widgets: state.widgets.map((widget) => (widget.id === id ? { ...widget, ...updates } : widget)),
-    layouts: (() => {
-      const current = state.widgets.find((widget) => widget.id === id);
-      if (!current) return state.layouts;
-      const nextWidget = { ...current, ...updates };
-      if (!('size' in updates)) return state.layouts;
-      return applyWidgetSize(state.layouts, nextWidget);
-    })(),
-    dirty: true,
-  })),
+  updateWidget: (id, updates) => set((state) => {
+    const current = state.widgets.find((widget) => widget.id === id);
+    if (!current) return state;
+    const nextType = updates.type ?? current.type;
+    const hasSizeUpdate = Object.prototype.hasOwnProperty.call(updates, 'size');
+    const nextSize = hasSizeUpdate
+      ? normalizeWidgetSize(nextType, updates.size)
+      : current.size;
+    const nextUpdates = hasSizeUpdate ? { ...updates, size: nextSize } : updates;
+    const nextWidgets = state.widgets.map((widget) => (
+      widget.id === id ? { ...widget, ...nextUpdates } : widget
+    ));
+    const typeChanged = Object.prototype.hasOwnProperty.call(updates, 'type') && updates.type !== current.type;
+    const nextWidget = { ...current, ...nextUpdates };
+    return {
+      widgets: nextWidgets,
+      layouts: typeChanged ? applyWidgetConstraints(state.layouts, nextWidget) : state.layouts,
+      dirty: true,
+    };
+  }),
   removeWidget: (id) => set((state) => ({
     widgets: state.widgets.filter((widget) => widget.id !== id),
     layouts: Object.fromEntries(
@@ -403,7 +509,7 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
         .order('created_at', { ascending: true }),
       supabase
         .from('projects')
-        .select('id, name')
+        .select('id, name, color')
         .eq('workspace_id', workspaceId)
         .order('created_at', { ascending: true }),
       supabase
@@ -433,6 +539,7 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
     const projects = (projectsRes.data ?? []).map((row) => ({
       id: row.id as string,
       name: row.name as string,
+      color: row.color ?? undefined,
     }));
     const assignees = (assigneesRes.data ?? [])
       .filter((row) => (adminUserId ? row.user_id !== adminUserId : true))
@@ -443,7 +550,28 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
 
     set({ statuses, projects, assignees });
   },
-  loadStats: async (workspaceId, period) => {
+  loadMilestones: async (workspaceId) => {
+    const { data, error } = await supabase
+      .from('milestones')
+      .select('id, title, project_id, date')
+      .eq('workspace_id', workspaceId)
+      .order('date', { ascending: true });
+
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+
+    const milestones = (data ?? []).map((row) => ({
+      id: row.id as string,
+      title: row.title as string,
+      projectId: row.project_id as string,
+      date: row.date as string,
+    }));
+
+    set({ milestones });
+  },
+  loadStats: async (workspaceId, period, includeSeries = false) => {
     const current = get().statsByPeriod[period];
     if (current.loading) return;
     set((state) => ({
@@ -453,22 +581,39 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
       },
     }));
     const { startDate, endDate } = getPeriodRange(period);
-    const { data, error } = await supabase
-      .rpc('dashboard_task_counts', {
-        p_workspace_id: workspaceId,
-        p_start_date: startDate,
-        p_end_date: endDate,
-      });
-    if (error) {
+    const [aggregateRes, seriesRes] = await Promise.all([
+      supabase
+        .rpc('dashboard_task_counts', {
+          p_workspace_id: workspaceId,
+          p_start_date: startDate,
+          p_end_date: endDate,
+        }),
+      includeSeries
+        ? supabase.rpc('dashboard_task_time_series', {
+          p_workspace_id: workspaceId,
+          p_start_date: startDate,
+          p_end_date: endDate,
+        })
+        : Promise.resolve({ data: [], error: null }),
+    ]);
+    if (aggregateRes.error || seriesRes.error) {
       set((state) => ({
         statsByPeriod: {
           ...state.statsByPeriod,
-          [period]: { ...state.statsByPeriod[period], loading: false, error: error.message },
+          [period]: {
+            ...state.statsByPeriod[period],
+            loading: false,
+            error: aggregateRes.error?.message || seriesRes.error?.message || 'Failed to load stats.',
+          },
         },
       }));
       return;
     }
-    const rows = (data ?? []).map((row: DashboardStatsRow & { total: number | string }) => ({
+    const rows = (aggregateRes.data ?? []).map((row: DashboardStatsRow & { total: number | string }) => ({
+      ...row,
+      total: Number(row.total),
+    }));
+    const seriesRows = (seriesRes.data ?? []).map((row: DashboardSeriesRow & { total: number | string }) => ({
       ...row,
       total: Number(row.total),
     }));
@@ -477,6 +622,7 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
         ...state.statsByPeriod,
         [period]: {
           rows,
+          seriesRows,
           loading: false,
           error: null,
           lastLoaded: Date.now(),
