@@ -1,12 +1,23 @@
 export type DashboardPeriod = 'day' | 'week' | 'month';
 
-export type DashboardWidgetType = 'kpi' | 'bar' | 'line' | 'area' | 'pie';
+export type DashboardWidgetType =
+  | 'kpi'
+  | 'bar'
+  | 'line'
+  | 'area'
+  | 'pie'
+  | 'milestone'
+  | 'milestone_calendar';
 
-export type DashboardGroupBy = 'none' | 'assignee' | 'status';
+export type DashboardGroupBy = 'none' | 'assignee' | 'status' | 'project';
 
 export type DashboardStatusFilter = 'all' | 'active' | 'final' | 'cancelled' | 'custom';
 
 export type DashboardWidgetSize = 'small' | 'medium' | 'large';
+
+export type DashboardMilestoneView = 'list' | 'calendar';
+
+export type DashboardMilestoneCalendarMode = 'month' | 'rolling';
 
 export type DashboardBarPalette =
   | 'pastel-sky'
@@ -40,6 +51,8 @@ export type DashboardWidget = {
   groupBy?: DashboardGroupBy;
   size?: DashboardWidgetSize;
   barPalette?: DashboardBarPalette;
+  milestoneView?: DashboardMilestoneView;
+  milestoneCalendarMode?: DashboardMilestoneCalendarMode;
   statusFilter: DashboardStatusFilter;
   statusIds?: string[];
   includeUnassigned?: boolean;
@@ -70,6 +83,14 @@ export type DashboardStatus = {
 export type DashboardOption = {
   id: string;
   name: string;
+  color?: string;
+};
+
+export type DashboardMilestone = {
+  id: string;
+  title: string;
+  projectId: string;
+  date: string;
 };
 
 export type DashboardStatsRow = {
@@ -88,7 +109,31 @@ export type DashboardSeriesItem = {
   value: number;
 };
 
+export type DashboardSeriesRow = {
+  bucket_date: string;
+  assignee_id: string | null;
+  assignee_name: string | null;
+  project_id: string | null;
+  project_name: string | null;
+  status_id: string;
+  status_name: string;
+  status_is_final: boolean;
+  total: number;
+};
+
+export type DashboardTimeSeriesPoint = {
+  date: string;
+  [key: string]: number | string;
+};
+
+export type DashboardSeriesKey = {
+  key: string;
+  label: string;
+};
+
 export type DashboardWidgetData = {
   total: number;
   series: DashboardSeriesItem[];
+  timeSeries?: DashboardTimeSeriesPoint[];
+  seriesKeys?: DashboardSeriesKey[];
 };
