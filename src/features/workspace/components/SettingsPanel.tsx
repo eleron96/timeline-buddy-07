@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { usePlannerStore } from '@/features/planner/store/plannerStore';
 import { useAuthStore } from '@/features/auth/store/authStore';
-import { useFilteredAssignees } from '@/features/planner/hooks/useFilteredAssignees';
 import { Button } from '@/shared/ui/button';
 import { Input } from '@/shared/ui/input';
 import { Label } from '@/shared/ui/label';
@@ -22,7 +21,6 @@ import {
 import { Plus, Trash2, Settings2 } from 'lucide-react';
 import { supabase } from '@/shared/lib/supabaseClient';
 import { ColorPicker } from '@/shared/ui/color-picker';
-import { WorkspaceMembersSheet } from '@/features/workspace/components/WorkspaceMembersSheet';
 
 interface SettingsPanelProps {
   open: boolean;
@@ -41,8 +39,6 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ open, onOpenChange
     statuses, addStatus, updateStatus, deleteStatus,
     taskTypes, addTaskType, updateTaskType, deleteTaskType,
     tags, addTag, updateTag, deleteTag,
-    projects, addProject, updateProject, deleteProject,
-    assignees,
     workspaceId,
     loadWorkspaceData,
   } = usePlannerStore();
@@ -56,9 +52,6 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ open, onOpenChange
     deleteWorkspace,
   } = useAuthStore();
 
-  // ✅ ВАЖНО: объявляем filteredAssignees, иначе будет ReferenceError и белый экран
-  const filteredAssignees = useFilteredAssignees(assignees);
-
   const [newStatusName, setNewStatusName] = useState('');
   const [newStatusColor, setNewStatusColor] = useState('#3b82f6');
 
@@ -66,9 +59,6 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ open, onOpenChange
 
   const [newTagName, setNewTagName] = useState('');
   const [newTagColor, setNewTagColor] = useState('#3b82f6');
-
-  const [newProjectName, setNewProjectName] = useState('');
-  const [newProjectColor, setNewProjectColor] = useState('#3b82f6');
 
   const currentWorkspace = workspaces.find((workspace) => workspace.id === currentWorkspaceId);
   const isAdmin = currentWorkspaceRole === 'admin';
@@ -81,7 +71,6 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ open, onOpenChange
   const [templateApplying, setTemplateApplying] = useState(false);
   const [templateApplied, setTemplateApplied] = useState(false);
   const [deleteConfirmValue, setDeleteConfirmValue] = useState('');
-  const [membersOpen, setMembersOpen] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -117,12 +106,6 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ open, onOpenChange
     if (!newTagName.trim()) return;
     addTag({ name: newTagName.trim(), color: newTagColor });
     setNewTagName('');
-  };
-
-  const handleAddProject = () => {
-    if (!newProjectName.trim()) return;
-    addProject({ name: newProjectName.trim(), color: newProjectColor });
-    setNewProjectName('');
   };
 
   const handleSaveWorkspaceName = async () => {
@@ -266,8 +249,6 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ open, onOpenChange
             <TabsList className="flex flex-wrap w-full h-auto items-start justify-start gap-2 mb-4">
               <TabsTrigger value="general" className="whitespace-nowrap">General</TabsTrigger>
               <TabsTrigger value="workflow" className="whitespace-nowrap">Workflow</TabsTrigger>
-              <TabsTrigger value="classification" className="whitespace-nowrap">Classification</TabsTrigger>
-              <TabsTrigger value="people" className="whitespace-nowrap">People</TabsTrigger>
             </TabsList>
 
             <div className="flex-1 space-y-4">
@@ -381,7 +362,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ open, onOpenChange
 
               {/* Workflow */}
               <TabsContent value="workflow" className="m-0">
-                <Accordion type="multiple" defaultValue={['statuses']} className="space-y-3">
+                <Accordion type="multiple" defaultValue={['statuses', 'tags']} className="space-y-3">
                   <AccordionItem value="statuses" className="border-0">
                     <SectionCard>
                       <AccordionTrigger className="py-0 hover:no-underline">
@@ -484,12 +465,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ open, onOpenChange
                       </AccordionContent>
                     </SectionCard>
                   </AccordionItem>
-                </Accordion>
-              </TabsContent>
 
-              {/* Classification */}
-              <TabsContent value="classification" className="m-0">
-                <Accordion type="multiple" defaultValue={['tags']} className="space-y-3">
                   <AccordionItem value="tags" className="border-0">
                     <SectionCard>
                       <AccordionTrigger className="py-0 hover:no-underline">
@@ -536,99 +512,12 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ open, onOpenChange
                       </AccordionContent>
                     </SectionCard>
                   </AccordionItem>
-
-                  <AccordionItem value="projects" className="border-0">
-                    <SectionCard>
-                      <AccordionTrigger className="py-0 hover:no-underline">
-                        <span className="text-sm font-semibold">Projects</span>
-                      </AccordionTrigger>
-                      <AccordionContent>
-                        <div className="space-y-3">
-                          <div className="flex gap-2">
-                            <Input
-                              placeholder="New project name..."
-                              value={newProjectName}
-                              onChange={(e) => setNewProjectName(e.target.value)}
-                              onKeyDown={(e) => e.key === 'Enter' && handleAddProject()}
-                            />
-                            <Button onClick={handleAddProject} size="icon">
-                              <Plus className="w-4 h-4" />
-                            </Button>
-                          </div>
-
-                          <div className="space-y-2">
-                            {projects.map((project) => (
-                              <div key={project.id} className="flex items-center gap-2 p-2 bg-muted/50 rounded-lg">
-                                <ColorPicker
-                                  value={project.color}
-                                  onChange={(color) => updateProject(project.id, { color })}
-                                />
-                                <Input
-                                  value={project.name}
-                                  onChange={(e) => updateProject(project.id, { name: e.target.value })}
-                                  className="flex-1 h-8"
-                                />
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  onClick={() => deleteProject(project.id)}
-                                  className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </Button>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      </AccordionContent>
-                    </SectionCard>
-                  </AccordionItem>
-                </Accordion>
-              </TabsContent>
-
-              {/* People */}
-              <TabsContent value="people" className="m-0">
-                <Accordion type="multiple" defaultValue={['members']} className="space-y-3">
-                  <AccordionItem value="members" className="border-0">
-                    <SectionCard>
-                      <AccordionTrigger className="py-0 hover:no-underline">
-                        <span className="text-sm font-semibold">Members</span>
-                      </AccordionTrigger>
-                      <AccordionContent>
-                        <div className="space-y-3">
-                          <p className="text-sm text-muted-foreground">
-                            Manage invites and roles in the members panel.
-                          </p>
-                          <Button
-                            variant="secondary"
-                            onClick={() => setMembersOpen(true)}
-                            disabled={!currentWorkspaceId}
-                          >
-                            Manage members
-                          </Button>
-
-                          <div className="space-y-2">
-                            {filteredAssignees.length === 0 && (
-                              <div className="text-sm text-muted-foreground">No members yet.</div>
-                            )}
-                            {filteredAssignees.map((assignee) => (
-                              <div key={assignee.id} className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg">
-                                <span className="text-sm font-medium truncate">{assignee.name}</span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      </AccordionContent>
-                    </SectionCard>
-                  </AccordionItem>
                 </Accordion>
               </TabsContent>
             </div>
           </Tabs>
         </SheetContent>
       </Sheet>
-
-      <WorkspaceMembersSheet open={membersOpen} onOpenChange={setMembersOpen} />
 
       <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <AlertDialogContent>

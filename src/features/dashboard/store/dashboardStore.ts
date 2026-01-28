@@ -20,7 +20,9 @@ const DASHBOARD_COLS = { lg: 12, md: 10, sm: 6, xs: 2 };
 
 type DashboardStatsState = {
   rows: DashboardStatsRow[];
+  rowsBase: DashboardStatsRow[];
   seriesRows: DashboardSeriesRow[];
+  seriesRowsBase: DashboardSeriesRow[];
   loading: boolean;
   error: string | null;
   lastLoaded: number | null;
@@ -383,7 +385,9 @@ const normalizeLayouts = (layouts: DashboardLayouts, widgets: DashboardWidget[])
 
 const emptyStatsState: DashboardStatsState = {
   rows: [],
+  rowsBase: [],
   seriesRows: [],
+  seriesRowsBase: [],
   loading: false,
   error: null,
   lastLoaded: null,
@@ -581,9 +585,15 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
       },
     }));
     const { startDate, endDate } = getPeriodRange(period);
-    const [aggregateRes, seriesRes] = await Promise.all([
+    const [aggregateRes, aggregateBaseRes, seriesRes, seriesBaseRes] = await Promise.all([
       supabase
         .rpc('dashboard_task_counts', {
+          p_workspace_id: workspaceId,
+          p_start_date: startDate,
+          p_end_date: endDate,
+        }),
+      supabase
+        .rpc('dashboard_task_counts_base', {
           p_workspace_id: workspaceId,
           p_start_date: startDate,
           p_end_date: endDate,
@@ -595,15 +605,26 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
           p_end_date: endDate,
         })
         : Promise.resolve({ data: [], error: null }),
+      includeSeries
+        ? supabase.rpc('dashboard_task_time_series_base', {
+          p_workspace_id: workspaceId,
+          p_start_date: startDate,
+          p_end_date: endDate,
+        })
+        : Promise.resolve({ data: [], error: null }),
     ]);
-    if (aggregateRes.error || seriesRes.error) {
+    if (aggregateRes.error || aggregateBaseRes.error || seriesRes.error || seriesBaseRes.error) {
       set((state) => ({
         statsByPeriod: {
           ...state.statsByPeriod,
           [period]: {
             ...state.statsByPeriod[period],
             loading: false,
-            error: aggregateRes.error?.message || seriesRes.error?.message || 'Failed to load stats.',
+            error: aggregateRes.error?.message
+              || aggregateBaseRes.error?.message
+              || seriesRes.error?.message
+              || seriesBaseRes.error?.message
+              || 'Failed to load stats.',
           },
         },
       }));
@@ -613,7 +634,15 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
       ...row,
       total: Number(row.total),
     }));
+    const rowsBase = (aggregateBaseRes.data ?? []).map((row: DashboardStatsRow & { total: number | string }) => ({
+      ...row,
+      total: Number(row.total),
+    }));
     const seriesRows = (seriesRes.data ?? []).map((row: DashboardSeriesRow & { total: number | string }) => ({
+      ...row,
+      total: Number(row.total),
+    }));
+    const seriesRowsBase = (seriesBaseRes.data ?? []).map((row: DashboardSeriesRow & { total: number | string }) => ({
       ...row,
       total: Number(row.total),
     }));
@@ -622,7 +651,9 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
         ...state.statsByPeriod,
         [period]: {
           rows,
+          rowsBase,
           seriesRows,
+          seriesRowsBase,
           loading: false,
           error: null,
           lastLoaded: Date.now(),

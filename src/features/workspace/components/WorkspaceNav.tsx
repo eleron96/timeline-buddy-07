@@ -23,5 +23,23 @@ export const WorkspaceNav: React.FC = () => (
     >
       Dashboard
     </NavLink>
+    <NavLink
+      to="/projects"
+      className={({ isActive }) => cn(
+        'rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+        isActive ? 'bg-foreground text-background' : 'text-muted-foreground hover:text-foreground',
+      )}
+    >
+      Projects
+    </NavLink>
+    <NavLink
+      to="/members"
+      className={({ isActive }) => cn(
+        'rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+        isActive ? 'bg-foreground text-background' : 'text-muted-foreground hover:text-foreground',
+      )}
+    >
+      Members
+    </NavLink>
   </nav>
 );

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { usePlannerStore } from '@/features/planner/store/plannerStore';
 import { useFilteredAssignees } from '@/features/planner/hooks/useFilteredAssignees';
 import { Button } from '@/shared/ui/button';
@@ -20,15 +20,32 @@ import { endOfMonth, isSameMonth, isSameYear, parseISO } from 'date-fns';
 interface AddTaskDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  initialStartDate?: string;
+  initialEndDate?: string;
+  initialProjectId?: string | null;
+  initialAssigneeIds?: string[];
 }
 
-export const AddTaskDialog: React.FC<AddTaskDialogProps> = ({ open, onOpenChange }) => {
+export const AddTaskDialog: React.FC<AddTaskDialogProps> = ({
+  open,
+  onOpenChange,
+  initialStartDate,
+  initialEndDate,
+  initialProjectId,
+  initialAssigneeIds,
+}) => {
   const { projects, assignees, statuses, taskTypes, tags, addTask, createRepeats } = usePlannerStore();
   const filteredAssignees = useFilteredAssignees(assignees);
+  const activeProjects = useMemo(() => projects.filter((project) => !project.archived), [projects]);
+  const selectableAssignees = useMemo(
+    () => filteredAssignees.filter((assignee) => assignee.isActive),
+    [filteredAssignees],
+  );
   
   const today = new Date();
-  const initialStart = format(today, 'yyyy-MM-dd');
-  const initialEnd = initialStart;
+  const defaultStart = format(today, 'yyyy-MM-dd');
+  const initialStart = initialStartDate ?? defaultStart;
+  const initialEnd = initialEndDate ?? initialStart;
   const getDefaultRepeatUntil = (baseDate: string) => {
     const start = parseISO(baseDate);
     const next = addDays(start, 1);
@@ -55,6 +72,14 @@ export const AddTaskDialog: React.FC<AddTaskDialogProps> = ({ open, onOpenChange
   const [repeatCount, setRepeatCount] = useState(4);
   const [repeatError, setRepeatError] = useState('');
   const [repeatCreating, setRepeatCreating] = useState(false);
+
+  const normalizeAssigneeSelection = useCallback((ids: string[] | undefined) => {
+    if (!ids || ids.length === 0) return [];
+    const order = new Map(assignees.map((assignee, index) => [assignee.id, index]));
+    return Array.from(new Set(ids)).sort((left, right) => (
+      (order.get(left) ?? 0) - (order.get(right) ?? 0)
+    ));
+  }, [assignees]);
 
   const handleTagToggle = (tagId: string) => {
     setTagIds((prev) => (
@@ -152,20 +177,20 @@ export const AddTaskDialog: React.FC<AddTaskDialogProps> = ({ open, onOpenChange
     
     // Reset form
     setTitle('');
-    setProjectId(projects[0]?.id || 'none');
+    setProjectId(activeProjects[0]?.id || 'none');
     setProjectInitialized(false);
     setAssigneeIds([]);
     setStatusId(statuses[0]?.id || '');
     setTypeId(taskTypes[0]?.id || '');
     setPriority('none');
-    setStartDate(initialStart);
-    setEndDate(initialEnd);
+    setStartDate(defaultStart);
+    setEndDate(defaultStart);
     setTagIds([]);
     setDescription('');
     setRepeatFrequency('none');
     setRepeatEnds('never');
     repeatUntilAutoRef.current = true;
-    setRepeatUntil(getDefaultRepeatUntil(initialStart));
+    setRepeatUntil(getDefaultRepeatUntil(defaultStart));
     setRepeatCount(4);
     setRepeatError('');
     setRepeatCreating(false);
@@ -185,9 +210,37 @@ export const AddTaskDialog: React.FC<AddTaskDialogProps> = ({ open, onOpenChange
       return;
     }
     if (projectInitialized) return;
-    setProjectId(projects[0]?.id || 'none');
+    const nextStart = initialStartDate ?? defaultStart;
+    const nextEnd = initialEndDate ?? nextStart;
+    const nextProjectId = initialProjectId === null
+      ? 'none'
+      : (initialProjectId ?? activeProjects[0]?.id ?? 'none');
+    const nextAssignees = normalizeAssigneeSelection(initialAssigneeIds)
+      .filter((id) => selectableAssignees.some((assignee) => assignee.id === id));
+
+    setStartDate(nextStart);
+    setEndDate(nextEnd);
+    setProjectId(nextProjectId);
+    setAssigneeIds(nextAssignees);
+    setRepeatFrequency('none');
+    setRepeatEnds('never');
+    repeatUntilAutoRef.current = true;
+    setRepeatUntil(getDefaultRepeatUntil(nextStart));
+    setRepeatCount(4);
+    setRepeatError('');
     setProjectInitialized(true);
-  }, [open, projectInitialized, projects]);
+  }, [
+    activeProjects,
+    defaultStart,
+    initialAssigneeIds,
+    initialEndDate,
+    initialProjectId,
+    initialStartDate,
+    normalizeAssigneeSelection,
+    open,
+    projectInitialized,
+    selectableAssignees,
+  ]);
 
   useEffect(() => {
     if (!typeId && taskTypes[0]?.id) {
@@ -197,12 +250,12 @@ export const AddTaskDialog: React.FC<AddTaskDialogProps> = ({ open, onOpenChange
 
   const assigneeLabel = useMemo(() => {
     if (assigneeIds.length === 0) return 'Unassigned';
-    const selected = filteredAssignees
+    const selected = selectableAssignees
       .filter((assignee) => assigneeIds.includes(assignee.id))
       .map((assignee) => assignee.name);
     if (selected.length === 1 && assigneeIds.length === 1) return selected[0];
     return `${assigneeIds.length} assignees`;
-  }, [assigneeIds, filteredAssignees]);
+  }, [assigneeIds, selectableAssignees]);
   
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -232,7 +285,7 @@ export const AddTaskDialog: React.FC<AddTaskDialogProps> = ({ open, onOpenChange
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">No Project</SelectItem>
-                  {projects.map(p => (
+                  {activeProjects.map(p => (
                     <SelectItem key={p.id} value={p.id}>
                       <div className="flex items-center gap-2">
                         <div 
@@ -257,12 +310,12 @@ export const AddTaskDialog: React.FC<AddTaskDialogProps> = ({ open, onOpenChange
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-64 p-2" align="start">
-                  {filteredAssignees.length === 0 ? (
+                  {selectableAssignees.length === 0 ? (
                     <div className="text-xs text-muted-foreground">No assignees yet.</div>
                   ) : (
                     <ScrollArea className="max-h-48 pr-2">
                       <div className="space-y-1">
-                        {filteredAssignees.map((assignee) => (
+                        {selectableAssignees.map((assignee) => (
                           <label key={assignee.id} className="flex items-center gap-2 py-1 cursor-pointer">
                             <Checkbox
                               checked={assigneeIds.includes(assignee.id)}

@@ -23,7 +23,7 @@ import {
   DASHBOARD_COLS,
   getClosestWidgetSize,
 } from '@/features/dashboard/store/dashboardStore';
-import { buildTimeSeriesData, buildWidgetData } from '@/features/dashboard/lib/dashboardUtils';
+import { buildTimeSeriesData, buildWidgetData, shouldUseAssigneeRows } from '@/features/dashboard/lib/dashboardUtils';
 import { DashboardWidgetCard } from '@/features/dashboard/components/DashboardWidgetCard';
 import { WidgetEditorDialog } from '@/features/dashboard/components/WidgetEditorDialog';
 import { DashboardLayouts, DashboardWidget } from '@/features/dashboard/types/dashboard';
@@ -202,10 +202,13 @@ const DashboardPage = () => {
       || widget.type === 'line'
       || widget.type === 'area'
       || widget.type === 'pie';
+    const useAssigneeRows = shouldUseAssigneeRows(widget);
+    const rows = useAssigneeRows ? statsState?.rows : (statsState?.rowsBase ?? statsState?.rows);
+    const seriesRows = useAssigneeRows ? statsState?.seriesRows : (statsState?.seriesRowsBase ?? statsState?.seriesRows);
     const data = statsState && isTaskWidget
       ? (widget.type === 'line' || widget.type === 'area'
-        ? buildTimeSeriesData(statsState.seriesRows ?? [], widget, statuses)
-        : buildWidgetData(statsState.rows ?? [], widget, statuses))
+        ? buildTimeSeriesData(seriesRows ?? [], widget, statuses)
+        : buildWidgetData(rows ?? [], widget, statuses))
       : null;
     const loading = isTaskWidget ? (statsState?.loading ?? false) : false;
     const widgetError = isTaskWidget ? (statsState?.error ?? null) : null;

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { TimelineGrid } from '@/features/planner/components/timeline/TimelineGrid';
 import { CalendarTimeline } from '@/features/planner/components/timeline/CalendarTimeline';
 import { TimelineControls } from '@/features/planner/components/timeline/TimelineControls';
@@ -40,9 +40,23 @@ const PlannerPage = () => {
   const [showSettings, setShowSettings] = useState(false);
   const [showAccountSettings, setShowAccountSettings] = useState(false);
   const [showAddTask, setShowAddTask] = useState(false);
+  const [addTaskDefaults, setAddTaskDefaults] = useState<{
+    startDate: string;
+    endDate: string;
+    projectId?: string | null;
+    assigneeIds?: string[];
+  } | null>(null);
   const loadWorkspaceData = usePlannerStore((state) => state.loadWorkspaceData);
   const plannerLoading = usePlannerStore((state) => state.loading);
   const plannerError = usePlannerStore((state) => state.error);
+  const loadedRange = usePlannerStore((state) => state.loadedRange);
+  const tasks = usePlannerStore((state) => state.tasks);
+  const projects = usePlannerStore((state) => state.projects);
+  const assignees = usePlannerStore((state) => state.assignees);
+  const statuses = usePlannerStore((state) => state.statuses);
+  const taskTypes = usePlannerStore((state) => state.taskTypes);
+  const tags = usePlannerStore((state) => state.tags);
+  const milestones = usePlannerStore((state) => state.milestones);
   const filters = usePlannerStore((state) => state.filters);
   const setFilters = usePlannerStore((state) => state.setFilters);
   const clearFilterCriteria = usePlannerStore((state) => state.clearFilterCriteria);
@@ -65,6 +79,14 @@ const PlannerPage = () => {
     || filters.statusIds.length > 0
     || filters.typeIds.length > 0
     || filters.tagIds.length > 0;
+  const hasInitialData = tasks.length > 0
+    || projects.length > 0
+    || assignees.length > 0
+    || statuses.length > 0
+    || taskTypes.length > 0
+    || tags.length > 0
+    || milestones.length > 0;
+  const showLoadingOverlay = plannerLoading && (!loadedRange || loadedRange.workspaceId !== currentWorkspaceId) && !hasInitialData;
 
   useEffect(() => {
     if (currentWorkspaceId) {
@@ -109,6 +131,23 @@ const PlannerPage = () => {
     window.localStorage.setItem(storageKey, JSON.stringify(filters));
   }, [filters, user?.id]);
 
+  const handleCreateTaskRequest = useCallback((defaults: {
+    startDate: string;
+    endDate: string;
+    projectId?: string | null;
+    assigneeIds?: string[];
+  }) => {
+    setAddTaskDefaults(defaults);
+    setShowAddTask(true);
+  }, []);
+
+  const handleAddTaskOpenChange = useCallback((open: boolean) => {
+    setShowAddTask(open);
+    if (!open) {
+      setAddTaskDefaults(null);
+    }
+  }, []);
+
   if (isSuperAdmin) {
     return <Navigate to="/admin/users" replace />;
   }
@@ -128,7 +167,14 @@ const PlannerPage = () => {
               {userLabel}
             </span>
           )}
-          <Button onClick={() => setShowAddTask(true)} className="gap-2" disabled={!canEdit}>
+          <Button
+            onClick={() => {
+              setAddTaskDefaults(null);
+              setShowAddTask(true);
+            }}
+            className="gap-2"
+            disabled={!canEdit}
+          >
             <Plus className="h-4 w-4" />
             Add Task
           </Button>
@@ -177,19 +223,22 @@ const PlannerPage = () => {
         {/* Timeline area */}
         <div className="flex-1 flex flex-col overflow-hidden">
           <TimelineControls />
-          {plannerLoading && (
-            <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
-              Loading workspace...
-            </div>
-          )}
-          {!plannerLoading && plannerError && (
-            <div className="flex flex-1 items-center justify-center text-sm text-destructive">
-              {plannerError}
-            </div>
-          )}
-          {!plannerLoading && !plannerError && (
-            viewMode === 'calendar' ? <CalendarTimeline /> : <TimelineGrid />
-          )}
+          <div className="relative flex-1 overflow-hidden">
+            {viewMode === 'calendar'
+              ? <CalendarTimeline />
+              : <TimelineGrid onCreateTask={handleCreateTaskRequest} />
+            }
+            {showLoadingOverlay && (
+              <div className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground bg-background/60">
+                Loading workspace...
+              </div>
+            )}
+            {!plannerLoading && plannerError && (
+              <div className="absolute inset-0 flex items-center justify-center text-sm text-destructive bg-background/70">
+                {plannerError}
+              </div>
+            )}
+          </div>
         </div>
       </div>
       
@@ -197,7 +246,14 @@ const PlannerPage = () => {
       <TaskDetailPanel />
       <SettingsPanel open={showSettings} onOpenChange={setShowSettings} />
       <AccountSettingsDialog open={showAccountSettings} onOpenChange={setShowAccountSettings} />
-      <AddTaskDialog open={showAddTask} onOpenChange={setShowAddTask} />
+      <AddTaskDialog
+        open={showAddTask}
+        onOpenChange={handleAddTaskOpenChange}
+        initialStartDate={addTaskDefaults?.startDate}
+        initialEndDate={addTaskDefaults?.endDate}
+        initialProjectId={addTaskDefaults?.projectId}
+        initialAssigneeIds={addTaskDefaults?.assigneeIds}
+      />
     </div>
   );
 };
