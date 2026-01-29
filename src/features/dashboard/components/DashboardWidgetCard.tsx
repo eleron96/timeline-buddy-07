@@ -105,7 +105,16 @@ export const DashboardWidgetCard: React.FC<DashboardWidgetCardProps> = ({
   const calendarGapClass = isMilestoneCalendar && isSmall ? 'gap-1' : contentGapClass;
   const cardPaddingClass = isSmall ? 'p-3' : 'p-4';
   const contentPaddingClass = isMilestoneCalendar && isSmall ? 'pt-2' : 'pt-3';
-  const chartMinHeightClass = isSmall ? 'min-h-[64px]' : 'min-h-[180px]';
+  const chartMinHeightClass = isSmall
+    ? 'min-h-[64px]'
+    : legendItems.length > 6
+      ? 'min-h-[120px]'
+      : 'min-h-[160px]';
+  const barChartMinHeightClass = isSmall
+    ? 'min-h-[64px]'
+    : legendItems.length > 4
+      ? 'min-h-[120px]'
+      : 'min-h-[160px]';
   const pieMinHeightClass = isSmall ? 'min-h-[72px]' : 'min-h-[200px]';
   const kpiValueClass = isSmall ? 'text-3xl' : 'text-4xl';
   const pieInnerRadius = size === 'small' ? '45%' : '55%';
@@ -113,12 +122,15 @@ export const DashboardWidgetCard: React.FC<DashboardWidgetCardProps> = ({
   const timeSeries = data?.timeSeries ?? [];
   const seriesKeys = data?.seriesKeys ?? [];
   const hasTimeSeries = timeSeries.length > 0 && seriesKeys.length > 0;
-  const barPeriodLabel = widget.type === 'bar' ? taskPeriodLabel : null;
+  const chartPeriodLabel = (widget.type === 'bar' || widget.type === 'area' || widget.type === 'line')
+    ? taskPeriodLabel
+    : null;
   const legendMinWidth = size === 'small' ? 110 : 140;
   const legendColumns = legendItems.length <= 1 ? 1 : 2;
+  const legendTextClass = legendItems.length > 6 ? 'text-[10px]' : 'text-[11px]';
   const legendList = showLegend ? (
     <div
-      className={cn('grid w-full gap-x-4 gap-y-1 text-[11px] leading-snug text-muted-foreground')}
+      className={cn('grid w-full max-w-full gap-x-3 gap-y-1 leading-snug text-muted-foreground', legendTextClass)}
       style={{
         gridTemplateColumns: legendColumns === 1
           ? `minmax(0, 1fr)`
@@ -131,7 +143,7 @@ export const DashboardWidgetCard: React.FC<DashboardWidgetCardProps> = ({
       {legendItems.map((item, index) => (
         <div
           key={`${item.name}-${index}`}
-          className="grid min-w-0 grid-cols-[12px_minmax(0,1fr)_auto] items-start gap-2"
+          className="grid min-w-0 grid-cols-[12px_minmax(0,1fr)_minmax(24px,auto)] items-start gap-2"
         >
           <span
             className="mt-1 h-2 w-2 rounded-full"
@@ -210,7 +222,7 @@ export const DashboardWidgetCard: React.FC<DashboardWidgetCardProps> = ({
           {editing && <GripVertical className="h-4 w-4 text-muted-foreground" />}
           <div className="flex flex-col">
             <span className="text-sm font-semibold text-foreground">{widget.title}</span>
-            {barPeriodLabel && <span className="text-xs text-muted-foreground">{barPeriodLabel}</span>}
+            {chartPeriodLabel && <span className="text-xs text-muted-foreground">{chartPeriodLabel}</span>}
           </div>
         </div>
         {editing && (
@@ -254,7 +266,7 @@ export const DashboardWidgetCard: React.FC<DashboardWidgetCardProps> = ({
             {data?.series.length ? (
               <ChartContainer
                 config={{ value: { label: 'Tasks' } }}
-                className={cn('flex-1 min-h-0', chartMinHeightClass)}
+                className={cn('flex-1 min-h-0', barChartMinHeightClass)}
                 style={{ aspectRatio: 'auto' }}
               >
                 <BarChart
@@ -299,17 +311,6 @@ export const DashboardWidgetCard: React.FC<DashboardWidgetCardProps> = ({
               >
                 <LineChart data={timeSeries}>
                   {showAxes && (
-                    <XAxis
-                      dataKey="date"
-                      tickLine={false}
-                      axisLine={false}
-                      interval={0}
-                      angle={-25}
-                      textAnchor="end"
-                      height={50}
-                    />
-                  )}
-                  {showAxes && (
                     <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={36} />
                   )}
                   <ChartTooltip content={<ChartTooltipContent indicator="dot" />} />
@@ -332,7 +333,6 @@ export const DashboardWidgetCard: React.FC<DashboardWidgetCardProps> = ({
               </div>
             )}
             {legendList}
-            {showPeriod && <div className="text-xs text-muted-foreground">{periodLabel}</div>}
             {showFilter && (
               <div className="text-xs text-muted-foreground">
                 Filter: {filterLabels[widget.statusFilter]}
@@ -349,17 +349,6 @@ export const DashboardWidgetCard: React.FC<DashboardWidgetCardProps> = ({
                 style={{ aspectRatio: 'auto' }}
               >
                 <AreaChart data={timeSeries}>
-                  {showAxes && (
-                    <XAxis
-                      dataKey="date"
-                      tickLine={false}
-                      axisLine={false}
-                      interval={0}
-                      angle={-25}
-                      textAnchor="end"
-                      height={50}
-                    />
-                  )}
                   {showAxes && (
                     <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={36} />
                   )}
@@ -383,7 +372,6 @@ export const DashboardWidgetCard: React.FC<DashboardWidgetCardProps> = ({
               </div>
             )}
             {legendList}
-            {showPeriod && <div className="text-xs text-muted-foreground">{periodLabel}</div>}
             {showFilter && (
               <div className="text-xs text-muted-foreground">
                 Filter: {filterLabels[widget.statusFilter]}
