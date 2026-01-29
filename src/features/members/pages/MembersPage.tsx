@@ -16,6 +16,7 @@ import { ScrollArea } from '@/shared/ui/scroll-area';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/shared/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/shared/ui/select';
 import { supabase } from '@/shared/lib/supabaseClient';
+import { formatStatusLabel } from '@/shared/lib/statusLabels';
 import { cn } from '@/shared/lib/classNames';
 import { format, parseISO } from 'date-fns';
 import { Settings, User, Users, RefreshCcw } from 'lucide-react';
@@ -592,7 +593,7 @@ const MembersPage = () => {
                                 onCheckedChange={() => handleToggleStatus(status.id)}
                               />
                               <span className="inline-flex h-2 w-2 rounded-full" style={{ backgroundColor: status.color }} />
-                              <span className="text-sm truncate">{status.name}</span>
+                              <span className="text-sm truncate">{formatStatusLabel(status.name)}</span>
                             </label>
                           ))}
                         </div>
@@ -750,7 +751,7 @@ const MembersPage = () => {
                                       className="inline-flex h-2 w-2 rounded-full"
                                       style={{ backgroundColor: status?.color ?? '#94a3b8' }}
                                     />
-                                    <span>{status?.name ?? 'Unknown'}</span>
+                                    <span>{status ? formatStatusLabel(status.name) : 'Unknown'}</span>
                                   </div>
                                 </TableCell>
                                 <TableCell>

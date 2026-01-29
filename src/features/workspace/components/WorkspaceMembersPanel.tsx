@@ -111,7 +111,7 @@ export const WorkspaceMembersPanel: React.FC<WorkspaceMembersPanelProps> = ({
   };
 
   return (
-    <div className={cn('space-y-3', className)}>
+    <div className={cn('space-y-4', className)}>
       {showTitle && (
         <div>
           <h2 className="text-base font-semibold">Workspace members</h2>
@@ -128,79 +128,95 @@ export const WorkspaceMembersPanel: React.FC<WorkspaceMembersPanelProps> = ({
         </Alert>
       )}
 
-      {(error || warning || actionLink) && (
-        <div className="space-y-2">
-          {error && (
-            <Alert variant="destructive">
-              <AlertTitle>Action failed</AlertTitle>
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          )}
-
-          {warning && (
-            <Alert>
-              <AlertTitle>Invite created</AlertTitle>
-              <AlertDescription>{warning}</AlertDescription>
-            </Alert>
-          )}
-
-          {actionLink && (
-            <Alert>
-              <AlertTitle>Invite link created</AlertTitle>
-              <AlertDescription>
-                Copy this link if the email did not send: {actionLink}
-              </AlertDescription>
-            </Alert>
-          )}
+      <div className="rounded-lg border bg-background p-4 space-y-3">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <div className="text-sm font-semibold">Invites</div>
+            <div className="text-xs text-muted-foreground">
+              Invite people and share access.
+            </div>
+          </div>
+          <Popover open={inviteOpen} onOpenChange={setInviteOpen}>
+            <PopoverTrigger asChild>
+              <Button variant="secondary" disabled={!isAdmin}>
+                Add member
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-80 p-4" align="end">
+              <form onSubmit={handleInvite} className="space-y-3">
+                <Label htmlFor="invite-email">Email</Label>
+                <Input
+                  id="invite-email"
+                  type="email"
+                  placeholder="name@example.com"
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                  disabled={!isAdmin}
+                />
+                <div className="space-y-1">
+                  <Label>Role</Label>
+                  <Select value={role} onValueChange={(value) => setRole(value as WorkspaceRole)} disabled={!isAdmin}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="viewer">Viewer</SelectItem>
+                      <SelectItem value="editor">Editor</SelectItem>
+                      <SelectItem value="admin">Admin</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <Button type="submit" disabled={!isAdmin || submitting || !email.trim()}>
+                  Send invite
+                </Button>
+              </form>
+            </PopoverContent>
+          </Popover>
         </div>
-      )}
 
-      <div className="flex flex-wrap items-start justify-between gap-3 rounded-lg border px-3 py-3">
+        {(error || warning || actionLink) && (
+          <div className="space-y-2">
+            {error && (
+              <Alert variant="destructive">
+                <AlertTitle>Action failed</AlertTitle>
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            )}
+
+            {warning && (
+              <Alert>
+                <AlertTitle>Invite created</AlertTitle>
+                <AlertDescription>{warning}</AlertDescription>
+              </Alert>
+            )}
+
+            {actionLink && (
+              <Alert>
+                <AlertTitle>Invite link created</AlertTitle>
+                <AlertDescription>
+                  Copy this link if the email did not send: {actionLink}
+                </AlertDescription>
+              </Alert>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div className="rounded-lg border bg-background p-4 space-y-3">
         <div>
           <div className="text-sm font-semibold">Members & roles</div>
           <div className="text-xs text-muted-foreground">
-            Invite people and manage their access.
+            Manage roles, access, and status.
           </div>
         </div>
-        <Popover open={inviteOpen} onOpenChange={setInviteOpen}>
-          <PopoverTrigger asChild>
-            <Button variant="secondary" disabled={!isAdmin}>
-              Add member
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-80 p-4" align="end">
-            <form onSubmit={handleInvite} className="space-y-3">
-              <Label htmlFor="invite-email">Email</Label>
-              <Input
-                id="invite-email"
-                type="email"
-                placeholder="name@example.com"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                disabled={!isAdmin}
-              />
-              <div className="space-y-1">
-                <Label>Role</Label>
-                <Select value={role} onValueChange={(value) => setRole(value as WorkspaceRole)} disabled={!isAdmin}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="viewer">Viewer</SelectItem>
-                    <SelectItem value="editor">Editor</SelectItem>
-                    <SelectItem value="admin">Admin</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <Button type="submit" disabled={!isAdmin || submitting || !email.trim()}>
-                Send invite
-              </Button>
-            </form>
-          </PopoverContent>
-        </Popover>
-      </div>
 
-      <div className="space-y-2">
+        <div className="hidden md:grid grid-cols-[1fr,140px,120px,90px] gap-3 text-xs text-muted-foreground px-2">
+          <span>Member</span>
+          <span>Role</span>
+          <span>Status</span>
+          <span className="text-right">Actions</span>
+        </div>
+
         {membersLoading && (
           <div className="text-sm text-muted-foreground">Loading members...</div>
         )}
@@ -212,8 +228,8 @@ export const WorkspaceMembersPanel: React.FC<WorkspaceMembersPanelProps> = ({
           const assignee = assigneeByUserId.get(member.userId);
           const isActive = assignee?.isActive ?? true;
           return (
-            <div key={member.userId} className="flex items-center gap-2 rounded-md border px-2 py-2">
-              <div className="flex-1 min-w-0">
+            <div key={member.userId} className="grid items-center gap-3 rounded-md border px-3 py-3 md:grid-cols-[1fr,140px,120px,90px]">
+              <div className="min-w-0">
                 <div className="text-sm font-medium truncate">
                   {member.email}
                   {isSelf ? ' (you)' : ''}
@@ -230,7 +246,7 @@ export const WorkspaceMembersPanel: React.FC<WorkspaceMembersPanelProps> = ({
                 onValueChange={(value) => handleRoleChange(member.userId, value as WorkspaceRole)}
                 disabled={!isAdmin}
               >
-                <SelectTrigger className="w-[120px]">
+                <SelectTrigger className="w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -239,27 +255,33 @@ export const WorkspaceMembersPanel: React.FC<WorkspaceMembersPanelProps> = ({
                   <SelectItem value="admin">Admin</SelectItem>
                 </SelectContent>
               </Select>
-              {assignee && (
-                <div className="flex flex-col items-center gap-1">
-                  <Switch
-                    checked={isActive}
-                    onCheckedChange={(value) => updateAssignee(assignee.id, { isActive: value })}
-                    disabled={!isAdmin || isSelf}
-                    aria-label={isActive ? 'Disable member' : 'Enable member'}
-                  />
-                  <span className="text-[10px] text-muted-foreground">
-                    {isActive ? 'Active' : 'Disabled'}
-                  </span>
-                </div>
-              )}
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => handleRemove(member.userId)}
-                disabled={!isAdmin || isSelf}
-              >
-                Remove
-              </Button>
+              <div className="flex items-center gap-3">
+                {assignee ? (
+                  <>
+                    <Switch
+                      checked={isActive}
+                      onCheckedChange={(value) => updateAssignee(assignee.id, { isActive: value })}
+                      disabled={!isAdmin || isSelf}
+                      aria-label={isActive ? 'Disable member' : 'Enable member'}
+                    />
+                    <span className="text-[10px] text-muted-foreground">
+                      {isActive ? 'Active' : 'Disabled'}
+                    </span>
+                  </>
+                ) : (
+                  <span className="text-xs text-muted-foreground">—</span>
+                )}
+              </div>
+              <div className="flex justify-end">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => handleRemove(member.userId)}
+                  disabled={!isAdmin || isSelf}
+                >
+                  Remove
+                </Button>
+              </div>
             </div>
           );
         })}

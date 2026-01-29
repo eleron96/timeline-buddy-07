@@ -24,6 +24,7 @@ import {
   DashboardMilestoneCalendarMode,
 } from '@/features/dashboard/types/dashboard';
 import { BAR_PALETTES, DEFAULT_BAR_PALETTE, createWidgetId } from '@/features/dashboard/lib/dashboardUtils';
+import { formatStatusLabel } from '@/shared/lib/statusLabels';
 
 interface WidgetEditorDialogProps {
   open: boolean;
@@ -69,6 +70,8 @@ const filterFieldOptions: Array<{ value: DashboardFilterField; label: string }> 
   { value: 'status', label: 'Status' },
   { value: 'project', label: 'Project' },
 ];
+
+const UNASSIGNED_FILTER_VALUE = '__unassigned__';
 
 const filterOperatorOptions: Array<{ value: DashboardFilterOperator; label: string }> = [
   { value: 'eq', label: 'Equals' },
@@ -269,8 +272,11 @@ export const WidgetEditorDialog: React.FC<WidgetEditorDialogProps> = ({
 
   const getRuleOptions = (field: DashboardFilterField) => {
     if (field === 'project') return orderedProjects;
-    if (field === 'status') return orderedStatuses.map((status) => ({ id: status.id, name: status.name }));
-    return orderedAssignees;
+    if (field === 'status') return orderedStatuses.map((status) => ({ id: status.id, name: formatStatusLabel(status.name) }));
+    return [
+      { id: UNASSIGNED_FILTER_VALUE, name: 'Unassigned' },
+      ...orderedAssignees,
+    ];
   };
 
   const handleSave = () => {
@@ -489,7 +495,7 @@ export const WidgetEditorDialog: React.FC<WidgetEditorDialogProps> = ({
                       checked={statusIds.includes(status.id)}
                       onCheckedChange={() => toggleStatus(status.id)}
                     />
-                    <span className="truncate">{status.name}</span>
+                    <span className="truncate">{formatStatusLabel(status.name)}</span>
                   </label>
                 ))}
               </div>

@@ -7,6 +7,7 @@ import { Checkbox } from '@/shared/ui/checkbox';
 import { Input } from '@/shared/ui/input';
 import { RichTextEditor } from '@/features/planner/components/RichTextEditor';
 import { Label } from '@/shared/ui/label';
+import { formatStatusLabel } from '@/shared/lib/statusLabels';
 import { cn } from '@/shared/lib/classNames';
 import { Popover, PopoverContent, PopoverTrigger } from '@/shared/ui/popover';
 import { ScrollArea } from '@/shared/ui/scroll-area';
@@ -380,12 +381,12 @@ export const TaskDetailPanel: React.FC = () => {
                     </TooltipTrigger>
                     <TooltipContent>Исполнители</TooltipContent>
                   </Tooltip>
-                  <div className="flex-1">
+                  <div className="flex-1 min-w-0">
                     <Label className="sr-only">Assignees</Label>
                     <Popover>
                       <PopoverTrigger asChild>
-                        <Button variant="outline" className="h-8 w-full justify-between text-sm" disabled={isReadOnly}>
-                          <span className="truncate">{assigneeLabel}</span>
+                        <Button variant="outline" className="h-8 w-full justify-between pl-3 pr-2 text-left text-sm" disabled={isReadOnly}>
+                          <span className="flex-1 truncate text-left">{assigneeLabel}</span>
                           <ChevronDown className="h-4 w-4 text-muted-foreground" />
                         </Button>
                       </PopoverTrigger>
@@ -431,15 +432,15 @@ export const TaskDetailPanel: React.FC = () => {
                     </TooltipTrigger>
                     <TooltipContent>Статус</TooltipContent>
                   </Tooltip>
-                  <div className="flex-1">
+                  <div className="flex-1 min-w-0">
                     <Label className="sr-only">Status</Label>
                     <Select
                       value={task.statusId}
                       onValueChange={(v) => handleUpdate('statusId', v)}
                       disabled={isReadOnly}
                     >
-                      <SelectTrigger className="h-8 text-sm">
-                        <SelectValue placeholder="Select status" />
+                      <SelectTrigger className="h-8 w-full pl-3 pr-2 text-left text-sm">
+                        <SelectValue placeholder="Select status" className="truncate text-left" />
                       </SelectTrigger>
                       <SelectContent>
                         {statuses.map(s => (
@@ -449,7 +450,7 @@ export const TaskDetailPanel: React.FC = () => {
                                 className="w-2.5 h-2.5 rounded-full"
                                 style={{ backgroundColor: s.color }}
                               />
-                              {s.name}
+                              {formatStatusLabel(s.name)}
                             </div>
                           </SelectItem>
                         ))}
@@ -467,15 +468,15 @@ export const TaskDetailPanel: React.FC = () => {
                     </TooltipTrigger>
                     <TooltipContent>Тип</TooltipContent>
                   </Tooltip>
-                  <div className="flex-1">
+                  <div className="flex-1 min-w-0">
                     <Label className="sr-only">Type</Label>
                     <Select
                       value={task.typeId}
                       onValueChange={(v) => handleUpdate('typeId', v)}
                       disabled={isReadOnly}
                     >
-                      <SelectTrigger className="h-8 text-sm">
-                        <SelectValue placeholder="Select type" />
+                      <SelectTrigger className="h-8 w-full pl-3 pr-2 text-left text-sm">
+                        <SelectValue placeholder="Select type" className="truncate text-left" />
                       </SelectTrigger>
                       <SelectContent>
                         {taskTypes.map(t => (
@@ -495,15 +496,15 @@ export const TaskDetailPanel: React.FC = () => {
                     </TooltipTrigger>
                     <TooltipContent>Приоритет</TooltipContent>
                   </Tooltip>
-                  <div className="flex-1">
+                  <div className="flex-1 min-w-0">
                     <Label className="sr-only">Priority</Label>
                     <Select
                       value={task.priority ?? 'none'}
                       onValueChange={(value) => handleUpdate('priority', value === 'none' ? null : (value as TaskPriority))}
                       disabled={isReadOnly}
                     >
-                      <SelectTrigger className="h-8 text-sm">
-                        <SelectValue placeholder="Select priority" />
+                      <SelectTrigger className="h-8 w-full pl-3 pr-2 text-left text-sm">
+                        <SelectValue placeholder="Select priority" className="truncate text-left" />
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="none">No priority</SelectItem>
