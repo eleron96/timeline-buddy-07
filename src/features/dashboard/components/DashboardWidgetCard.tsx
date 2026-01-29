@@ -4,6 +4,7 @@ import {
   AreaChart,
   Bar,
   BarChart,
+  CartesianGrid,
   Cell,
   Line,
   LineChart,
@@ -74,7 +75,14 @@ export const DashboardWidgetCard: React.FC<DashboardWidgetCardProps> = ({
   onEdit,
 }) => {
   const { startDate: taskStartDate, endDate: taskEndDate } = getPeriodRange(widget.period);
-  const taskPeriodLabel = `${taskStartDate} to ${taskEndDate}`;
+  const formatShortRange = (startDate: string, endDate: string) => {
+    const start = parseISO(startDate);
+    const end = parseISO(endDate);
+    const startLabel = format(start, 'MMM d');
+    const endLabel = format(end, 'MMM d');
+    return startLabel === endLabel ? startLabel : `${startLabel} - ${endLabel}`;
+  };
+  const taskPeriodLabel = formatShortRange(taskStartDate, taskEndDate);
   const size = widget.size ?? (widget.type === 'kpi' ? 'small' : 'medium');
   const isSmall = size === 'small';
   const showPeriod = size !== 'small';
@@ -92,10 +100,6 @@ export const DashboardWidgetCard: React.FC<DashboardWidgetCardProps> = ({
   const isMilestoneList = isMilestoneWidget && milestoneView === 'list';
   const isMilestoneCalendar = isMilestoneWidget && milestoneView === 'calendar';
   const legendItems = isChart ? (data?.series ?? []) : [];
-  const maxLegendItems = size === 'small' ? 2 : size === 'medium' ? 6 : 8;
-  const visibleLegendItems = legendItems.slice(0, maxLegendItems);
-  const hiddenLegendItems = legendItems.slice(maxLegendItems);
-  const hiddenLegendCount = hiddenLegendItems.length;
   const showLegend = isChart && legendItems.length > 0;
   const contentGapClass = isSmall ? 'gap-1.5' : 'gap-2';
   const calendarGapClass = isMilestoneCalendar && isSmall ? 'gap-1' : contentGapClass;
@@ -109,64 +113,34 @@ export const DashboardWidgetCard: React.FC<DashboardWidgetCardProps> = ({
   const timeSeries = data?.timeSeries ?? [];
   const seriesKeys = data?.seriesKeys ?? [];
   const hasTimeSeries = timeSeries.length > 0 && seriesKeys.length > 0;
+  const barPeriodLabel = widget.type === 'bar' ? taskPeriodLabel : null;
+  const legendMinWidth = size === 'small' ? 110 : 140;
+  const legendColumns = legendItems.length <= 1 ? 1 : 2;
   const legendList = showLegend ? (
     <div
-      className={cn(
-        'text-xs text-muted-foreground',
-        size === 'small' ? 'flex w-fit flex-col items-start gap-1' : 'flex flex-wrap gap-x-4 gap-y-1',
-      )}
+      className={cn('grid w-full gap-x-4 gap-y-1 text-[11px] leading-snug text-muted-foreground')}
+      style={{
+        gridTemplateColumns: legendColumns === 1
+          ? `minmax(0, 1fr)`
+          : 'repeat(2, minmax(0, 1fr))',
+        gridAutoFlow: 'row',
+        justifyContent: 'start',
+        justifyItems: 'start',
+      }}
     >
-      {visibleLegendItems.map((item, index) => (
+      {legendItems.map((item, index) => (
         <div
           key={`${item.name}-${index}`}
-          className={cn(
-            'flex items-center gap-2',
-            size === 'small' ? 'max-w-full' : 'max-w-[220px]',
-          )}
+          className="grid min-w-0 grid-cols-[12px_minmax(0,1fr)_auto] items-start gap-2"
         >
           <span
-            className="h-2 w-2 shrink-0 rounded-full"
+            className="mt-1 h-2 w-2 rounded-full"
             style={{ backgroundColor: paletteColors[index % paletteColors.length] }}
           />
-          <span className={cn('truncate', size === 'small' ? 'max-w-[120px]' : 'max-w-[160px]')}>
-            {item.name}
-          </span>
-          <span className="font-medium text-foreground">{item.value.toLocaleString()}</span>
+          <span className="min-w-0 break-words text-muted-foreground">{item.name}</span>
+          <span className="text-right font-medium text-foreground">{item.value.toLocaleString()}</span>
         </div>
       ))}
-      {hiddenLegendCount > 0 && (
-        <TooltipProvider delayDuration={200}>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                className="text-xs text-muted-foreground underline-offset-4 hover:underline"
-              >
-                +{hiddenLegendCount} more
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="top" className="max-w-xs p-2 text-xs">
-              <div className="grid gap-1">
-                {hiddenLegendItems.map((item, index) => {
-                  const paletteIndex = index + maxLegendItems;
-                  return (
-                    <div key={`${item.name}-${paletteIndex}`} className="flex items-center gap-2">
-                      <span
-                        className="h-2 w-2 shrink-0 rounded-full"
-                        style={{ backgroundColor: paletteColors[paletteIndex % paletteColors.length] }}
-                      />
-                      <span className="truncate">{item.name}</span>
-                      <span className="font-medium text-foreground">
-                        {item.value.toLocaleString()}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-      )}
     </div>
   ) : null;
 
@@ -183,7 +157,10 @@ export const DashboardWidgetCard: React.FC<DashboardWidgetCardProps> = ({
         ? addWeeks(now, 1)
         : addMonths(now, 1),
   );
-  const milestonePeriodLabel = `${format(milestoneRangeStart, 'yyyy-MM-dd')} to ${format(milestoneRangeEnd, 'yyyy-MM-dd')}`;
+  const milestonePeriodLabel = formatShortRange(
+    format(milestoneRangeStart, 'yyyy-MM-dd'),
+    format(milestoneRangeEnd, 'yyyy-MM-dd'),
+  );
   const periodLabel = isMilestoneList ? milestonePeriodLabel : taskPeriodLabel;
   const milestonesInRange = milestones
     .filter((milestone) => isWithinInterval(parseISO(milestone.date), {
@@ -228,10 +205,13 @@ export const DashboardWidgetCard: React.FC<DashboardWidgetCardProps> = ({
         editing && 'ring-1 ring-muted',
       )}
     >
-      <div className="flex items-center justify-between gap-2">
-        <div className={cn('flex items-center gap-2', editing && 'dashboard-widget-handle cursor-move')}>
+      <div className="flex items-start justify-between gap-2">
+        <div className={cn('flex items-start gap-2', editing && 'dashboard-widget-handle cursor-move')}>
           {editing && <GripVertical className="h-4 w-4 text-muted-foreground" />}
-          <span className="text-sm font-semibold text-foreground">{widget.title}</span>
+          <div className="flex flex-col">
+            <span className="text-sm font-semibold text-foreground">{widget.title}</span>
+            {barPeriodLabel && <span className="text-xs text-muted-foreground">{barPeriodLabel}</span>}
+          </div>
         </div>
         {editing && (
           <Button
@@ -277,18 +257,14 @@ export const DashboardWidgetCard: React.FC<DashboardWidgetCardProps> = ({
                 className={cn('flex-1 min-h-0', chartMinHeightClass)}
                 style={{ aspectRatio: 'auto' }}
               >
-                <BarChart data={data.series}>
-                  {showAxes && (
-                    <XAxis
-                      dataKey="name"
-                      tickLine={false}
-                      axisLine={false}
-                      interval={0}
-                      angle={-25}
-                      textAnchor="end"
-                      height={50}
-                    />
-                  )}
+                <BarChart
+                  data={data.series}
+                  barGap={4}
+                  barCategoryGap="22%"
+                  maxBarSize={size === 'small' ? 16 : size === 'medium' ? 24 : 32}
+                  margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
+                >
+                  <CartesianGrid vertical={false} stroke="#E5E7EB" />
                   {showAxes && (
                     <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={36} />
                   )}
@@ -306,7 +282,6 @@ export const DashboardWidgetCard: React.FC<DashboardWidgetCardProps> = ({
               </div>
             )}
             {legendList}
-            {showPeriod && <div className="text-xs text-muted-foreground">{periodLabel}</div>}
             {showFilter && (
               <div className="text-xs text-muted-foreground">
                 Filter: {filterLabels[widget.statusFilter]}

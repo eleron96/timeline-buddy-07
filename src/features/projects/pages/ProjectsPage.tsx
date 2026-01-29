@@ -14,11 +14,14 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/shared/ui/popover';
 import { Checkbox } from '@/shared/ui/checkbox';
 import { ScrollArea } from '@/shared/ui/scroll-area';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/shared/ui/table';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/shared/ui/dialog';
 import { ColorPicker } from '@/shared/ui/color-picker';
 import { supabase } from '@/shared/lib/supabaseClient';
+import { formatStatusLabel } from '@/shared/lib/statusLabels';
 import { format, parseISO } from 'date-fns';
 import { FolderKanban, Settings, User, Plus, RefreshCcw, Pencil } from 'lucide-react';
 import { Project, Task } from '@/features/planner/types/planner';
+import DOMPurify from 'dompurify';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -75,11 +78,41 @@ const mapTaskRow = (row: TaskRow): Task => ({
   repeatId: row.repeat_id ?? null,
 });
 
+const hasRichTags = (value: string) => (
+  /<\/?(b|strong|i|em|u|s|strike|ul|ol|li|blockquote|br|div|p|span|img)\b/i.test(value)
+);
+
+const sanitizeDescription = (value: string) => (
+  DOMPurify.sanitize(value, {
+    ALLOWED_TAGS: [
+      'b',
+      'strong',
+      'i',
+      'em',
+      'u',
+      's',
+      'strike',
+      'ul',
+      'ol',
+      'li',
+      'blockquote',
+      'br',
+      'div',
+      'p',
+      'span',
+      'img',
+    ],
+    ALLOWED_ATTR: ['src', 'alt', 'style', 'width', 'height'],
+    ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|data:image\/)|[^a-z]|[a-z+.-]+(?:[^a-z+.-:]|$))/i,
+  })
+);
+
 const ProjectsPage = () => {
   const [showSettings, setShowSettings] = useState(false);
   const [showAccountSettings, setShowAccountSettings] = useState(false);
   const [tab, setTab] = useState<'active' | 'archived'>('active');
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [projectTasks, setProjectTasks] = useState<Task[]>([]);
   const [tasksLoading, setTasksLoading] = useState(false);
   const [tasksError, setTasksError] = useState('');
@@ -98,6 +131,8 @@ const ProjectsPage = () => {
     projects,
     statuses,
     assignees,
+    taskTypes,
+    tags,
     loadWorkspaceData,
     addProject,
     updateProject,
@@ -154,6 +189,14 @@ const ProjectsPage = () => {
     () => new Map(assignees.map((assignee) => [assignee.id, assignee])),
     [assignees],
   );
+  const taskTypeById = useMemo(
+    () => new Map(taskTypes.map((type) => [type.id, type])),
+    [taskTypes],
+  );
+  const tagById = useMemo(
+    () => new Map(tags.map((tag) => [tag.id, tag])),
+    [tags],
+  );
 
   const projectAssigneeIds = useMemo(() => {
     const ids = new Set<string>();
@@ -190,10 +233,38 @@ const ProjectsPage = () => {
   useEffect(() => {
     if (!selectedProjectId) {
       setProjectTasks([]);
+      setSelectedTaskId(null);
       return;
     }
     fetchProjectTasks(selectedProjectId);
   }, [fetchProjectTasks, selectedProjectId]);
+
+  useEffect(() => {
+    if (!selectedTaskId) return;
+    if (!projectTasks.some((task) => task.id === selectedTaskId)) {
+      setSelectedTaskId(null);
+    }
+  }, [projectTasks, selectedTaskId]);
+
+  const selectedTask = useMemo(
+    () => projectTasks.find((task) => task.id === selectedTaskId) ?? null,
+    [projectTasks, selectedTaskId],
+  );
+
+  const selectedTaskProject = useMemo(
+    () => projects.find((project) => project.id === selectedTask?.projectId) ?? null,
+    [projects, selectedTask?.projectId],
+  );
+
+  const selectedTaskTags = useMemo(() => (
+    selectedTask?.tagIds.map((tagId) => tagById.get(tagId)).filter(Boolean) ?? []
+  ), [selectedTask?.tagIds, tagById]);
+
+  const selectedTaskDescription = useMemo(() => {
+    if (!selectedTask?.description) return '';
+    if (!hasRichTags(selectedTask.description)) return selectedTask.description;
+    return sanitizeDescription(selectedTask.description);
+  }, [selectedTask?.description]);
 
   const filteredTasks = useMemo(() => (
     projectTasks.filter((task) => {
@@ -505,7 +576,7 @@ const ProjectsPage = () => {
                                 onCheckedChange={() => handleToggleStatus(status.id)}
                               />
                               <span className="inline-flex h-2 w-2 rounded-full" style={{ backgroundColor: status.color }} />
-                              <span className="text-sm truncate">{status.name}</span>
+                              <span className="text-sm truncate">{formatStatusLabel(status.name)}</span>
                             </label>
                           ))}
                         </div>
@@ -593,7 +664,19 @@ const ProjectsPage = () => {
                               .map((id) => assigneeById.get(id))
                               .filter((assignee): assignee is NonNullable<typeof assignee> => Boolean(assignee));
                             return (
-                              <TableRow key={task.id}>
+                              <TableRow
+                                key={task.id}
+                                role="button"
+                                tabIndex={0}
+                                className="cursor-pointer hover:bg-muted/40"
+                                onClick={() => setSelectedTaskId(task.id)}
+                                onKeyDown={(event) => {
+                                  if (event.key === 'Enter' || event.key === ' ') {
+                                    event.preventDefault();
+                                    setSelectedTaskId(task.id);
+                                  }
+                                }}
+                              >
                                 <TableCell className="font-medium">{task.title}</TableCell>
                                 <TableCell>
                                   <div className="flex items-center gap-2 text-sm">
@@ -601,7 +684,7 @@ const ProjectsPage = () => {
                                       className="inline-flex h-2 w-2 rounded-full"
                                       style={{ backgroundColor: status?.color ?? '#94a3b8' }}
                                     />
-                                    <span>{status?.name ?? 'Unknown'}</span>
+                                    <span>{status ? formatStatusLabel(status.name) : 'Unknown'}</span>
                                   </div>
                                 </TableCell>
                                 <TableCell>
@@ -641,6 +724,114 @@ const ProjectsPage = () => {
 
       <SettingsPanel open={showSettings} onOpenChange={setShowSettings} />
       <AccountSettingsDialog open={showAccountSettings} onOpenChange={setShowAccountSettings} />
+      <Dialog open={Boolean(selectedTaskId)} onOpenChange={(open) => !open && setSelectedTaskId(null)}>
+        <DialogContent className="w-[95vw] max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{selectedTask?.title ?? 'Task details'}</DialogTitle>
+          </DialogHeader>
+          {!selectedTask && (
+            <div className="text-sm text-muted-foreground">Task not found.</div>
+          )}
+          {selectedTask && (
+            <div className="space-y-4">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <div className="text-xs text-muted-foreground">Project</div>
+                  <div className="text-sm">
+                    {selectedTaskProject?.name ?? 'No project'}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs text-muted-foreground">Status</div>
+                  <div className="flex items-center gap-2 text-sm">
+                    <span
+                      className="inline-flex h-2 w-2 rounded-full"
+                      style={{ backgroundColor: statusById.get(selectedTask.statusId)?.color ?? '#94a3b8' }}
+                    />
+                    <span>{statusById.get(selectedTask.statusId)
+                      ? formatStatusLabel(statusById.get(selectedTask.statusId)!.name)
+                      : 'Unknown'}
+                    </span>
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs text-muted-foreground">Assignees</div>
+                  <div className="flex flex-wrap gap-1">
+                    {selectedTask.assigneeIds.length === 0 && (
+                      <span className="text-xs text-muted-foreground">Unassigned</span>
+                    )}
+                    {selectedTask.assigneeIds.map((id) => {
+                      const assignee = assigneeById.get(id);
+                      if (!assignee) return null;
+                      return (
+                        <Badge key={assignee.id} variant="secondary" className="text-[10px]">
+                          {assignee.name}
+                          {!assignee.isActive && ' (disabled)'}
+                        </Badge>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs text-muted-foreground">Dates</div>
+                  <div className="text-sm text-muted-foreground">
+                    {format(parseISO(selectedTask.startDate), 'dd MMM yyyy')} – {format(parseISO(selectedTask.endDate), 'dd MMM yyyy')}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs text-muted-foreground">Type</div>
+                  <div className="text-sm">
+                    {taskTypeById.get(selectedTask.typeId)?.name ?? 'Unknown'}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs text-muted-foreground">Priority</div>
+                  <div className="text-sm">{selectedTask.priority ?? 'None'}</div>
+                </div>
+                <div className="sm:col-span-2">
+                  <div className="text-xs text-muted-foreground">Tags</div>
+                  {selectedTaskTags.length === 0 ? (
+                    <div className="text-xs text-muted-foreground">No tags</div>
+                  ) : (
+                    <div className="flex flex-wrap gap-1.5">
+                      {selectedTaskTags.map((tag) => (
+                        <Badge
+                          key={tag.id}
+                          variant="outline"
+                          className="text-[10px]"
+                          style={{ borderColor: tag.color, color: tag.color }}
+                        >
+                          {tag.name}
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs text-muted-foreground">Description</div>
+                {!selectedTask.description && (
+                  <div className="text-sm text-muted-foreground">No description.</div>
+                )}
+                {selectedTask.description && hasRichTags(selectedTask.description) && (
+                  <div
+                    className="text-sm leading-6"
+                    dangerouslySetInnerHTML={{ __html: selectedTaskDescription }}
+                  />
+                )}
+                {selectedTask.description && !hasRichTags(selectedTask.description) && (
+                  <div className="text-sm whitespace-pre-wrap">{selectedTaskDescription}</div>
+                )}
+              </div>
+              <div className="flex justify-end">
+                <Button variant="outline" onClick={() => setSelectedTaskId(null)}>
+                  Close
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
       <AlertDialog
         open={deleteProjectOpen}
         onOpenChange={(open) => {

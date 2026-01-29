@@ -103,8 +103,10 @@ const getFieldValue = (row: Pick<DashboardStatsRow, 'assignee_id' | 'project_id'
   return row.status_id;
 };
 
+const UNASSIGNED_FILTER_VALUE = '__unassigned__';
+
 const matchesOperator = (value: string | null, operator: DashboardFilterOperator, target: string) => {
-  const isMatch = value === target;
+  const isMatch = target === UNASSIGNED_FILTER_VALUE ? value === null : value === target;
   return operator === 'eq' ? isMatch : !isMatch;
 };
 

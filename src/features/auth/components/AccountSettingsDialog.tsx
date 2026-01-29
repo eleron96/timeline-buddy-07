@@ -1,9 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/shared/ui/sheet';
 import { Button } from '@/shared/ui/button';
 import { Input } from '@/shared/ui/input';
-import { Label } from '@/shared/ui/label';
+import { Pencil } from 'lucide-react';
 import { useAuthStore } from '@/features/auth/store/authStore';
 import { supabase } from '@/shared/lib/supabaseClient';
 
@@ -13,14 +12,12 @@ interface AccountSettingsDialogProps {
 }
 
 export const AccountSettingsDialog: React.FC<AccountSettingsDialogProps> = ({ open, onOpenChange }) => {
-  const { user, updateDisplayName, signOut, isSuperAdmin } = useAuthStore();
-  const navigate = useNavigate();
+  const { user, updateDisplayName, signOut } = useAuthStore();
   const [displayName, setDisplayName] = useState('');
   const [initialDisplayName, setInitialDisplayName] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [saved, setSaved] = useState(false);
-  const [section, setSection] = useState<'profile' | 'session' | 'admin'>('profile');
 
   useEffect(() => {
     if (!open || !user) return;
@@ -58,16 +55,20 @@ export const AccountSettingsDialog: React.FC<AccountSettingsDialogProps> = ({ op
     ?? user?.user_metadata?.name
     ?? user?.id
     ?? 'Unknown user';
+  const avatarSource = displayName || signedInLabel;
+  const initials = avatarSource
+    .split('@')[0]
+    .split(/[\s._-]+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join('')
+    || 'U';
 
-  const canShowAdminTab = isSuperAdmin;
   const isDisplayNameDirty = displayName !== initialDisplayName;
   const showSave = Boolean(user && isDisplayNameDirty);
-
-  useEffect(() => {
-    if (!canShowAdminTab && section === 'admin') {
-      setSection('profile');
-    }
-  }, [canShowAdminTab, section]);
+  const showNameInput = !displayName.trim();
+  const canEditName = Boolean(user && !loading);
 
   const handleSave = async () => {
     if (!user) return;
@@ -89,102 +90,66 @@ export const AccountSettingsDialog: React.FC<AccountSettingsDialogProps> = ({ op
           <SheetTitle>Account settings</SheetTitle>
         </SheetHeader>
 
-        <div className="mt-4 space-y-4">
-          <div className="inline-flex items-center gap-1 rounded-lg border bg-muted/40 p-1">
-            <Button
-              type="button"
-              size="sm"
-              variant={section === 'profile' ? 'default' : 'ghost'}
-              className="px-3"
-              onClick={() => setSection('profile')}
-            >
-              Profile
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant={section === 'session' ? 'default' : 'ghost'}
-              className="px-3"
-              onClick={() => setSection('session')}
-            >
-              Session
-            </Button>
-            {canShowAdminTab && (
-              <Button
-                type="button"
-                size="sm"
-                variant={section === 'admin' ? 'default' : 'ghost'}
-                className="px-3"
-                onClick={() => setSection('admin')}
-              >
-                Admin
-              </Button>
-            )}
+        <div className="mt-6 flex flex-col items-center space-y-4 text-center">
+          <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-muted text-lg font-semibold text-foreground">
+            {initials}
           </div>
 
-          <div className="space-y-4 rounded-lg border bg-background p-4">
-            {section === 'profile' && (
+          <div className="w-full max-w-xs space-y-2">
+            {showNameInput ? (
               <>
-                <div className="space-y-2">
-                  <Label htmlFor="display-name">Display name</Label>
-                  <Input
-                    id="display-name"
-                    value={displayName}
-                    onChange={(e) => {
-                      setDisplayName(e.target.value);
-                      setSaved(false);
-                    }}
-                    placeholder="Your name or alias"
-                    disabled={!user || loading}
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    This name is shown to workspace members instead of your email.
-                  </p>
-                </div>
-
-                {error && (
-                  <div className="text-sm text-destructive">{error}</div>
-                )}
-                {saved && (
-                  <div className="text-sm text-emerald-600">Saved.</div>
-                )}
-
+                <Input
+                  value={displayName}
+                  onChange={(e) => {
+                    setDisplayName(e.target.value);
+                    setSaved(false);
+                  }}
+                  placeholder="Add your name"
+                  disabled={!user || loading}
+                />
                 {showSave && (
-                  <Button onClick={handleSave} disabled={!user || loading}>
+                  <Button onClick={handleSave} disabled={!user || loading} className="w-full">
                     Save
                   </Button>
                 )}
               </>
-            )}
-
-            {section === 'session' && (
-              <>
-                <div className="rounded-md border bg-muted/30 p-3 text-sm">
-                  Signed in as <span className="font-semibold">{signedInLabel}</span>
-                </div>
+            ) : (
+              <div className="inline-flex items-start gap-1 text-lg font-semibold text-foreground">
+                <span>{displayName}</span>
                 <Button
                   type="button"
-                  variant="outline"
-                  onClick={() => signOut()}
+                  size="icon"
+                  variant="ghost"
+                  className="h-3.5 w-3.5 -mt-1 text-muted-foreground hover:text-foreground"
+                  onClick={() => {
+                    setDisplayName('');
+                    setSaved(false);
+                  }}
+                  disabled={!canEditName}
+                  aria-label="Edit name"
                 >
-                  Sign out
+                  <Pencil className="h-2 w-2" />
                 </Button>
-              </>
-            )}
-
-            {section === 'admin' && canShowAdminTab && (
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => {
-                  onOpenChange(false);
-                  navigate('/admin/users');
-                }}
-              >
-                Admin users
-              </Button>
+              </div>
             )}
           </div>
+
+          <div className="text-sm text-muted-foreground">{signedInLabel}</div>
+
+          {error && (
+            <div className="text-sm text-destructive">{error}</div>
+          )}
+          {saved && (
+            <div className="text-sm text-emerald-600">Saved.</div>
+          )}
+
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => signOut()}
+          >
+            Sign out
+          </Button>
         </div>
       </SheetContent>
     </Sheet>

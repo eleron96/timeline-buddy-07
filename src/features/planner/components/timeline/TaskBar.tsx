@@ -4,6 +4,7 @@ import { usePlannerStore } from '@/features/planner/store/plannerStore';
 import { useFilteredAssignees } from '@/features/planner/hooks/useFilteredAssignees';
 import { Task, TaskPriority } from '@/features/planner/types/planner';
 import { cn } from '@/shared/lib/classNames';
+import { formatStatusLabel } from '@/shared/lib/statusLabels';
 import { calculateNewDates, calculateResizedDates, formatDateRange, TASK_HEIGHT, TASK_GAP } from '@/features/planner/lib/dateUtils';
 import { Ban, RotateCw } from 'lucide-react';
 import {
@@ -381,7 +382,7 @@ export const TaskBar: React.FC<TaskBarProps> = ({
               {statuses.map((item) => (
                 <ContextMenuRadioItem key={item.id} value={item.id} disabled={!canEdit}>
                   <span className="mr-2 inline-flex h-2 w-2 rounded-full" style={{ backgroundColor: item.color }} />
-                  {item.name}
+                  {formatStatusLabel(item.name)}
                 </ContextMenuRadioItem>
               ))}
             </ContextMenuRadioGroup>
@@ -440,7 +441,7 @@ export const TaskBar: React.FC<TaskBarProps> = ({
             <div className="flex flex-wrap gap-1">
               {status && (
                 <Badge className="text-[10px]" style={getBadgeStyle(status.color)}>
-                  {status.name}
+                  {formatStatusLabel(status.name)}
                 </Badge>
               )}
               {taskType && (
