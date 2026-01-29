@@ -3,12 +3,16 @@ import { usePlannerStore } from '@/features/planner/store/plannerStore';
 import { useAuthStore } from '@/features/auth/store/authStore';
 import { MilestoneDialog } from '@/features/planner/components/timeline/MilestoneDialog';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/shared/ui/tooltip';
+import { Button } from '@/shared/ui/button';
 import { cn } from '@/shared/lib/classNames';
 import { hexToRgba } from '@/features/planner/lib/colorUtils';
 import { Milestone } from '@/features/planner/types/planner';
+import { ArrowDown, ArrowUp } from 'lucide-react';
 import {
   addMonths,
+  addYears,
   endOfMonth,
+  endOfYear,
   endOfWeek,
   eachDayOfInterval,
   format,
@@ -18,6 +22,7 @@ import {
   min,
   parseISO,
   startOfMonth,
+  startOfYear,
   startOfWeek,
   isSameMonth,
 } from 'date-fns';
@@ -48,6 +53,11 @@ export const CalendarTimeline: React.FC = () => {
   const [milestoneDialogOpen, setMilestoneDialogOpen] = useState(false);
   const [milestoneDialogDate, setMilestoneDialogDate] = useState<string | null>(null);
   const [editingMilestone, setEditingMilestone] = useState<Milestone | null>(null);
+  const [showTodayButton, setShowTodayButton] = useState(false);
+  const [scrollDirection, setScrollDirection] = useState<'up' | 'down'>('up');
+  const [hasUserScrolled, setHasUserScrolled] = useState(false);
+  const initialScrollTopRef = useRef(0);
+  const scrollReadyRef = useRef(false);
 
   const filteredTasks = useMemo(() => {
     return tasks.filter(task => {
@@ -128,18 +138,13 @@ export const CalendarTimeline: React.FC = () => {
 
   const months = useMemo(() => {
     const baseDate = parseISO(currentDate);
-    let rangeStart = startOfMonth(addMonths(baseDate, -6));
-    let rangeEnd = endOfMonth(addMonths(baseDate, 6));
+    const startDates = filteredTasks.map((task) => parseISO(task.startDate));
+    const endDates = filteredTasks.map((task) => parseISO(task.endDate));
+    const minTaskDate = min([baseDate, ...startDates]);
+    const maxTaskDate = max([baseDate, ...endDates]);
 
-    if (filteredTasks.length > 0) {
-      const startDates = filteredTasks.map((task) => parseISO(task.startDate));
-      const endDates = filteredTasks.map((task) => parseISO(task.endDate));
-      const minDate = min([baseDate, ...startDates]);
-      const maxDate = max([baseDate, ...endDates]);
-      rangeStart = startOfMonth(addMonths(minDate, -1));
-      rangeEnd = endOfMonth(addMonths(maxDate, 1));
-    }
-
+    const rangeStart = startOfYear(addYears(minTaskDate, -1));
+    const rangeEnd = endOfYear(addYears(maxTaskDate, 5));
     const result: Date[] = [];
     let cursor = startOfMonth(rangeStart);
     while (cursor <= rangeEnd) {
@@ -148,6 +153,17 @@ export const CalendarTimeline: React.FC = () => {
     }
     return result;
   }, [currentDate, filteredTasks]);
+
+  const years = useMemo(() => {
+    const grouped = new Map<number, Date[]>();
+    months.forEach((month) => {
+      const year = month.getFullYear();
+      const list = grouped.get(year) ?? [];
+      list.push(month);
+      grouped.set(year, list);
+    });
+    return Array.from(grouped.entries()).sort((a, b) => a[0] - b[0]);
+  }, [months]);
 
   useEffect(() => {
     const years = Array.from(new Set(months.map((month) => month.getFullYear())));
@@ -193,9 +209,14 @@ export const CalendarTimeline: React.FC = () => {
       }
     };
 
-    toLoad.forEach((year) => {
-      void loadYear(year);
-    });
+    const loadSequentially = async () => {
+      for (const year of toLoad) {
+        if (!active) return;
+        await loadYear(year);
+      }
+    };
+
+    void loadSequentially();
 
     return () => {
       active = false;
@@ -214,10 +235,40 @@ export const CalendarTimeline: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    initialScrollTopRef.current = container.scrollTop;
+    scrollReadyRef.current = false;
+    requestAnimationFrame(() => {
+      scrollReadyRef.current = true;
+    });
+
+    const handleScroll = () => {
+      if (!scrollReadyRef.current) return;
+      const threshold = Math.max(120, container.clientHeight * 0.25);
+      const delta = container.scrollTop - initialScrollTopRef.current;
+      setScrollDirection(delta >= 0 ? 'down' : 'up');
+      setShowTodayButton(hasUserScrolled && Math.abs(delta) > threshold);
+    };
+
+    handleScroll();
+    container.addEventListener('scroll', handleScroll, { passive: true });
+    const handleUserScroll = () => setHasUserScrolled(true);
+    container.addEventListener('wheel', handleUserScroll, { passive: true });
+    container.addEventListener('touchmove', handleUserScroll, { passive: true });
+    return () => {
+      container.removeEventListener('scroll', handleScroll);
+      container.removeEventListener('wheel', handleUserScroll);
+      container.removeEventListener('touchmove', handleUserScroll);
+    };
+  }, [months.length, hasUserScrolled]);
+
+  useEffect(() => {
     const key = format(parseISO(currentDate), 'yyyy-MM');
     const target = monthRefs.current.get(key);
     if (target && containerRef.current) {
-      target.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
   }, [currentDate, months.length]);
 
@@ -243,183 +294,226 @@ export const CalendarTimeline: React.FC = () => {
   }, []);
 
   return (
-    <TooltipProvider delayDuration={350}>
-      <div
-        ref={containerRef}
-        className="flex-1 overflow-x-auto overflow-y-auto scrollbar-soft select-none"
-      >
-        <div className="flex gap-6 px-4 py-4 min-w-max">
-          {months.map((month) => {
-            const monthKey = format(month, 'yyyy-MM');
-            const monthStart = startOfMonth(month);
-            const monthEnd = endOfMonth(month);
-            const gridStart = startOfWeek(monthStart, { weekStartsOn: 1 });
-            const gridEnd = endOfWeek(monthEnd, { weekStartsOn: 1 });
-            const days = eachDayOfInterval({ start: gridStart, end: gridEnd });
-
-            return (
-              <div
-                key={monthKey}
-                ref={setMonthRef(monthKey)}
-                className="min-w-[280px] rounded-lg border border-border bg-card p-3 shadow-sm"
-              >
-                <div className="mb-2 text-sm font-semibold text-foreground">
-                  {format(month, 'LLLL yyyy')}
-                </div>
-                <div className="grid grid-cols-7 text-[11px] text-muted-foreground uppercase tracking-wide">
-                  {WEEKDAY_LABELS.map((label) => (
-                    <div key={label} className="flex items-center justify-center py-1">
-                      {label}
-                    </div>
-                  ))}
-                </div>
-                <div className="mt-1 grid grid-cols-7 gap-0">
-                  {days.map((day, index) => {
-                    const key = format(day, 'yyyy-MM-dd');
-                    const counts = taskCounts.get(key) ?? { total: 0, mine: 0 };
-                    const inMonth = isSameMonth(day, month);
-                    const weekend = isWeekend(day);
-                    const today = isToday(day);
-                    const isHoliday = holidayDates.has(key);
-                    const prevKey = index > 0 ? format(days[index - 1], 'yyyy-MM-dd') : '';
-                    const nextKey = index < days.length - 1 ? format(days[index + 1], 'yyyy-MM-dd') : '';
-                    const holidayStarts = isHoliday && (index % 7 === 0 || !holidayDates.has(prevKey));
-                    const holidayEnds = isHoliday && (index % 7 === 6 || !holidayDates.has(nextKey));
-                    const holidayRadius = holidayStarts && holidayEnds
-                      ? 'rounded-full'
-                      : holidayStarts
-                      ? 'rounded-l-full'
-                      : holidayEnds
-                      ? 'rounded-r-full'
-                      : 'rounded-none';
-                    const holidayNames = holidayMap[key] ?? [];
-                    const milestonesForDay = milestonesByDate.get(key) ?? [];
+    <div className="flex h-full flex-1 min-h-0 overflow-hidden">
+      <TooltipProvider delayDuration={350}>
+        <div className="relative flex-1 min-h-0">
+          <div
+            ref={containerRef}
+            className="h-full min-h-0 overflow-y-scroll overflow-x-hidden overscroll-contain scrollbar-hidden scroll-smooth select-none"
+          >
+          <div className="mx-auto w-full max-w-6xl px-4 py-4 space-y-8">
+            {years.map(([year, yearMonths]) => (
+              <div key={year} className="grid gap-4 md:grid-cols-[80px,1fr]">
+                <div className="text-lg font-semibold text-muted-foreground">{year}</div>
+                <div className="grid grid-cols-4 gap-6">
+                  {yearMonths.map((month) => {
+                    const monthKey = format(month, 'yyyy-MM');
+                    const monthStart = startOfMonth(month);
+                    const monthEnd = endOfMonth(month);
+                    const gridStart = startOfWeek(monthStart, { weekStartsOn: 1 });
+                    const gridEnd = endOfWeek(monthEnd, { weekStartsOn: 1 });
+                    const days = eachDayOfInterval({ start: gridStart, end: gridEnd });
 
                     return (
                       <div
-                        key={key}
-                        className={cn(
-                          'relative flex h-9 w-9 items-center justify-center',
-                          weekend && 'bg-muted/30'
-                        )}
+                        key={monthKey}
+                        ref={setMonthRef(monthKey)}
+                        className="w-full rounded-lg border border-border bg-card p-3 shadow-sm"
                       >
-                        {isHoliday && (
-                          <div
-                            className={cn(
-                              'pointer-events-none absolute inset-0 bg-rose-200/60',
-                              holidayRadius
-                            )}
-                          />
-                        )}
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <div className="relative z-10 flex h-full w-full items-center justify-center">
-                              <button
-                                type="button"
-                                onClick={() => handleDateClick(day)}
-                                className={cn(
-                                  'flex h-7 w-7 items-center justify-center text-xs focus-visible:outline-none',
-                                  inMonth ? 'text-foreground' : 'text-muted-foreground/40',
-                                  counts.total > 0 && 'font-semibold',
-                                  today ? 'rounded-full border border-sky-500/70 bg-sky-100/70 text-sky-700' : 'rounded-md',
-                                  'hover:bg-muted/40'
-                                )}
-                              >
-                                {format(day, 'd')}
-                              </button>
-                              {milestonesByDate.has(key) && (
-                                <div className="absolute bottom-0.5 left-1/2 flex -translate-x-1/2 flex-wrap items-center justify-center gap-0.5">
-                                  {(milestonesByDate.get(key) ?? []).map((milestone) => {
-                                    const project = projectById.get(milestone.projectId);
-                                    const color = project?.color ?? '#94a3b8';
-                                    const dotColor = hexToRgba(color, 0.8) ?? color;
-
-                                    return (
-                                      <span
-                                        key={milestone.id}
-                                        className="h-2 w-2 rounded-full"
-                                        style={{ backgroundColor: dotColor }}
-                                        onClick={(event) => event.stopPropagation()}
-                                        onContextMenu={(event) => {
-                                          event.preventDefault();
-                                          event.stopPropagation();
-                                          handleEditMilestone(milestone);
-                                        }}
-                                      />
-                                    );
-                                  })}
-                                </div>
-                              )}
+                        <div className="mb-2 text-sm font-semibold text-foreground">
+                          {format(month, 'LLLL yyyy')}
+                        </div>
+                        <div className="grid grid-cols-7 text-[11px] text-muted-foreground uppercase tracking-wide">
+                          {WEEKDAY_LABELS.map((label) => (
+                            <div key={label} className="flex items-center justify-center py-1">
+                              {label}
                             </div>
-                          </TooltipTrigger>
-                          <TooltipContent
-                            side="top"
-                            sideOffset={6}
-                            className="w-44 rounded-lg border border-border bg-card/95 px-3 py-2 text-xs text-foreground shadow-sm backdrop-blur"
-                          >
-                            <div className="space-y-1">
-                              {milestonesForDay.length > 0 && (
-                                <div className="border-b border-border/60 pb-1">
-                                  <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                                    Вехи
-                                  </div>
-                                  <div className="mt-1 space-y-1">
-                                    {milestonesForDay.map((milestone) => {
-                                      const project = projectById.get(milestone.projectId);
-                                      const color = project?.color ?? '#94a3b8';
-                                      const dotColor = hexToRgba(color, 0.8) ?? color;
-                                      return (
-                                        <div key={milestone.id} className="flex items-center gap-2">
-                                          <span
-                                            className="h-2 w-2 rounded-full"
-                                            style={{ backgroundColor: dotColor }}
-                                          />
-                                          <div className="min-w-0">
-                                            <div className="truncate">{milestone.title}</div>
-                                            <div className="text-[10px] text-muted-foreground truncate">
-                                              {project?.name ?? 'Проект'}
+                          ))}
+                        </div>
+                        <div className="mt-1 grid grid-cols-7 gap-0">
+                          {days.map((day, index) => {
+                            const key = format(day, 'yyyy-MM-dd');
+                            const counts = taskCounts.get(key) ?? { total: 0, mine: 0 };
+                            const inMonth = isSameMonth(day, month);
+                            const weekend = isWeekend(day);
+                            const today = isToday(day);
+                            const prevDay = index > 0 ? days[index - 1] : null;
+                            const nextDay = index < days.length - 1 ? days[index + 1] : null;
+                            const prevKey = prevDay ? format(prevDay, 'yyyy-MM-dd') : '';
+                            const nextKey = nextDay ? format(nextDay, 'yyyy-MM-dd') : '';
+                            const isHoliday = inMonth && holidayDates.has(key);
+                            const prevIsHoliday = Boolean(prevDay && holidayDates.has(prevKey) && isSameMonth(prevDay, month));
+                            const nextIsHoliday = Boolean(nextDay && holidayDates.has(nextKey) && isSameMonth(nextDay, month));
+                            const holidayStarts = isHoliday && (index % 7 === 0 || !prevIsHoliday);
+                            const holidayEnds = isHoliday && (index % 7 === 6 || !nextIsHoliday);
+                            const holidayRadius = holidayStarts && holidayEnds
+                              ? 'rounded-full'
+                              : holidayStarts
+                              ? 'rounded-l-full'
+                              : holidayEnds
+                              ? 'rounded-r-full'
+                              : 'rounded-none';
+                            const holidayNames = holidayMap[key] ?? [];
+                            const milestonesForDay = milestonesByDate.get(key) ?? [];
+
+                            return (
+                              <div
+                                key={key}
+                                className="relative flex h-9 w-9 items-center justify-center"
+                              >
+                                {isHoliday && (
+                                  <div
+                                    className={cn(
+                                      'pointer-events-none absolute inset-1 bg-rose-200/70',
+                                      holidayRadius
+                                    )}
+                                  />
+                                )}
+                                {inMonth ? (
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <div className="relative z-10 flex h-full w-full items-center justify-center">
+                                        <button
+                                          type="button"
+                                          onClick={() => handleDateClick(day)}
+                                          className={cn(
+                                            'flex h-7 w-7 items-center justify-center text-xs focus-visible:outline-none',
+                                            weekend && inMonth && 'text-amber-600',
+                                            counts.total > 0 && 'font-semibold',
+                                            today ? 'rounded-full border border-sky-500/70 bg-sky-100/70 text-sky-700' : 'rounded-md',
+                                            'hover:bg-muted/40'
+                                          )}
+                                        >
+                                          {format(day, 'd')}
+                                        </button>
+                                        {milestonesByDate.has(key) && (
+                                          <div className="absolute bottom-0.5 left-1/2 flex -translate-x-1/2 flex-wrap items-center justify-center gap-0.5">
+                                            {(milestonesByDate.get(key) ?? []).map((milestone) => {
+                                              const project = projectById.get(milestone.projectId);
+                                              const color = project?.color ?? '#94a3b8';
+                                              const dotColor = hexToRgba(color, 0.8) ?? color;
+
+                                              return (
+                                                <span
+                                                  key={milestone.id}
+                                                  className="h-2 w-2 rounded-full"
+                                                  style={{ backgroundColor: dotColor }}
+                                                  onClick={(event) => event.stopPropagation()}
+                                                  onContextMenu={(event) => {
+                                                    event.preventDefault();
+                                                    event.stopPropagation();
+                                                    handleEditMilestone(milestone);
+                                                  }}
+                                                />
+                                              );
+                                            })}
+                                          </div>
+                                        )}
+                                      </div>
+                                    </TooltipTrigger>
+                                    <TooltipContent
+                                      side="top"
+                                      sideOffset={6}
+                                      className="w-44 rounded-lg border border-border bg-card/95 px-3 py-2 text-xs text-foreground shadow-sm backdrop-blur"
+                                    >
+                                      <div className="space-y-1">
+                                        {milestonesForDay.length > 0 && (
+                                          <div className="border-b border-border/60 pb-1">
+                                            <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                                              Вехи
+                                            </div>
+                                            <div className="mt-1 space-y-1">
+                                              {milestonesForDay.map((milestone) => {
+                                                const project = projectById.get(milestone.projectId);
+                                                const color = project?.color ?? '#94a3b8';
+                                                const dotColor = hexToRgba(color, 0.8) ?? color;
+                                                return (
+                                                  <div key={milestone.id} className="flex items-center gap-2">
+                                                    <span
+                                                      className="h-2 w-2 rounded-full"
+                                                      style={{ backgroundColor: dotColor }}
+                                                    />
+                                                    <div className="min-w-0">
+                                                      <div className="truncate">{milestone.title}</div>
+                                                      <div className="text-[10px] text-muted-foreground truncate">
+                                                        {project?.name ?? 'Проект'}
+                                                      </div>
+                                                    </div>
+                                                  </div>
+                                                );
+                                              })}
                                             </div>
                                           </div>
+                                        )}
+                                        <div className="flex items-center justify-between">
+                                          <span className="text-muted-foreground">Всего</span>
+                                          <span className="font-semibold">{counts.total}</span>
                                         </div>
-                                      );
-                                    })}
-                                  </div>
-                                </div>
-                              )}
-                              <div className="flex items-center justify-between">
-                                <span className="text-muted-foreground">Всего</span>
-                                <span className="font-semibold">{counts.total}</span>
+                                        <div className="flex items-center justify-between">
+                                          <span className="text-muted-foreground">Мои</span>
+                                          <span className="font-semibold">{counts.mine}</span>
+                                        </div>
+                                        {holidayNames.length > 0 && (
+                                          <div className="border-t border-border/60 pt-1 text-[11px] text-muted-foreground">
+                                            <span className="text-foreground">Праздник:</span>{' '}
+                                            {holidayNames.join(', ')}
+                                          </div>
+                                        )}
+                                      </div>
+                                    </TooltipContent>
+                                  </Tooltip>
+                                ) : (
+                                  <div className="h-7 w-7" />
+                                )}
                               </div>
-                              <div className="flex items-center justify-between">
-                                <span className="text-muted-foreground">Мои</span>
-                                <span className="font-semibold">{counts.mine}</span>
-                              </div>
-                              {holidayNames.length > 0 && (
-                                <div className="border-t border-border/60 pt-1 text-[11px] text-muted-foreground">
-                                  <span className="text-foreground">Праздник:</span>{' '}
-                                  {holidayNames.join(', ')}
-                                </div>
-                              )}
-                            </div>
-                          </TooltipContent>
-                        </Tooltip>
+                            );
+                          })}
+                        </div>
                       </div>
                     );
                   })}
                 </div>
               </div>
-            );
-          })}
+            ))}
+          </div>
         </div>
-      </div>
+        <Button
+          type="button"
+          variant="secondary"
+          size="icon"
+          className={cn(
+            'absolute bottom-4 right-4 shadow-md transition-all duration-200 ease-out',
+            showTodayButton
+              ? 'opacity-100 translate-y-0 pointer-events-auto'
+              : 'opacity-0 translate-y-2 pointer-events-none'
+          )}
+          onClick={() => {
+            const today = format(new Date(), 'yyyy-MM-dd');
+            setCurrentDate(today);
+            const key = format(parseISO(today), 'yyyy-MM');
+            const target = monthRefs.current.get(key);
+            if (target) {
+              target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+          }}
+          aria-label="Вернуться к текущей дате"
+        >
+          {scrollDirection === 'down' ? (
+            <ArrowUp className="h-4 w-4" />
+          ) : (
+            <ArrowDown className="h-4 w-4" />
+          )}
+        </Button>
+        </div>
 
-      <MilestoneDialog
-        open={milestoneDialogOpen}
-        onOpenChange={handleMilestoneDialogChange}
-        date={milestoneDialogDate}
-        milestone={editingMilestone}
-        canEdit={canEdit}
-      />
-    </TooltipProvider>
+        <MilestoneDialog
+          open={milestoneDialogOpen}
+          onOpenChange={handleMilestoneDialogChange}
+          date={milestoneDialogDate}
+          milestone={editingMilestone}
+          canEdit={canEdit}
+        />
+      </TooltipProvider>
+    </div>
   );
 };
