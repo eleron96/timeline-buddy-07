@@ -426,27 +426,7 @@ done
 
 docker exec -e PGPASSWORD="$POSTGRES_PASSWORD" supabase-db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -c "drop table if exists public.schema_migrations;"
 
-sync_auth_migrations() {
-  local image="supabase/gotrue:v2.151.0"
-  local versions
-
-  versions=$(docker run --rm --entrypoint sh "$image" -lc "ls -1 /usr/local/etc/auth/migrations 2>/dev/null | cut -d_ -f1" | tr '\n' ' ')
-  if [ -z "$versions" ]; then
-    return
-  fi
-
-  docker exec -e PGPASSWORD="$POSTGRES_PASSWORD" supabase-db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -c "create schema if not exists auth; create table if not exists auth.schema_migrations (version text primary key);"
-
-  {
-    echo "BEGIN;"
-    for version in $versions; do
-      echo "INSERT INTO auth.schema_migrations (version) VALUES ('$version') ON CONFLICT DO NOTHING;"
-    done
-    echo "COMMIT;"
-  } | docker exec -i -e PGPASSWORD="$POSTGRES_PASSWORD" supabase-db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 >/dev/null
-}
-
-sync_auth_migrations
+# Let GoTrue apply its own auth migrations on startup.
 
 docker compose -f "$compose_file" --env-file "$env_file" up -d auth rest functions gateway
 docker compose -f "$compose_file" --env-file "$env_file" run --rm migrate

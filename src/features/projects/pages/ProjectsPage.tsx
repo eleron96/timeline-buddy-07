@@ -346,29 +346,21 @@ const ProjectsPage = () => {
               ) : (
                 <span className="text-sm font-medium truncate">{project.name}</span>
               )}
-              <div className="ml-auto flex items-center gap-1">
-                {showArchivedBadge && (
-                  <Badge variant="secondary" className="text-[10px]">Archived</Badge>
-                )}
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-5 w-5 text-muted-foreground/60 hover:text-foreground/80"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    startProjectEdit(project);
-                  }}
-                  disabled={!canEdit}
-                >
-                  <Pencil className="h-2 w-2" />
-                </Button>
-              </div>
+              {showArchivedBadge && (
+                <Badge variant="secondary" className="text-[10px]">Archived</Badge>
+              )}
             </div>
           </div>
         </ContextMenuTrigger>
         <ContextMenuContent>
           <ContextMenuItem disabled={!canEdit} onSelect={() => startProjectEdit(project)}>
             Rename
+          </ContextMenuItem>
+          <ContextMenuItem
+            disabled={!canEdit}
+            onSelect={() => updateProject(project.id, { archived: !project.archived })}
+          >
+            {project.archived ? 'Restore' : 'Archive'}
           </ContextMenuItem>
           <ContextMenuItem
             disabled={!canEdit}
@@ -422,7 +414,7 @@ const ProjectsPage = () => {
             <span className="text-sm font-semibold">Projects</span>
           </div>
           <div className="p-4 space-y-3 border-b border-border">
-            <div className="flex gap-2">
+            <div className="flex items-center gap-2">
               <Input
                 placeholder="New project name..."
                 value={newProjectName}
@@ -477,41 +469,12 @@ const ProjectsPage = () => {
               <div className="border-b border-border px-6 py-4">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div className="flex items-center gap-3">
-                    <span className="h-3 w-3 rounded-full" style={{ backgroundColor: selectedProject.color }} />
-                    <Input
-                      className="h-9 text-lg font-semibold max-w-[420px]"
-                      value={selectedProject.name}
-                      onChange={(event) => updateProject(selectedProject.id, { name: event.target.value })}
-                      disabled={!canEdit}
-                    />
+                    <span className="text-lg font-semibold">{selectedProject.name}</span>
                     {selectedProject.archived && (
                       <Badge variant="secondary">Archived</Badge>
                     )}
                   </div>
-                  <div className="flex items-center gap-2">
-                    <ColorPicker
-                      value={selectedProject.color}
-                      onChange={(value) => updateProject(selectedProject.id, { color: value })}
-                      disabled={!canEdit}
-                    />
-                    {selectedProject.archived ? (
-                      <Button
-                        variant="outline"
-                        onClick={() => updateProject(selectedProject.id, { archived: false })}
-                        disabled={!canEdit}
-                      >
-                        Restore
-                      </Button>
-                    ) : (
-                      <Button
-                        variant="outline"
-                        onClick={() => updateProject(selectedProject.id, { archived: true })}
-                        disabled={!canEdit}
-                      >
-                        Archive
-                      </Button>
-                    )}
-                  </div>
+                  
                 </div>
               </div>
 

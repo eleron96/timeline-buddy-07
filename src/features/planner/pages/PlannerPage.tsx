@@ -92,7 +92,7 @@ const PlannerPage = () => {
     if (currentWorkspaceId) {
       loadWorkspaceData(currentWorkspaceId);
     }
-  }, [currentWorkspaceId, currentDate, loadWorkspaceData, viewMode]);
+  }, [currentWorkspaceId, loadWorkspaceData]);
 
   useEffect(() => {
     if (centeredOnLoadRef.current) return;
@@ -213,7 +213,7 @@ const PlannerPage = () => {
       )}
       
       {/* Main content */}
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1 overflow-hidden min-h-0">
         {/* Filter sidebar */}
         <FilterPanel 
           collapsed={filterCollapsed} 
@@ -221,9 +221,9 @@ const PlannerPage = () => {
         />
         
         {/* Timeline area */}
-        <div className="flex-1 flex flex-col overflow-hidden">
+        <div className="flex-1 flex flex-col overflow-hidden min-h-0">
           <TimelineControls />
-          <div className="relative flex-1 overflow-hidden">
+          <div className="relative flex-1 overflow-hidden min-h-0">
             {viewMode === 'calendar'
               ? <CalendarTimeline />
               : <TimelineGrid onCreateTask={handleCreateTaskRequest} />
