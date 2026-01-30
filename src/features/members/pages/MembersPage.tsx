@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Navigate } from 'react-router-dom';
+import { Navigate, useNavigate } from 'react-router-dom';
 import { usePlannerStore } from '@/features/planner/store/plannerStore';
 import { useAuthStore } from '@/features/auth/store/authStore';
 import { WorkspaceSwitcher } from '@/features/workspace/components/WorkspaceSwitcher';
@@ -15,6 +15,7 @@ import { Checkbox } from '@/shared/ui/checkbox';
 import { ScrollArea } from '@/shared/ui/scroll-area';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/shared/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/shared/ui/select';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/shared/ui/dialog';
 import { supabase } from '@/shared/lib/supabaseClient';
 import { formatStatusLabel } from '@/shared/lib/statusLabels';
 import { cn } from '@/shared/lib/classNames';
@@ -22,6 +23,7 @@ import { format, parseISO } from 'date-fns';
 import { Settings, User, Users, RefreshCcw } from 'lucide-react';
 import { Task } from '@/features/planner/types/planner';
 import { WorkspaceMembersPanel } from '@/features/workspace/components/WorkspaceMembersPanel';
+import DOMPurify from 'dompurify';
 
 type TaskRow = {
   id: string;
@@ -62,6 +64,35 @@ const mapTaskRow = (row: TaskRow): Task => ({
   repeatId: row.repeat_id ?? null,
 });
 
+const hasRichTags = (value: string) => (
+  /<\/?(b|strong|i|em|u|s|strike|ul|ol|li|blockquote|br|div|p|span|img)\b/i.test(value)
+);
+
+const sanitizeDescription = (value: string) => (
+  DOMPurify.sanitize(value, {
+    ALLOWED_TAGS: [
+      'b',
+      'strong',
+      'i',
+      'em',
+      'u',
+      's',
+      'strike',
+      'ul',
+      'ol',
+      'li',
+      'blockquote',
+      'br',
+      'div',
+      'p',
+      'span',
+      'img',
+    ],
+    ALLOWED_ATTR: ['src', 'alt', 'style', 'width', 'height'],
+    ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|data:image\/)|[^a-z]|[a-z+.-]+(?:[^a-z+.-:]|$))/i,
+  })
+);
+
 const MembersPage = () => {
   const [showSettings, setShowSettings] = useState(false);
   const [showAccountSettings, setShowAccountSettings] = useState(false);
@@ -81,6 +112,7 @@ const MembersPage = () => {
   const [pageIndex, setPageIndex] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
   const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set());
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const pageSize = 100;
   const modeToggle = (
     <div className="inline-flex items-center gap-2 rounded-lg bg-muted/60 p-1">
@@ -145,10 +177,17 @@ const MembersPage = () => {
     assignees,
     projects,
     statuses,
+    taskTypes,
+    tags,
     loadWorkspaceData,
     assigneeTaskCounts,
     assigneeCountsDate,
     deleteTasks,
+    setHighlightedTaskId,
+    setViewMode,
+    setCurrentDate,
+    requestScrollToDate,
+    clearFilters,
   } = usePlannerStore();
 
   const {
@@ -161,6 +200,7 @@ const MembersPage = () => {
 
   const canEdit = currentWorkspaceRole === 'editor' || currentWorkspaceRole === 'admin';
   const userLabel = profileDisplayName || user?.email || user?.id || '';
+  const navigate = useNavigate();
   const modeStorageKey = currentWorkspaceId
     ? `members-mode-${currentWorkspaceId}`
     : user?.id
@@ -222,6 +262,18 @@ const MembersPage = () => {
   const projectById = useMemo(
     () => new Map(projects.map((project) => [project.id, project])),
     [projects],
+  );
+  const assigneeById = useMemo(
+    () => new Map(assignees.map((assignee) => [assignee.id, assignee])),
+    [assignees],
+  );
+  const taskTypeById = useMemo(
+    () => new Map(taskTypes.map((type) => [type.id, type])),
+    [taskTypes],
+  );
+  const tagById = useMemo(
+    () => new Map(tags.map((tag) => [tag.id, tag])),
+    [tags],
   );
 
   const assigneeProjectIds = useMemo(() => {
@@ -324,7 +376,31 @@ const MembersPage = () => {
     setSelectedTaskIds(new Set());
   }, [selectedAssigneeId, pageIndex, projectFilterIds, search, statusFilterIds, taskScope, pastFromDate, pastToDate, pastSort]);
 
+  useEffect(() => {
+    if (!selectedTaskId) return;
+    if (!assigneeTasks.some((task) => task.id === selectedTaskId)) {
+      setSelectedTaskId(null);
+    }
+  }, [assigneeTasks, selectedTaskId]);
+
   const filteredTasks = assigneeTasks;
+
+  const selectedTask = useMemo(
+    () => assigneeTasks.find((task) => task.id === selectedTaskId) ?? null,
+    [assigneeTasks, selectedTaskId],
+  );
+  const selectedTaskProject = useMemo(
+    () => projects.find((project) => project.id === selectedTask?.projectId) ?? null,
+    [projects, selectedTask?.projectId],
+  );
+  const selectedTaskTags = useMemo(() => (
+    selectedTask?.tagIds.map((tagId) => tagById.get(tagId)).filter(Boolean) ?? []
+  ), [selectedTask?.tagIds, tagById]);
+  const selectedTaskDescription = useMemo(() => {
+    if (!selectedTask?.description) return '';
+    if (!hasRichTags(selectedTask.description)) return selectedTask.description;
+    return sanitizeDescription(selectedTask.description);
+  }, [selectedTask?.description]);
 
   const allVisibleSelected = filteredTasks.length > 0 && filteredTasks.every((task) => selectedTaskIds.has(task.id));
   const someVisibleSelected = filteredTasks.some((task) => selectedTaskIds.has(task.id));
@@ -338,6 +414,30 @@ const MembersPage = () => {
   const projectFilterLabel = projectFilterIds.length === 0
     ? 'All projects'
     : `${projectFilterIds.length} selected`;
+
+  const handleOpenTaskInTimeline = useCallback(() => {
+    if (!selectedTask) return;
+    setHighlightedTaskId(selectedTask.id);
+    clearFilters();
+    if (user?.id && typeof window !== 'undefined') {
+      window.localStorage.removeItem(`planner-filters-${user.id}`);
+    }
+    setViewMode('week');
+    setCurrentDate(selectedTask.startDate);
+    requestScrollToDate(selectedTask.startDate);
+    setSelectedTaskId(null);
+    navigate('/');
+  }, [
+    clearFilters,
+    navigate,
+    requestScrollToDate,
+    selectedTask,
+    setHighlightedTaskId,
+    setCurrentDate,
+    setSelectedTaskId,
+    setViewMode,
+    user?.id,
+  ]);
 
   const handleToggleStatus = (statusId: string) => {
     setStatusFilterIds((current) => (
@@ -736,8 +836,12 @@ const MembersPage = () => {
                             const status = statusById.get(task.statusId);
                             const project = task.projectId ? projectById.get(task.projectId) : null;
                             return (
-                              <TableRow key={task.id}>
-                                <TableCell>
+                              <TableRow
+                                key={task.id}
+                                className="cursor-pointer"
+                                onClick={() => setSelectedTaskId(task.id)}
+                              >
+                                <TableCell onClick={(event) => event.stopPropagation()}>
                                   <Checkbox
                                     checked={selectedTaskIds.has(task.id)}
                                     onCheckedChange={(value) => handleToggleTask(task.id, value)}
@@ -819,6 +923,117 @@ const MembersPage = () => {
         )}
       </div>
 
+      <Dialog open={Boolean(selectedTaskId)} onOpenChange={(open) => !open && setSelectedTaskId(null)}>
+        <DialogContent className="w-[95vw] max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{selectedTask?.title ?? 'Task details'}</DialogTitle>
+          </DialogHeader>
+          {!selectedTask && (
+            <div className="text-sm text-muted-foreground">Task not found.</div>
+          )}
+          {selectedTask && (
+            <div className="space-y-4">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <div className="text-xs text-muted-foreground">Project</div>
+                  <div className="text-sm">
+                    {selectedTaskProject?.name ?? 'No project'}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs text-muted-foreground">Status</div>
+                  <div className="flex items-center gap-2 text-sm">
+                    <span
+                      className="inline-flex h-2 w-2 rounded-full"
+                      style={{ backgroundColor: statusById.get(selectedTask.statusId)?.color ?? '#94a3b8' }}
+                    />
+                    <span>{statusById.get(selectedTask.statusId)
+                      ? formatStatusLabel(statusById.get(selectedTask.statusId)!.name)
+                      : 'Unknown'}
+                    </span>
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs text-muted-foreground">Assignees</div>
+                  <div className="flex flex-wrap gap-1">
+                    {selectedTask.assigneeIds.length === 0 && (
+                      <span className="text-xs text-muted-foreground">Unassigned</span>
+                    )}
+                    {selectedTask.assigneeIds.map((id) => {
+                      const assignee = assigneeById.get(id);
+                      if (!assignee) return null;
+                      return (
+                        <Badge key={assignee.id} variant="secondary" className="text-[10px]">
+                          {assignee.name}
+                          {!assignee.isActive && ' (disabled)'}
+                        </Badge>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs text-muted-foreground">Dates</div>
+                  <div className="text-sm text-muted-foreground">
+                    {format(parseISO(selectedTask.startDate), 'dd MMM yyyy')} – {format(parseISO(selectedTask.endDate), 'dd MMM yyyy')}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs text-muted-foreground">Type</div>
+                  <div className="text-sm">
+                    {taskTypeById.get(selectedTask.typeId)?.name ?? 'Unknown'}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs text-muted-foreground">Priority</div>
+                  <div className="text-sm">{selectedTask.priority ?? 'None'}</div>
+                </div>
+                <div className="sm:col-span-2">
+                  <div className="text-xs text-muted-foreground">Tags</div>
+                  {selectedTaskTags.length === 0 ? (
+                    <div className="text-xs text-muted-foreground">No tags</div>
+                  ) : (
+                    <div className="flex flex-wrap gap-1.5">
+                      {selectedTaskTags.map((tag) => (
+                        <Badge
+                          key={tag.id}
+                          variant="outline"
+                          className="text-[10px]"
+                          style={{ borderColor: tag.color, color: tag.color }}
+                        >
+                          {tag.name}
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs text-muted-foreground">Description</div>
+                {!selectedTask.description && (
+                  <div className="text-sm text-muted-foreground">No description.</div>
+                )}
+                {selectedTask.description && hasRichTags(selectedTask.description) && (
+                  <div
+                    className="text-sm leading-6"
+                    dangerouslySetInnerHTML={{ __html: selectedTaskDescription }}
+                  />
+                )}
+                {selectedTask.description && !hasRichTags(selectedTask.description) && (
+                  <div className="text-sm whitespace-pre-wrap">{selectedTaskDescription}</div>
+                )}
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button onClick={handleOpenTaskInTimeline}>
+                  Перейти к задаче
+                </Button>
+                <Button variant="outline" onClick={() => setSelectedTaskId(null)}>
+                  Close
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
       <SettingsPanel open={showSettings} onOpenChange={setShowSettings} />
       <AccountSettingsDialog open={showAccountSettings} onOpenChange={setShowAccountSettings} />
     </div>
