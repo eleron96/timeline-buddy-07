@@ -111,6 +111,8 @@ export const TaskBar: React.FC<TaskBarProps> = ({
     duplicateTask,
     setSelectedTaskId,
     selectedTaskId,
+    highlightedTaskId,
+    setHighlightedTaskId,
   } = usePlannerStore();
   
   const filteredAssignees = useFilteredAssignees(assignees);
@@ -139,6 +141,7 @@ export const TaskBar: React.FC<TaskBarProps> = ({
     ? 'Unassigned'
     : assignedAssignees.map((assignee) => assignee.name).join(', ');
   const isSelected = selectedTaskId === task.id;
+  const isHighlighted = highlightedTaskId === task.id;
   const priorityMeta = task.priority ? priorityStyles[task.priority] : null;
   const isCancelled = status
     ? ['отменена', 'cancelled', 'canceled'].includes(status.name.trim().toLowerCase())
@@ -239,6 +242,9 @@ export const TaskBar: React.FC<TaskBarProps> = ({
       // Only open panel on clean click (no movement)
       if (!hasMoved && !isResizing) {
         setSelectedTaskId(task.id);
+        if (isHighlighted) {
+          setHighlightedTaskId(null);
+        }
       }
       
       setIsDragging(false);
@@ -254,8 +260,20 @@ export const TaskBar: React.FC<TaskBarProps> = ({
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [isDragging, isResizing, dragOffset.startX, dragOffset.x, dayWidth, task, moveTask, hasMoved, setSelectedTaskId]);
-  
+  }, [
+    isDragging,
+    isResizing,
+    dragOffset.startX,
+    dragOffset.x,
+    dayWidth,
+    task,
+    moveTask,
+    hasMoved,
+    isHighlighted,
+    setHighlightedTaskId,
+    setSelectedTaskId,
+  ]);
+
   // Calculate visual position during drag
   const visualLeft = isDragging || isResizing === 'left'
     ? position.left + dragOffset.x
@@ -297,6 +315,9 @@ export const TaskBar: React.FC<TaskBarProps> = ({
             e.stopPropagation();
             if (!canEdit) {
               setSelectedTaskId(task.id);
+              if (isHighlighted) {
+                setHighlightedTaskId(null);
+              }
             }
           }}
           className={cn(
@@ -304,6 +325,7 @@ export const TaskBar: React.FC<TaskBarProps> = ({
             isDragging && 'dragging z-50',
             isResizing && 'z-50',
             isSelected && 'ring-2 ring-primary ring-offset-1',
+            isHighlighted && 'task-highlight z-40',
             isFinal && 'opacity-60 saturate-50'
           )}
           style={{

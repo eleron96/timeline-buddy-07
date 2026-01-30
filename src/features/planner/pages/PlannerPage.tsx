@@ -65,6 +65,9 @@ const PlannerPage = () => {
   const currentDate = usePlannerStore((state) => state.currentDate);
   const setCurrentDate = usePlannerStore((state) => state.setCurrentDate);
   const requestScrollToDate = usePlannerStore((state) => state.requestScrollToDate);
+  const scrollTargetDate = usePlannerStore((state) => state.scrollTargetDate);
+  const highlightedTaskId = usePlannerStore((state) => state.highlightedTaskId);
+  const setHighlightedTaskId = usePlannerStore((state) => state.setHighlightedTaskId);
   const user = useAuthStore((state) => state.user);
   const profileDisplayName = useAuthStore((state) => state.profileDisplayName);
   const currentWorkspaceId = useAuthStore((state) => state.currentWorkspaceId);
@@ -97,11 +100,20 @@ const PlannerPage = () => {
   useEffect(() => {
     if (centeredOnLoadRef.current) return;
     if (viewMode === 'calendar') return;
-    const today = format(new Date(), 'yyyy-MM-dd');
-    setCurrentDate(today);
-    requestScrollToDate(today);
+    const initialDate = scrollTargetDate ?? format(new Date(), 'yyyy-MM-dd');
+    setCurrentDate(initialDate);
+    requestScrollToDate(initialDate);
     centeredOnLoadRef.current = true;
-  }, [requestScrollToDate, setCurrentDate, viewMode]);
+  }, [requestScrollToDate, scrollTargetDate, setCurrentDate, viewMode]);
+
+  useEffect(() => {
+    if (!highlightedTaskId) return;
+    const handlePointerDown = () => {
+      setHighlightedTaskId(null);
+    };
+    window.addEventListener('pointerdown', handlePointerDown);
+    return () => window.removeEventListener('pointerdown', handlePointerDown);
+  }, [highlightedTaskId, setHighlightedTaskId]);
 
   useEffect(() => {
     filtersHydratedRef.current = false;
