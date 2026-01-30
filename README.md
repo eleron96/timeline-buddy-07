@@ -1,119 +1,156 @@
-# Welcome to your Lovable project
+# Timeline Planner
 
-## Project info
+Веб‑приложение для командного планирования задач на таймлайне с проектами, участниками, виджетами и админ‑панелью. Фронтенд на Vite/React/TypeScript, бэкенд и авторизация — Supabase, интеграция через Edge Functions.
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+## Возможности
 
-## How can I edit this code?
+- Таймлайн задач с двумя режимами отображения (timeline / calendar), фильтрами и быстрым созданием задач.
+- Проекты с цветами, архивированием и просмотром задач проекта.
+- Сотрудники: список участников, их задачи, массовые действия, фильтры и история.
+- Дашборд с настраиваемыми виджетами и автосохранением раскладки.
+- Роли и доступ: viewer/editor/admin, инвайты по email или ссылке.
+- Настройки воркспейса: статусы, типы задач, теги, шаблоны, удаление.
+- Супер‑админка: пользователи, воркспейсы, супер‑админы, бэкапы.
 
-There are several ways of editing your application.
+## Архитектура и ключевые модули
 
-**Use Lovable**
+- `src/app/App.tsx` — маршрутизация и защита страниц.
+- `src/features/planner` — таймлайн, задачи, фильтры, панель деталей.
+- `src/features/dashboard` — дашборд и виджеты аналитики.
+- `src/features/projects` — список проектов и задачи проекта.
+- `src/features/members` — участники и их задачи/доступ.
+- `src/features/workspace` — настройки воркспейса и управление участниками.
+- `infra/supabase` — миграции и Edge Functions (`admin`, `invite`).
+- `infra/backup-service` — сервис бэкапов (доступ через `/backup`).
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
+## Требования
 
-Changes made via Lovable will be committed automatically to this repo.
+- Node.js 20+
+- Docker Desktop (для локального Supabase через Compose)
+- Supabase CLI (опционально, для локального Supabase без Compose)
 
-**Use your preferred IDE**
+## Быстрый старт (Docker Compose)
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
-
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
-
-Follow these steps:
-
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
-
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
-npm run dev
-```
-
-**Edit a file directly in GitHub**
-
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
-
-**Use GitHub Codespaces**
-
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
-
-## What technologies are used for this project?
-
-This project is built with:
-
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
-
-## How can I deploy this project?
-
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
-
-## Can I connect a custom domain to my Lovable project?
-
-Yes, you can!
-
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
-
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
-
-## Supabase setup (auth + workspaces)
-
-This project uses Supabase for authentication, workspaces, and data storage.
-
-Quick local start (single command, Docker Compose):
+Самый простой способ поднять весь стек локально.
 
 ```sh
 make up
 ```
 
-This starts a local Supabase stack (db/auth/rest/functions/gateway) and the Vite frontend in separate containers.
-Data is persisted in the `supabase_db_data` volume, so it survives frontend rebuilds and restarts.
-On first run, `.env` is generated automatically. You can edit it to set `RESEND_API_KEY` and `RESEND_FROM` for invites.
-Keep `API_EXTERNAL_URL` set (default: `http://localhost:8080/auth/v1`) so auth links resolve correctly.
+Что произойдет:
+- Поднимется Supabase‑стек (db/auth/rest/functions/gateway) и фронтенд.
+- `.env` будет сгенерирован автоматически (JWT/ANON/SERVICE роли).
+- Данные сохраняются в volume `supabase_db_data`.
 
-Stop everything (data preserved):
+Остановить контейнеры (данные сохраняются):
 
 ```sh
 make down
 ```
 
-Tail logs from all containers:
+Логи контейнеров:
 
 ```sh
 make logs
 ```
 
-1) Create a Supabase project (Postgres).
-2) Apply the schema from `infra/supabase/migrations/0001_init.sql` (SQL editor or `supabase db push` from `infra/`).
-3) Create `.env` from `.env.example` and fill:
+Сервис доступен:
+- Frontend: `http://localhost:5173`
+- Supabase Gateway: `http://localhost:8080`
+- Postgres: `localhost:54322`
+
+## Локальный запуск с Supabase CLI
+
+Используйте, если хотите локальный Supabase вне Docker Compose.
+
+```sh
+npm install
+npm run dev:local
+```
+
+Скрипт:
+- запускает `supabase start` в `infra/`;
+- записывает `VITE_SUPABASE_URL` и `VITE_SUPABASE_ANON_KEY` в `.env`;
+- поднимает `supabase functions serve invite`;
+- стартует фронтенд (`npm run dev`).
+
+## Локальный запуск через Compose скрипт
+
+Эквивалент `make up`, но в npm‑формате.
+
+```sh
+npm run dev:compose
+```
+
+## Ручная настройка Supabase (если используете внешний проект)
+
+1) Создайте Supabase‑проект.
+2) Примените миграции из `infra/supabase/migrations/`.
+3) Создайте `.env` на основе `.env.example` и заполните:
    - `VITE_SUPABASE_URL`
    - `VITE_SUPABASE_ANON_KEY`
-4) Deploy the edge function for invites:
-   - `cd infra && supabase functions deploy invite`
-   - Configure function env vars:
-     - `APP_URL` (e.g. `http://localhost:5173`)
-     - `RESEND_API_KEY` (optional, for sending magic links to existing users)
-     - `RESEND_FROM` (e.g. `Workspace <no-reply@yourdomain.com>`)
-5) Enable email auth in Supabase and configure SMTP if needed.
+4) Разверните Edge Functions:
+   ```sh
+   cd infra
+   supabase functions deploy invite
+   supabase functions deploy admin
+   ```
+5) Настройте переменные функций:
+   - `APP_URL` (например, `http://localhost:5173`)
+   - `RESEND_API_KEY` и `RESEND_FROM` (опционально для email‑инвайтов)
+   - `RESERVE_ADMIN_EMAIL`, `RESERVE_ADMIN_PASSWORD` (см. ниже)
+6) Включите email‑auth в Supabase и настройте SMTP при необходимости.
 
-Notes:
-- New users get a personal workspace automatically.
-- Workspace membership is enforced with RLS.
-- Users can belong to max 5 workspaces.
-- Local Supabase data persists in Docker volumes unless you run `docker compose down -v` or delete volumes.
+## Переменные окружения
+
+Ключевые:
+
+- `VITE_SUPABASE_URL` — URL Supabase Gateway.
+- `VITE_SUPABASE_ANON_KEY` — публичный ключ.
+- `RESEND_API_KEY`, `RESEND_FROM` — отправка инвайтов через Resend.
+- `RESERVE_ADMIN_EMAIL`, `RESERVE_ADMIN_PASSWORD` — резервный супер‑админ.
+
+Файл‑шаблон: `.env.example`. В Compose‑режиме `.env` создается автоматически.
+
+## Супер‑админка
+
+- Страница: `/admin/users`.
+- Доступ только для пользователей из таблицы `super_admins`.
+- Резервный супер‑админ создается автоматически, если заданы:
+  - `RESERVE_ADMIN_EMAIL`
+  - `RESERVE_ADMIN_PASSWORD`
+
+## Использование
+
+1) Перейдите на `/auth`, зарегистрируйтесь или войдите.
+2) Создайте воркспейс (создается автоматически при первом входе).
+3) На таймлайне создайте задачи и назначьте участников.
+4) В `Projects` управляйте проектами и смотрите задачи.
+5) В `Members`:
+   - вкладка `Tasks` — задачи участников с фильтрами и массовыми действиями;
+   - вкладка `Access` — приглашения и роли.
+6) В `Dashboard` добавляйте и настраивайте виджеты.
+7) В `Workspace settings` настраивайте статусы, типы, теги и шаблоны.
+
+## Скрипты
+
+```sh
+npm run dev         # фронтенд
+npm run dev:local   # Supabase CLI + фронтенд
+npm run dev:compose # Docker Compose
+npm run build
+npm run lint
+npm run test
+npm run test:watch
+```
+
+## Тестирование и линтинг
+
+- `npm run test` — прогон тестов.
+- `npm run lint` — линтер.
+
+## Примечания
+
+- Инвайты работают через Edge Function `invite` и возвращают ссылку, если email не отправлен.
+- Бэкапы доступны в супер‑админке (вкладка `Backups`).
+- Все пользовательские настройки и роли ограничены RLS в Supabase.
