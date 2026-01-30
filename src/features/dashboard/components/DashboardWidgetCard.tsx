@@ -84,6 +84,7 @@ export const DashboardWidgetCard: React.FC<DashboardWidgetCardProps> = ({
   };
   const taskPeriodLabel = formatShortRange(taskStartDate, taskEndDate);
   const size = widget.size ?? (widget.type === 'kpi' ? 'small' : 'medium');
+  const isKpiSmall = widget.type === 'kpi' && size === 'small';
   const isSmall = size === 'small';
   const showPeriod = size !== 'small';
   const showFilter = size === 'large';
@@ -103,8 +104,12 @@ export const DashboardWidgetCard: React.FC<DashboardWidgetCardProps> = ({
   const showLegend = isChart && legendItems.length > 0;
   const contentGapClass = isSmall ? 'gap-1.5' : 'gap-2';
   const calendarGapClass = isMilestoneCalendar && isSmall ? 'gap-1' : contentGapClass;
-  const cardPaddingClass = isSmall ? 'p-3' : 'p-4';
-  const contentPaddingClass = isMilestoneCalendar && isSmall ? 'pt-2' : 'pt-3';
+  const cardPaddingClass = isKpiSmall ? 'p-2' : isSmall ? 'p-3' : 'p-4';
+  const contentPaddingClass = isKpiSmall
+    ? 'pt-0'
+    : isMilestoneCalendar && isSmall
+      ? 'pt-2'
+      : 'pt-3';
   const chartMinHeightClass = isSmall
     ? 'min-h-[64px]'
     : legendItems.length > 6
@@ -116,7 +121,12 @@ export const DashboardWidgetCard: React.FC<DashboardWidgetCardProps> = ({
       ? 'min-h-[120px]'
       : 'min-h-[160px]';
   const pieMinHeightClass = isSmall ? 'min-h-[72px]' : 'min-h-[200px]';
-  const kpiValueClass = isSmall ? 'text-3xl' : 'text-4xl';
+  const kpiValueClass = isKpiSmall ? 'text-2xl' : isSmall ? 'text-3xl' : 'text-4xl';
+  const kpiValueStyle = isKpiSmall
+    ? { fontSize: 'clamp(1.25rem, 6vw, 2.25rem)' }
+    : isSmall
+      ? { fontSize: 'clamp(1.5rem, 4vw, 2.75rem)' }
+      : { fontSize: 'clamp(2rem, 3vw, 3.25rem)' };
   const pieInnerRadius = size === 'small' ? '45%' : '55%';
   const pieOuterRadius = size === 'small' ? '75%' : '90%';
   const timeSeries = data?.timeSeries ?? [];
@@ -217,25 +227,27 @@ export const DashboardWidgetCard: React.FC<DashboardWidgetCardProps> = ({
         editing && 'ring-1 ring-muted',
       )}
     >
-      <div className="flex items-start justify-between gap-2">
-        <div className={cn('flex items-start gap-2', editing && 'dashboard-widget-handle cursor-move')}>
-          {editing && <GripVertical className="h-4 w-4 text-muted-foreground" />}
-          <div className="flex flex-col">
-            <span className="text-sm font-semibold text-foreground">{widget.title}</span>
-            {chartPeriodLabel && <span className="text-xs text-muted-foreground">{chartPeriodLabel}</span>}
+      {(!isKpiSmall || editing) && (
+        <div className="flex items-start justify-between gap-2">
+          <div className={cn('flex items-start gap-2', editing && 'dashboard-widget-handle cursor-move')}>
+            {editing && <GripVertical className="h-4 w-4 text-muted-foreground" />}
+            <div className="flex flex-col">
+              <span className="text-sm font-semibold text-foreground">{widget.title}</span>
+              {chartPeriodLabel && <span className="text-xs text-muted-foreground">{chartPeriodLabel}</span>}
+            </div>
           </div>
+          {editing && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 opacity-40 transition-opacity hover:opacity-100"
+              onClick={onEdit}
+            >
+              <Pencil className="h-4 w-4" />
+            </Button>
+          )}
         </div>
-        {editing && (
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7 opacity-40 transition-opacity hover:opacity-100"
-            onClick={onEdit}
-          >
-            <Pencil className="h-4 w-4" />
-          </Button>
-        )}
-      </div>
+      )}
 
       <div className={cn('flex-1 min-h-0', contentPaddingClass)}>
         {loading && (
@@ -249,12 +261,17 @@ export const DashboardWidgetCard: React.FC<DashboardWidgetCardProps> = ({
           </div>
         )}
         {!loading && !error && widget.type === 'kpi' && (
-          <div className="flex h-full flex-col justify-center gap-2">
-            <div className={cn(kpiValueClass, 'font-semibold text-foreground')}>
+          <div className={cn('flex h-full flex-col items-center justify-center', isKpiSmall ? '' : 'gap-2')}>
+            <div
+              className={cn(kpiValueClass, 'font-semibold text-foreground text-center')}
+              style={kpiValueStyle}
+            >
               {data?.total ?? 0}
             </div>
-            {showPeriod && <div className="text-xs text-muted-foreground">{periodLabel}</div>}
-            {showFilter && (
+            {!isKpiSmall && showPeriod && (
+              <div className="text-xs text-muted-foreground">{periodLabel}</div>
+            )}
+            {!isKpiSmall && showFilter && (
               <div className="text-xs text-muted-foreground">
                 Filter: {filterLabels[widget.statusFilter]}
               </div>

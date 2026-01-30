@@ -57,7 +57,7 @@ const SIZE_PRESETS: Record<DashboardWidgetSize, { w: number; h: number }> = {
   large: { w: 12, h: 6 },
 };
 
-const KPI_SMALL_PRESET = { w: 2, h: 2 };
+const KPI_SMALL_PRESET = { w: 1, h: 1 };
 const MILESTONE_PRESETS: Record<DashboardWidgetSize, { w: number; h: number }> = {
   small: { w: 2, h: 3 },
   medium: { w: 6, h: 4 },
