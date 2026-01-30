@@ -165,6 +165,7 @@ interface PlannerStore extends PlannerState {
   clearFilterCriteria: () => void;
   clearFilters: () => void;
   setSelectedTaskId: (id: string | null) => void;
+  setHighlightedTaskId: (id: string | null) => void;
 }
 
 const initialFilters: Filters = {
@@ -306,6 +307,7 @@ export const usePlannerStore = create<PlannerStore>()(
       currentDate: format(new Date(), 'yyyy-MM-dd'),
       filters: initialFilters,
       selectedTaskId: null,
+      highlightedTaskId: null,
       workspaceId: null,
       loading: false,
       error: null,
@@ -327,6 +329,7 @@ export const usePlannerStore = create<PlannerStore>()(
         taskTypes: [],
         tags: [],
         selectedTaskId: null,
+        highlightedTaskId: null,
         workspaceId: null,
         loading: false,
         error: null,
@@ -356,6 +359,7 @@ export const usePlannerStore = create<PlannerStore>()(
           error: null,
           workspaceId,
           selectedTaskId: null,
+          highlightedTaskId: null,
           dataRequestId: requestId,
         });
 
@@ -1332,6 +1336,7 @@ export const usePlannerStore = create<PlannerStore>()(
       })),
       clearFilters: () => set({ filters: initialFilters }),
       setSelectedTaskId: (id) => set({ selectedTaskId: id }),
+      setHighlightedTaskId: (id) => set({ highlightedTaskId: id }),
     }),
     {
       name: 'planner-storage',

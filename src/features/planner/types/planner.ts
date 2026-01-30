@@ -81,4 +81,5 @@ export interface PlannerState {
   currentDate: string;
   filters: Filters;
   selectedTaskId: string | null;
+  highlightedTaskId: string | null;
 }

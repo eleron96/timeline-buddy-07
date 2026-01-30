@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Navigate } from 'react-router-dom';
+import { Navigate, useNavigate } from 'react-router-dom';
 import { usePlannerStore } from '@/features/planner/store/plannerStore';
 import { useAuthStore } from '@/features/auth/store/authStore';
 import { WorkspaceSwitcher } from '@/features/workspace/components/WorkspaceSwitcher';
@@ -137,6 +137,10 @@ const ProjectsPage = () => {
     addProject,
     updateProject,
     deleteProject,
+    setHighlightedTaskId,
+    setViewMode,
+    setCurrentDate,
+    requestScrollToDate,
   } = usePlannerStore();
 
   const {
@@ -265,6 +269,26 @@ const ProjectsPage = () => {
     if (!hasRichTags(selectedTask.description)) return selectedTask.description;
     return sanitizeDescription(selectedTask.description);
   }, [selectedTask?.description]);
+
+  const navigate = useNavigate();
+
+  const handleOpenTaskInTimeline = useCallback(() => {
+    if (!selectedTask) return;
+    setHighlightedTaskId(selectedTask.id);
+    setViewMode('week');
+    setCurrentDate(selectedTask.startDate);
+    requestScrollToDate(selectedTask.startDate);
+    setSelectedTaskId(null);
+    navigate('/');
+  }, [
+    navigate,
+    requestScrollToDate,
+    selectedTask,
+    setHighlightedTaskId,
+    setCurrentDate,
+    setSelectedTaskId,
+    setViewMode,
+  ]);
 
   const filteredTasks = useMemo(() => (
     projectTasks.filter((task) => {
@@ -823,7 +847,10 @@ const ProjectsPage = () => {
                   <div className="text-sm whitespace-pre-wrap">{selectedTaskDescription}</div>
                 )}
               </div>
-              <div className="flex justify-end">
+              <div className="flex justify-end gap-2">
+                <Button onClick={handleOpenTaskInTimeline}>
+                  Перейти к задаче
+                </Button>
                 <Button variant="outline" onClick={() => setSelectedTaskId(null)}>
                   Close
                 </Button>

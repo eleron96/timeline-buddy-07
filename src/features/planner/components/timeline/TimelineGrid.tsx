@@ -38,6 +38,7 @@ export const TimelineGrid: React.FC<TimelineGridProps> = ({ onCreateTask }) => {
     scrollRequestId,
     filters,
     assigneeTaskCounts,
+    highlightedTaskId,
   } = usePlannerStore();
   const currentWorkspaceRole = useAuthStore((state) => state.currentWorkspaceRole);
   const canEdit = currentWorkspaceRole === 'editor' || currentWorkspaceRole === 'admin';
@@ -554,7 +555,10 @@ export const TimelineGrid: React.FC<TimelineGridProps> = ({ onCreateTask }) => {
     : null;
 
   return (
-    <div className="relative flex flex-col h-full overflow-hidden bg-background">
+    <div className={cn(
+      'relative flex flex-col h-full overflow-hidden bg-background',
+      highlightedTaskId && 'task-highlight-mode'
+    )}>
       {milestoneLine && typeof milestoneLineIndex === 'number' && (
         <div
           className={cn(

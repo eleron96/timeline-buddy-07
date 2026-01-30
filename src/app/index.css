@@ -368,6 +368,24 @@
   }
 }
 
+@keyframes task-highlight-pulse {
+  0% {
+    box-shadow:
+      0 0 0 0 rgba(250, 204, 21, 0.95),
+      0 0 0 2px rgba(250, 204, 21, 0.7);
+  }
+  50% {
+    box-shadow:
+      0 0 0 16px rgba(250, 204, 21, 0.25),
+      0 0 0 4px rgba(250, 204, 21, 0.55);
+  }
+  100% {
+    box-shadow:
+      0 0 0 0 rgba(250, 204, 21, 0),
+      0 0 0 2px rgba(250, 204, 21, 0);
+  }
+}
+
 .animate-slide-in-right {
   animation: slide-in-right 0.2s ease-out;
 }
@@ -378,4 +396,17 @@
 
 .priority-blink {
   animation: priority-blink 0.9s ease-in-out infinite;
+}
+
+.task-highlight {
+  animation: task-highlight-pulse 1.05s ease-out infinite;
+}
+
+.task-highlight-mode .task-bar {
+  opacity: 0.15;
+  transition: opacity 0.2s ease;
+}
+
+.task-highlight-mode .task-bar.task-highlight {
+  opacity: 1;
 }
