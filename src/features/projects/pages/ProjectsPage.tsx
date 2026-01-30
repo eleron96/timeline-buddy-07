@@ -141,6 +141,7 @@ const ProjectsPage = () => {
     setViewMode,
     setCurrentDate,
     requestScrollToDate,
+    clearFilters,
   } = usePlannerStore();
 
   const {
@@ -275,12 +276,17 @@ const ProjectsPage = () => {
   const handleOpenTaskInTimeline = useCallback(() => {
     if (!selectedTask) return;
     setHighlightedTaskId(selectedTask.id);
+    clearFilters();
+    if (user?.id && typeof window !== 'undefined') {
+      window.localStorage.removeItem(`planner-filters-${user.id}`);
+    }
     setViewMode('week');
     setCurrentDate(selectedTask.startDate);
     requestScrollToDate(selectedTask.startDate);
     setSelectedTaskId(null);
     navigate('/');
   }, [
+    clearFilters,
     navigate,
     requestScrollToDate,
     selectedTask,
@@ -288,6 +294,7 @@ const ProjectsPage = () => {
     setCurrentDate,
     setSelectedTaskId,
     setViewMode,
+    user?.id,
   ]);
 
   const filteredTasks = useMemo(() => (
