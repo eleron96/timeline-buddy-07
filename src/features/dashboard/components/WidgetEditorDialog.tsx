@@ -319,12 +319,12 @@ export const WidgetEditorDialog: React.FC<WidgetEditorDialogProps> = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-lg max-h-[85vh] overflow-hidden flex flex-col">
         <DialogHeader>
           <DialogTitle>{dialogTitle}</DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-4">
+        <div className="flex-1 overflow-y-auto space-y-4 pr-2">
           <div className="space-y-2">
             <Label htmlFor="widget-title">Title</Label>
             <Input
