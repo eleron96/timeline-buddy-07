@@ -1,4 +1,5 @@
 import React, { useCallback, useMemo, useState, useRef, useEffect } from 'react';
+import { flushSync } from 'react-dom';
 import { usePlannerStore } from '@/features/planner/store/plannerStore';
 import { useFilteredAssignees } from '@/features/planner/hooks/useFilteredAssignees';
 import { useAuthStore } from '@/features/auth/store/authStore';
@@ -8,6 +9,9 @@ import { TaskBar } from './TaskBar';
 import { MilestoneDialog } from './MilestoneDialog';
 import { getVisibleDays, getDayWidth, getTaskPosition, SIDEBAR_WIDTH, HEADER_HEIGHT, MIN_ROW_HEIGHT, TASK_HEIGHT, TASK_GAP } from '@/features/planner/lib/dateUtils';
 import { Milestone, Task } from '@/features/planner/types/planner';
+
+/** Дополнительный отступ снизу у строки пользователя в режиме группировки по исполнителям (визуально больше расстояние между пользователями) */
+const ASSIGNEE_ROW_GAP = 20;
 import { calculateTaskLanes, getMaxLanes, TaskWithLane } from '@/features/planner/lib/taskLanes';
 import { Button } from '@/shared/ui/button';
 import { cn } from '@/shared/lib/classNames';
@@ -40,13 +44,20 @@ export const TimelineGrid: React.FC<TimelineGridProps> = ({ onCreateTask }) => {
     assigneeTaskCounts,
     highlightedTaskId,
   } = usePlannerStore();
+  const user = useAuthStore((state) => state.user);
   const currentWorkspaceRole = useAuthStore((state) => state.currentWorkspaceRole);
   const canEdit = currentWorkspaceRole === 'editor' || currentWorkspaceRole === 'admin';
   const filteredAssignees = useFilteredAssignees(assignees);
+
+  const myAssigneeId = useMemo(() => {
+    if (!user?.id) return null;
+    return assignees.find((a) => a.userId === user.id)?.id ?? null;
+  }, [assignees, user?.id]);
   
-  const containerRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const sidebarRef = useRef<HTMLDivElement>(null);
   const syncingRef = useRef<HTMLDivElement | null>(null);
+  const syncingVerticalRef = useRef(false);
   const dragScrollRef = useRef<{
     startX: number;
     startScrollLeft: number;
@@ -170,13 +181,18 @@ export const TimelineGrid: React.FC<TimelineGridProps> = ({ onCreateTask }) => {
     return filteredAssignees.filter((assignee) => filters.assigneeIds.includes(assignee.id));
   }, [filteredAssignees, filters.assigneeIds, groupMode]);
 
-  // Group items (assignees or projects)
+  // Group items (assignees or projects). При группировке по исполнителям: сначала текущий пользователь, затем остальные по алфавиту.
   const groupItems = useMemo(() => {
     if (groupMode === 'assignee') {
-      return visibleAssignees.map(a => ({ id: a.id, name: a.name, color: undefined }));
+      const sorted = [...visibleAssignees].sort((a, b) => {
+        if (myAssigneeId && a.id === myAssigneeId) return -1;
+        if (myAssigneeId && b.id === myAssigneeId) return 1;
+        return (a.name ?? '').localeCompare(b.name ?? '', undefined, { sensitivity: 'base' });
+      });
+      return sorted.map(a => ({ id: a.id, name: a.name, color: undefined }));
     }
     return projects.map(p => ({ id: p.id, name: p.name, color: p.color }));
-  }, [groupMode, visibleAssignees, projects]);
+  }, [groupMode, visibleAssignees, projects, myAssigneeId]);
   
   // Group tasks by row with lane calculation
   const tasksByRow = useMemo(() => {
@@ -241,25 +257,46 @@ export const TimelineGrid: React.FC<TimelineGridProps> = ({ onCreateTask }) => {
     return heights;
   }, [tasksByRow]);
   
-  // Sync scroll between header and grid
+  const handleSidebarScroll = useCallback(() => {
+    if (syncingVerticalRef.current) {
+      syncingVerticalRef.current = false;
+      return;
+    }
+    const sidebar = sidebarRef.current;
+    const grid = scrollContainerRef.current;
+    if (!sidebar || !grid || sidebar.scrollTop === grid.scrollTop) return;
+    syncingVerticalRef.current = true;
+    grid.scrollTop = sidebar.scrollTop;
+    requestAnimationFrame(() => {
+      syncingVerticalRef.current = false;
+    });
+  }, []);
+
+  // Горизонтальный скролл: scrollLeft для линий вех и подписи месяца; вертикальная синхронизация с сайдбаром
   const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
     if (syncingRef.current && syncingRef.current !== e.currentTarget) {
       return;
     }
     syncingRef.current = e.currentTarget;
     const newScrollLeft = e.currentTarget.scrollLeft;
-    setScrollLeft(newScrollLeft);
-    
-    // Sync header scroll
-    if (containerRef.current && e.currentTarget !== containerRef.current && containerRef.current.scrollLeft !== newScrollLeft) {
-      containerRef.current.scrollLeft = newScrollLeft;
-    }
-    if (scrollContainerRef.current && e.currentTarget !== scrollContainerRef.current && scrollContainerRef.current.scrollLeft !== newScrollLeft) {
-      scrollContainerRef.current.scrollLeft = newScrollLeft;
-    }
+    flushSync(() => setScrollLeft(newScrollLeft));
     requestAnimationFrame(() => {
       syncingRef.current = null;
     });
+
+    if (syncingVerticalRef.current) {
+      syncingVerticalRef.current = false;
+    } else {
+      const sidebar = sidebarRef.current;
+      const grid = e.currentTarget;
+      if (sidebar && grid && sidebar.scrollTop !== grid.scrollTop) {
+        syncingVerticalRef.current = true;
+        sidebar.scrollTop = grid.scrollTop;
+        requestAnimationFrame(() => {
+          syncingVerticalRef.current = false;
+        });
+      }
+    }
 
     if (ignoreScrollDateUpdateRef.current) {
       return;
@@ -314,15 +351,6 @@ export const TimelineGrid: React.FC<TimelineGridProps> = ({ onCreateTask }) => {
       }
       const nextScrollLeft = state.startScrollLeft - deltaX;
       state.target.scrollLeft = nextScrollLeft;
-      if (state.target === scrollContainerRef.current && containerRef.current) {
-        if (containerRef.current.scrollLeft !== nextScrollLeft) {
-          containerRef.current.scrollLeft = nextScrollLeft;
-        }
-      } else if (state.target === containerRef.current && scrollContainerRef.current) {
-        if (scrollContainerRef.current.scrollLeft !== nextScrollLeft) {
-          scrollContainerRef.current.scrollLeft = nextScrollLeft;
-        }
-      }
     };
 
     const handleMouseUp = () => {
@@ -353,10 +381,6 @@ export const TimelineGrid: React.FC<TimelineGridProps> = ({ onCreateTask }) => {
     const targetScroll = Math.max(0, index * dayWidth - container.clientWidth / 2 + dayWidth / 2);
     container.scrollLeft = targetScroll;
     setScrollLeft(targetScroll);
-
-    if (containerRef.current) {
-      containerRef.current.scrollLeft = targetScroll;
-    }
   }, [dayWidth]);
 
   useEffect(() => {
@@ -401,9 +425,6 @@ export const TimelineGrid: React.FC<TimelineGridProps> = ({ onCreateTask }) => {
           const nextScrollLeft = Math.max(0, container.scrollLeft - shiftPx);
           ignoreScrollDateUpdateRef.current = true;
           container.scrollLeft = nextScrollLeft;
-          if (containerRef.current) {
-            containerRef.current.scrollLeft = nextScrollLeft;
-          }
           setScrollLeft(nextScrollLeft);
           requestAnimationFrame(() => {
             ignoreScrollDateUpdateRef.current = false;
@@ -440,13 +461,19 @@ export const TimelineGrid: React.FC<TimelineGridProps> = ({ onCreateTask }) => {
     }
   }, [scrollRequestId, scrollTargetDate, scrollToIndex]);
   
-  // Rows to display (including unassigned if there are unassigned tasks)
+  // Rows to display (including unassigned if there are unassigned tasks). В режиме по исполнителям — чуть больше отступ между строками пользователей.
   const displayRows = useMemo(() => {
-    const rows = groupItems.map(item => ({
-      ...item,
-      tasks: tasksByRow[item.id] || [],
-      height: rowHeights[item.id] || MIN_ROW_HEIGHT,
-    }));
+    const rows = groupItems.map(item => {
+      const baseHeight = rowHeights[item.id] || MIN_ROW_HEIGHT;
+      const height = groupMode === 'assignee' && item.id !== 'unassigned'
+        ? baseHeight + ASSIGNEE_ROW_GAP
+        : baseHeight;
+      return {
+        ...item,
+        tasks: tasksByRow[item.id] || [],
+        height,
+      };
+    });
 
     const showUnassignedRow = tasksByRow['unassigned']?.length > 0
       && (groupMode === 'project' || (filters.assigneeIds.length === 0 && !filters.hideUnassigned));
@@ -463,7 +490,7 @@ export const TimelineGrid: React.FC<TimelineGridProps> = ({ onCreateTask }) => {
     
     return rows;
   }, [filters.assigneeIds.length, filters.hideUnassigned, groupItems, groupMode, rowHeights, tasksByRow]);
-  
+
   const handleJumpToToday = () => {
     const today = format(new Date(), 'yyyy-MM-dd');
     setCurrentDate(today);
@@ -506,9 +533,8 @@ export const TimelineGrid: React.FC<TimelineGridProps> = ({ onCreateTask }) => {
     setMilestoneLine({ date, color, visible: true });
   }, []);
 
-  const handleMilestoneHoverEnd = useCallback(() => {
-    setMilestoneLine((prev) => (prev ? { ...prev, visible: false } : prev));
-  }, []);
+  // Линия остаётся видимой после наведения (не скрываем при mouse leave)
+  const handleMilestoneHoverEnd = useCallback(() => {}, []);
 
   const handleCreateTaskAt = useCallback((date: string, rowId: string) => {
     if (!canEdit) return;
@@ -543,136 +569,136 @@ export const TimelineGrid: React.FC<TimelineGridProps> = ({ onCreateTask }) => {
     onCreateTask?.(defaults);
   }, [assignees, canEdit, groupMode, onCreateTask, projects]);
 
-  useEffect(() => {
-    if (!milestoneLine || milestoneLine.visible) return;
-    const timer = window.setTimeout(() => setMilestoneLine(null), 200);
-    return () => window.clearTimeout(timer);
-  }, [milestoneLine]);
+  // По умолчанию показываем линию от каждой вехи, попадающей в видимый диапазон дат
+  const visibleMilestoneLines = useMemo(() => {
+    const lines: { date: string; color: string }[] = [];
+    const seenDates = new Set<string>();
+    for (const m of sortedMilestones) {
+      if (!visibleDayIndex.has(m.date) || seenDates.has(m.date)) continue;
+      seenDates.add(m.date);
+      const project = projectById.get(m.projectId);
+      lines.push({ date: m.date, color: project?.color ?? '#94a3b8' });
+    }
+    return lines;
+  }, [sortedMilestones, visibleDayIndex, projectById]);
 
-  const milestoneLineIndex = milestoneLine ? visibleDayIndex.get(milestoneLine.date) : undefined;
-  const milestoneLineColor = milestoneLine
-    ? (hexToRgba(milestoneLine.color, 0.6) ?? milestoneLine.color)
-    : null;
+  // Линия начинается от нижней точки круга вехи (h-2.5 = 10px, радиус 5px)
+  const milestoneDotRadius = 5;
+  const milestoneLineTop = HEADER_HEIGHT + milestoneRowHeight / 2 + milestoneDotRadius;
+  const milestoneLineHeight = `calc(100% - ${milestoneLineTop}px)`;
 
   return (
     <div className={cn(
       'relative flex flex-col h-full overflow-hidden bg-background',
       highlightedTaskId && 'task-highlight-mode'
     )}>
-      {milestoneLine && typeof milestoneLineIndex === 'number' && (
-        <div
-          className={cn(
-            'pointer-events-none absolute z-10 w-px transition-opacity duration-200',
-            milestoneLine.visible ? 'opacity-100' : 'opacity-0'
-          )}
-          style={{
-            left: SIDEBAR_WIDTH + milestoneLineIndex * dayWidth + dayWidth / 2 - scrollLeft,
-            top: HEADER_HEIGHT + milestoneRowHeight / 2,
-            height: `calc(100% - ${HEADER_HEIGHT + milestoneRowHeight / 2}px)`,
-            backgroundColor: milestoneLineColor ?? undefined,
-          }}
-        />
-      )}
-      {/* Timeline Header + Milestones - Sticky */}
-      <div className="sticky top-0 z-20 bg-background">
-        <div className="flex">
+      {/* Сайдбар и сетка — два скролла с синхронизацией по вертикали */}
+      <div className="flex flex-1 min-h-0 overflow-hidden">
+        <div className="flex flex-col flex-shrink-0 bg-timeline-header border-r border-border" style={{ width: SIDEBAR_WIDTH }}>
+          <div className="flex-shrink-0 border-b border-border" style={{ height: HEADER_HEIGHT }} />
+          <div className="flex-shrink-0 border-b border-border" style={{ height: milestoneRowHeight }} />
           <div
-            className="flex-shrink-0 bg-timeline-header border-r border-border"
-            style={{ width: SIDEBAR_WIDTH }}
+            ref={sidebarRef}
+            className="flex-1 min-h-0 overflow-y-auto scrollbar-hidden"
+            onScroll={handleSidebarScroll}
           >
-            <div className="border-b border-border" style={{ height: HEADER_HEIGHT }} />
-            <div className="border-b border-border" style={{ height: milestoneRowHeight }} />
+            {displayRows.map((row) => (
+              <div
+                key={row.id}
+                className="flex items-center px-4 border-b border-border hover:bg-timeline-row-hover transition-colors"
+                style={{ height: row.height }}
+              >
+                {row.color && (
+                  <div
+                    className="w-3 h-3 rounded-full mr-3 flex-shrink-0"
+                    style={{ backgroundColor: row.color }}
+                  />
+                )}
+                <span className="text-sm font-medium text-foreground truncate">
+                  {row.name}
+                </span>
+                <span className="ml-auto text-xs text-muted-foreground">
+                  {groupMode === 'assignee' && row.id !== 'unassigned'
+                    ? (assigneeTaskCounts[row.id] ?? row.tasks.length)
+                    : row.tasks.length}
+                </span>
+              </div>
+            ))}
           </div>
-          <div 
-            ref={containerRef}
-            className={`flex-1 overflow-x-auto scrollbar-hidden ${isDragScrolling ? 'cursor-grabbing' : 'cursor-grab'}`}
-            onScroll={handleScroll}
-            onMouseDown={handleDragStart}
-            style={{ overflowY: 'hidden' }}
-          >
-            <div className="border-b border-border" style={{ width: totalWidth }}>
-              <TimelineHeader 
-                visibleDays={visibleDays} 
-                dayWidth={dayWidth} 
-                viewMode={viewMode}
-                scrollLeft={scrollLeft}
-                viewportWidth={viewportWidth}
-              />
-            </div>
+        </div>
+        <div
+          ref={scrollContainerRef}
+          className={`flex-1 min-w-0 overflow-auto scrollbar-soft ${isDragScrolling ? 'cursor-grabbing' : 'cursor-grab'}`}
+          onScroll={handleScroll}
+          onMouseDown={handleDragStart}
+        >
+          <div className="relative" style={{ width: totalWidth, minHeight: '100%' }}>
+            {/* Линии вех внутри скролла — под задачами и под интерфейсом создания задачи */}
             <div
-              className="relative border-b border-border"
-              style={{ width: totalWidth, height: milestoneRowHeight }}
-              onClick={handleMilestoneRowClick}
+              className="pointer-events-none absolute z-0 left-0"
+              style={{ top: milestoneLineTop, width: totalWidth, height: milestoneLineHeight }}
             >
-              {sortedMilestones.map((milestone) => {
-                const dayIndex = visibleDayIndex.get(milestone.date);
-                if (dayIndex === undefined) return null;
-                const project = projectById.get(milestone.projectId);
-                const color = project?.color ?? '#94a3b8';
-                const dotColor = hexToRgba(color, 0.45) ?? color;
-                const dotBorder = hexToRgba(color, 0.8) ?? color;
-                const offset = milestoneOffsets.get(milestone.id) ?? 0;
-                const left = dayIndex * dayWidth + dayWidth / 2 + offset;
-
+              {visibleMilestoneLines.map(({ date, color }) => {
+                const lineIndex = visibleDayIndex.get(date);
+                if (typeof lineIndex !== 'number') return null;
+                const isHovered = milestoneLine?.date === date;
+                const lineColor = hexToRgba(color, isHovered ? 1 : 0.6) ?? color;
                 return (
-                  <button
-                    key={milestone.id}
-                    type="button"
-                    className="milestone-dot absolute top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border transition-transform hover:scale-110"
-                    style={{ left, backgroundColor: dotColor, borderColor: dotBorder }}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      handleEditMilestone(milestone);
+                  <div
+                    key={date}
+                    className="absolute top-0 bottom-0 transition-all duration-200"
+                    style={{
+                      left: lineIndex * dayWidth + dayWidth / 2,
+                      width: isHovered ? 2 : 1,
+                      backgroundColor: lineColor,
+                      opacity: isHovered ? 1 : 0.7,
                     }}
-                    onMouseEnter={() => handleMilestoneHover(milestone.date, color)}
-                    onMouseLeave={handleMilestoneHoverEnd}
                   />
                 );
               })}
             </div>
-          </div>
-        </div>
-      </div>
-      
-      {/* Timeline Body */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* Sidebar - fixed left */}
-        <div 
-          className="flex-shrink-0 overflow-y-auto bg-card border-r border-border scrollbar-thin"
-          style={{ width: SIDEBAR_WIDTH }}
-        >
-          {displayRows.map((row) => (
-            <div 
-              key={row.id}
-              className="flex items-center px-4 border-b border-border hover:bg-timeline-row-hover transition-colors"
-              style={{ height: row.height }}
-            >
-              {row.color && (
-                <div 
-                  className="w-3 h-3 rounded-full mr-3 flex-shrink-0"
-                  style={{ backgroundColor: row.color }}
+            <div className="sticky top-0 z-20 bg-background">
+              <div className="border-b border-border" style={{ width: totalWidth }}>
+                <TimelineHeader
+                  visibleDays={visibleDays}
+                  dayWidth={dayWidth}
+                  viewMode={viewMode}
+                  scrollLeft={scrollLeft}
+                  viewportWidth={viewportWidth}
                 />
-              )}
-              <span className="text-sm font-medium text-foreground truncate">
-                {row.name}
-              </span>
-              <span className="ml-auto text-xs text-muted-foreground">
-                {groupMode === 'assignee' && row.id !== 'unassigned'
-                  ? (assigneeTaskCounts[row.id] ?? row.tasks.length)
-                  : row.tasks.length}
-              </span>
+              </div>
+              <div
+                className="relative border-b border-border bg-timeline-header"
+                style={{ width: totalWidth, height: milestoneRowHeight }}
+                onClick={handleMilestoneRowClick}
+              >
+                {sortedMilestones.map((milestone) => {
+                  const dayIndex = visibleDayIndex.get(milestone.date);
+                  if (dayIndex === undefined) return null;
+                  const project = projectById.get(milestone.projectId);
+                  const color = project?.color ?? '#94a3b8';
+                  const dotColor = hexToRgba(color, 0.45) ?? color;
+                  const dotBorder = hexToRgba(color, 0.8) ?? color;
+                  const offset = milestoneOffsets.get(milestone.id) ?? 0;
+                  const left = dayIndex * dayWidth + dayWidth / 2 + offset;
+
+                  return (
+                    <button
+                      key={milestone.id}
+                      type="button"
+                      className="milestone-dot absolute top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border transition-transform hover:scale-110"
+                      style={{ left, backgroundColor: dotColor, borderColor: dotBorder }}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        handleEditMilestone(milestone);
+                      }}
+                      onMouseEnter={() => handleMilestoneHover(milestone.date, color)}
+                      onMouseLeave={handleMilestoneHoverEnd}
+                    />
+                  );
+                })}
+              </div>
             </div>
-          ))}
-        </div>
-        
-        {/* Grid area */}
-        <div 
-          ref={scrollContainerRef}
-          className={`flex-1 overflow-auto scrollbar-soft ${isDragScrolling ? 'cursor-grabbing' : 'cursor-grab'}`}
-          onScroll={handleScroll}
-          onMouseDown={handleDragStart}
-        >
-          <div style={{ width: totalWidth, minHeight: '100%' }}>
             {displayRows.map((row, rowIndex) => (
               <TimelineRow
                 key={row.id}
@@ -692,9 +718,7 @@ export const TimelineGrid: React.FC<TimelineGridProps> = ({ onCreateTask }) => {
                     visibleDays,
                     dayWidth
                   );
-                  
                   if (!position) return null;
-                  
                   return (
                     <TaskBar
                       key={task.id}
