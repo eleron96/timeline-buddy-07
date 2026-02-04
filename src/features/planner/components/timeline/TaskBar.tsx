@@ -158,7 +158,7 @@ export const TaskBar: React.FC<TaskBarProps> = ({
   const isFinalStyle = isFinalStatus && !isCancelled;
   const bgColor = isFinalStyle ? '#ffffff' : baseBgColor;
   const isDarkBackground = isDarkColor(bgColor);
-  const textColor = isDarkBackground ? '#f8fafc' : '#0f172a';
+  const textColor = isDarkBackground ? '#f8fafc' : '#14181F';
   const priorityBadgeStyle = priorityMeta
     ? {
         backgroundColor: '#ffffff',

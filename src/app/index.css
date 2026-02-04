@@ -47,7 +47,7 @@
     /* Timeline-specific tokens */
     --timeline-grid: 210 20% 92%;
     --timeline-today: 187 70% 42%;
-    --timeline-weekend: 210 15% 95%;
+    --timeline-weekend: 210 12% 90%;
     --timeline-header: 210 15% 97%;
     --timeline-row-hover: 210 20% 96%;
     
@@ -106,7 +106,7 @@
 
     --timeline-grid: 220 15% 18%;
     --timeline-today: 187 70% 50%;
-    --timeline-weekend: 220 15% 14%;
+    --timeline-weekend: 220 15% 12%;
     --timeline-header: 220 15% 15%;
     --timeline-row-hover: 220 15% 16%;
 
@@ -133,9 +133,17 @@
 }
 
 @layer utilities {
+  .timeline-surface {
+    --foreground: 220 15% 20%;
+  }
+
+  .dark .timeline-surface {
+    --foreground: 210 20% 98%;
+  }
   .timeline-grid-line {
     @apply border-l border-timeline-grid;
   }
+
   
   .timeline-today-line {
     @apply border-l-2 border-primary;

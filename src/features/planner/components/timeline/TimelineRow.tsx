@@ -57,7 +57,7 @@ export const TimelineRow: React.FC<TimelineRowProps> = ({
 
   return (
     <div 
-      className="relative border-b border-border"
+      className="relative border-b border-border box-border"
       style={{ height }}
     >
       {/* Grid background */}

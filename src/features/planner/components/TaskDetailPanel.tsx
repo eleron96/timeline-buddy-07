@@ -439,18 +439,18 @@ export const TaskDetailPanel: React.FC = () => {
                       onValueChange={(v) => handleUpdate('statusId', v)}
                       disabled={isReadOnly}
                     >
-                      <SelectTrigger className="h-8 w-full pl-3 pr-2 text-left text-sm">
+                      <SelectTrigger className="h-8 w-full min-w-0 overflow-hidden pl-3 pr-2 text-left text-sm whitespace-nowrap">
                         <SelectValue placeholder="Select status" className="truncate text-left" />
                       </SelectTrigger>
                       <SelectContent>
                         {statuses.map(s => (
                           <SelectItem key={s.id} value={s.id}>
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 min-w-0">
                               <div
                                 className="w-2.5 h-2.5 rounded-full"
                                 style={{ backgroundColor: s.color }}
                               />
-                              {formatStatusLabel(s.name, s.emoji)}
+                              <span className="truncate">{formatStatusLabel(s.name, s.emoji)}</span>
                             </div>
                           </SelectItem>
                         ))}

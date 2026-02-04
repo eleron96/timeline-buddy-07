@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState, useRef, useEffect } from 'react';
+import React, { useCallback, useMemo, useState, useRef, useEffect, useLayoutEffect } from 'react';
 import { flushSync } from 'react-dom';
 import { usePlannerStore } from '@/features/planner/store/plannerStore';
 import { useFilteredAssignees } from '@/features/planner/hooks/useFilteredAssignees';
@@ -68,6 +68,7 @@ export const TimelineGrid: React.FC<TimelineGridProps> = ({ onCreateTask }) => {
   const [scrollLeft, setScrollLeft] = useState(0);
   const [isDragScrolling, setIsDragScrolling] = useState(false);
   const [viewportWidth, setViewportWidth] = useState(0);
+  const [sidebarPad, setSidebarPad] = useState(0);
   const [milestoneDialogOpen, setMilestoneDialogOpen] = useState(false);
   const [milestoneDialogDate, setMilestoneDialogDate] = useState<string | null>(null);
   const [editingMilestone, setEditingMilestone] = useState<Milestone | null>(null);
@@ -396,7 +397,7 @@ export const TimelineGrid: React.FC<TimelineGridProps> = ({ onCreateTask }) => {
     }
     return undefined;
   }, []);
-  
+
   const lastCenteredRef = useRef<{ date: string; viewMode: string } | null>(null);
 
   useEffect(() => {
@@ -490,6 +491,30 @@ export const TimelineGrid: React.FC<TimelineGridProps> = ({ onCreateTask }) => {
     
     return rows;
   }, [filters.assigneeIds.length, filters.hideUnassigned, groupItems, groupMode, rowHeights, tasksByRow]);
+
+  useLayoutEffect(() => {
+    const sidebar = sidebarRef.current;
+    const grid = scrollContainerRef.current;
+    if (!sidebar || !grid) return;
+
+    const updatePad = () => {
+      const sidebarRange = sidebar.scrollHeight - sidebar.clientHeight;
+      const gridRange = grid.scrollHeight - grid.clientHeight;
+      const adjustedSidebarRange = Math.max(0, sidebarRange - sidebarPad);
+      const diff = Math.max(0, gridRange - adjustedSidebarRange);
+      setSidebarPad(diff);
+    };
+
+    updatePad();
+
+    if (typeof ResizeObserver !== 'undefined') {
+      const observer = new ResizeObserver(updatePad);
+      observer.observe(sidebar);
+      observer.observe(grid);
+      return () => observer.disconnect();
+    }
+    return undefined;
+  }, [displayRows, sidebarPad]);
 
   const handleJumpToToday = () => {
     const today = format(new Date(), 'yyyy-MM-dd');
@@ -608,7 +633,7 @@ export const TimelineGrid: React.FC<TimelineGridProps> = ({ onCreateTask }) => {
             {displayRows.map((row) => (
               <div
                 key={row.id}
-                className="flex items-center px-4 border-b border-border hover:bg-timeline-row-hover transition-colors"
+                className="flex items-center px-4 border-b border-border hover:bg-timeline-row-hover transition-colors box-border"
                 style={{ height: row.height }}
               >
                 {row.color && (
@@ -627,6 +652,9 @@ export const TimelineGrid: React.FC<TimelineGridProps> = ({ onCreateTask }) => {
                 </span>
               </div>
             ))}
+            {sidebarPad > 0 && (
+              <div aria-hidden className="w-full" style={{ height: sidebarPad }} />
+            )}
           </div>
         </div>
         <div
