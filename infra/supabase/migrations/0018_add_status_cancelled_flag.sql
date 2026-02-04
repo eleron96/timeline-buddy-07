@@ -1,18 +1,40 @@
-do $$
-begin
-  insert into public.statuses (workspace_id, name, color, is_final)
-  select w.id, 'Отменена', '#ef4444', true
-  from public.workspaces w
-  where not exists (
-    select 1
-    from public.statuses s
-    where s.workspace_id = w.id
-      and (
-        s.name ~ '^🚫'
-        or lower(btrim(regexp_replace(s.name, '^🚫️?\\s*', ''))) in ('отмена', 'отменена', 'отменён', 'отменен', 'cancelled', 'canceled')
-      )
-  );
-end $$;
+alter table public.statuses
+  add column if not exists is_cancelled boolean not null default false;
+
+update public.statuses
+set is_cancelled = true,
+    is_final = false
+where lower(name) in ('отмена', 'отменена', 'отменён', 'отменен', 'cancelled', 'canceled')
+   or emoji = '🚫';
+
+update public.user_workspace_templates
+set statuses = coalesce((
+  select jsonb_agg(
+    jsonb_set(
+      jsonb_set(
+        item,
+        '{is_cancelled}',
+        to_jsonb(cancelled),
+        true
+      ),
+      '{is_final}',
+      to_jsonb(coalesce((item->>'is_final')::boolean, false) and not cancelled),
+      true
+    )
+  )
+  from (
+    select
+      item,
+      case
+        when item ? 'is_cancelled' then coalesce((item->>'is_cancelled')::boolean, false)
+        when lower(item->>'name') in ('отмена', 'отменена', 'отменён', 'отменен', 'cancelled', 'canceled') then true
+        when item->>'emoji' = '🚫' then true
+        else false
+      end as cancelled
+    from jsonb_array_elements(statuses) as item
+  ) s
+), '[]'::jsonb)
+where statuses is not null;
 
 create or replace function public.seed_workspace(workspace_id uuid)
 returns void as $$
@@ -27,22 +49,23 @@ begin
   where user_id = auth.uid();
 
   if coalesce(jsonb_array_length(template_statuses), 0) > 0 then
-    insert into public.statuses (workspace_id, name, color, is_final)
+    insert into public.statuses (workspace_id, name, emoji, color, is_final, is_cancelled)
     select workspace_id,
       trim(name),
+      nullif(emoji, ''),
       coalesce(color, '#94a3b8'),
-      coalesce(is_final, false)
+      coalesce(is_final, false) and not coalesce(is_cancelled, false),
+      coalesce(is_cancelled, false)
     from jsonb_to_recordset(template_statuses)
-      as status_item(name text, color text, is_final boolean)
+      as status_item(name text, emoji text, color text, is_final boolean, is_cancelled boolean)
     where name is not null and length(trim(name)) > 0;
   else
-    insert into public.statuses (workspace_id, name, color, is_final)
+    insert into public.statuses (workspace_id, name, emoji, color, is_final, is_cancelled)
     values
-      (workspace_id, 'To Do', '#94a3b8', false),
-      (workspace_id, 'In Progress', '#3b82f6', false),
-      (workspace_id, 'Review', '#f59e0b', false),
-      (workspace_id, 'Done', '#22c55e', true),
-      (workspace_id, 'Отменена', '#ef4444', true);
+      (workspace_id, 'To Do', '📝', '#94a3b8', false, false),
+      (workspace_id, 'In Progress', '🚧', '#3b82f6', false, false),
+      (workspace_id, 'Done', '✅', '#22c55e', true, false),
+      (workspace_id, 'Отменена', '🚫', '#ef4444', false, true);
   end if;
 
   if coalesce(jsonb_array_length(template_task_types), 0) > 0 then

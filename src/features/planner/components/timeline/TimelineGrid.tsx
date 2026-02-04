@@ -533,8 +533,9 @@ export const TimelineGrid: React.FC<TimelineGridProps> = ({ onCreateTask }) => {
     setMilestoneLine({ date, color, visible: true });
   }, []);
 
-  // Линия остаётся видимой после наведения (не скрываем при mouse leave)
-  const handleMilestoneHoverEnd = useCallback(() => {}, []);
+  const handleMilestoneHoverEnd = useCallback(() => {
+    setMilestoneLine(null);
+  }, []);
 
   const handleCreateTaskAt = useCallback((date: string, rowId: string) => {
     if (!canEdit) return;
@@ -586,6 +587,8 @@ export const TimelineGrid: React.FC<TimelineGridProps> = ({ onCreateTask }) => {
   const milestoneDotRadius = 5;
   const milestoneLineTop = HEADER_HEIGHT + milestoneRowHeight / 2 + milestoneDotRadius;
   const milestoneLineHeight = `calc(100% - ${milestoneLineTop}px)`;
+  const milestoneLineWidth = 3;
+  const milestoneLineHoverWidth = 4;
 
   return (
     <div className={cn(
@@ -649,7 +652,8 @@ export const TimelineGrid: React.FC<TimelineGridProps> = ({ onCreateTask }) => {
                     className="absolute top-0 bottom-0 transition-all duration-200"
                     style={{
                       left: lineIndex * dayWidth + dayWidth / 2,
-                      width: isHovered ? 2 : 1,
+                      transform: 'translateX(-50%)',
+                      width: isHovered ? milestoneLineHoverWidth : milestoneLineWidth,
                       backgroundColor: lineColor,
                       opacity: isHovered ? 1 : 0.7,
                     }}

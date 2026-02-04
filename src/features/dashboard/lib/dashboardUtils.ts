@@ -12,6 +12,7 @@ import {
   DashboardWidget,
   DashboardWidgetData,
 } from '@/features/dashboard/types/dashboard';
+import { formatStatusLabel } from '@/shared/lib/statusLabels';
 
 export const DEFAULT_BAR_PALETTE: DashboardBarPalette = 'pastel-sky';
 
@@ -69,12 +70,20 @@ export const isCancelledStatusName = (name: string) => {
   return value.includes('\u043e\u0442\u043c\u0435\u043d') || value.includes('cancel');
 };
 
+const resolveIsCancelled = (status: DashboardStatus) => (
+  status.isCancelled ?? isCancelledStatusName(status.name)
+);
+
 const buildStatusSets = (statuses: DashboardStatus[]) => {
-  const cancelled = statuses.filter((status) => isCancelledStatusName(status.name)).map((status) => status.id);
-  const closed = statuses
-    .filter((status) => status.isFinal && !isCancelledStatusName(status.name))
+  const cancelled = statuses
+    .filter((status) => resolveIsCancelled(status))
     .map((status) => status.id);
-  const active = statuses.filter((status) => !status.isFinal).map((status) => status.id);
+  const closed = statuses
+    .filter((status) => status.isFinal && !resolveIsCancelled(status))
+    .map((status) => status.id);
+  const active = statuses
+    .filter((status) => !status.isFinal && !resolveIsCancelled(status))
+    .map((status) => status.id);
   const all = statuses.map((status) => status.id);
 
   return {
@@ -156,6 +165,7 @@ export const buildWidgetData = (
   statuses: DashboardStatus[],
 ): DashboardWidgetData => {
   const groupBy = widget.groupBy ?? 'none';
+  const statusById = new Map(statuses.map((status) => [status.id, status]));
   const statusFilter = statuses.length > 0
     ? resolveStatusFilter(widget, statuses)
     : new Set(rows.map((row) => row.status_id));
@@ -176,7 +186,10 @@ export const buildWidgetData = (
   } else if (groupBy === 'status') {
     filtered.forEach((row) => {
       const key = row.status_id;
-      const name = row.status_name;
+      const status = statusById.get(key);
+      const name = status
+        ? formatStatusLabel(status.name, status.emoji)
+        : row.status_name;
       const existing = seriesMap.get(key) ?? { name, value: 0 };
       existing.value += row.total;
       seriesMap.set(key, existing);
@@ -205,6 +218,7 @@ export const buildTimeSeriesData = (
   statuses: DashboardStatus[],
 ): DashboardWidgetData => {
   const groupBy = widget.groupBy ?? 'none';
+  const statusById = new Map(statuses.map((status) => [status.id, status]));
   const statusFilter = statuses.length > 0
     ? resolveStatusFilter(widget, statuses)
     : new Set(rows.map((row) => row.status_id));
@@ -232,7 +246,10 @@ export const buildTimeSeriesData = (
       label = row.assignee_name ?? 'Unassigned';
     } else if (groupBy === 'status') {
       rawKey = row.status_id;
-      label = row.status_name;
+      const status = statusById.get(row.status_id);
+      label = status
+        ? formatStatusLabel(status.name, status.emoji)
+        : row.status_name;
     } else if (groupBy === 'project') {
       rawKey = row.project_id ?? 'no-project';
       label = row.project_name ?? 'No project';

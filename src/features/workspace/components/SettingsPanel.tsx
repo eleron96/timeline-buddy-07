@@ -4,8 +4,8 @@ import { useAuthStore } from '@/features/auth/store/authStore';
 import { Button } from '@/shared/ui/button';
 import { Input } from '@/shared/ui/input';
 import { Label } from '@/shared/ui/label';
-import { Switch } from '@/shared/ui/switch';
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/shared/ui/sheet';
+import { Checkbox } from '@/shared/ui/checkbox';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/shared/ui/dialog';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/shared/ui/accordion';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/shared/ui/tabs';
 import {
@@ -18,9 +18,13 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/shared/ui/alert-dialog';
-import { Plus, Trash2, Settings2 } from 'lucide-react';
+import { Plus, Trash2, Settings2, CheckCircle2, Ban } from 'lucide-react';
 import { supabase } from '@/shared/lib/supabaseClient';
 import { ColorPicker } from '@/shared/ui/color-picker';
+import { EmojiPicker } from '@/shared/ui/emoji-picker';
+import { splitStatusLabel, stripStatusEmoji } from '@/shared/lib/statusLabels';
+import { Textarea } from '@/shared/ui/textarea';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/shared/ui/tooltip';
 
 interface SettingsPanelProps {
   open: boolean;
@@ -33,6 +37,34 @@ const SectionCard: React.FC<{ title?: string; children: React.ReactNode }> = ({ 
     {children}
   </div>
 );
+
+const autoResize = (element: HTMLTextAreaElement | null) => {
+  if (!element) return;
+  element.style.height = 'auto';
+  element.style.height = `${element.scrollHeight}px`;
+};
+
+const StatusNameInput: React.FC<{
+  value: string;
+  onChange: (next: string) => void;
+}> = ({ value, onChange }) => {
+  const ref = React.useRef<HTMLTextAreaElement | null>(null);
+
+  React.useEffect(() => {
+    autoResize(ref.current);
+  }, [value]);
+
+  return (
+    <Textarea
+      ref={ref}
+      value={value}
+      rows={1}
+      onChange={(e) => onChange(e.target.value)}
+      onInput={(e) => autoResize(e.currentTarget)}
+      className="flex-1 min-w-0 min-h-8 h-8 resize-none leading-tight py-1 overflow-hidden"
+    />
+  );
+};
 
 export const SettingsPanel: React.FC<SettingsPanelProps> = ({ open, onOpenChange }) => {
   const {
@@ -52,6 +84,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ open, onOpenChange
     deleteWorkspace,
   } = useAuthStore();
 
+  const [newStatusEmoji, setNewStatusEmoji] = useState('');
   const [newStatusName, setNewStatusName] = useState('');
   const [newStatusColor, setNewStatusColor] = useState('#3b82f6');
 
@@ -71,6 +104,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ open, onOpenChange
   const [templateApplying, setTemplateApplying] = useState(false);
   const [templateApplied, setTemplateApplied] = useState(false);
   const [deleteConfirmValue, setDeleteConfirmValue] = useState('');
+
 
   useEffect(() => {
     if (!open) return;
@@ -92,8 +126,15 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ open, onOpenChange
 
   const handleAddStatus = () => {
     if (!newStatusName.trim()) return;
-    addStatus({ name: newStatusName.trim(), color: newStatusColor, isFinal: false });
+    addStatus({
+      name: newStatusName.trim(),
+      emoji: newStatusEmoji.trim() || null,
+      color: newStatusColor,
+      isFinal: false,
+      isCancelled: false,
+    });
     setNewStatusName('');
+    setNewStatusEmoji('');
   };
 
   const handleAddType = () => {
@@ -168,18 +209,36 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ open, onOpenChange
       return;
     }
 
-    const templateStatuses = (data?.statuses as Array<{ name: string; color: string; is_final?: boolean }>) ?? [];
+    const templateStatuses = (data?.statuses as Array<{
+      name: string;
+      color: string;
+      emoji?: string | null;
+      is_final?: boolean;
+      is_cancelled?: boolean;
+    }>) ?? [];
     const templateTypes = (data?.task_types as Array<{ name: string; icon?: string | null }>) ?? [];
     const templateTags = (data?.tags as Array<{ name: string; color: string }>) ?? [];
 
-    const statusNames = new Set(statuses.map((status) => status.name.trim().toLowerCase()));
+    const statusNames = new Set(statuses.map((status) => stripStatusEmoji(status.name).trim().toLowerCase()));
     const typeNames = new Set(taskTypes.map((type) => type.name.trim().toLowerCase()));
     const tagNames = new Set(tags.map((tag) => tag.name.trim().toLowerCase()));
 
-    const newStatuses = templateStatuses.filter((status) => {
-      const name = status.name?.trim().toLowerCase();
-      return name && !statusNames.has(name);
-    });
+    const newStatuses = templateStatuses
+      .map((status) => {
+        const { name: cleanedName, emoji: inlineEmoji } = splitStatusLabel(status.name ?? '');
+        const explicitEmoji = typeof status.emoji === 'string' ? status.emoji.trim() : status.emoji;
+        return {
+          ...status,
+          name: cleanedName,
+          emoji: explicitEmoji || inlineEmoji || null,
+          is_cancelled: Boolean(status.is_cancelled),
+          is_final: Boolean(status.is_final),
+        };
+      })
+      .filter((status) => {
+        const name = status.name?.trim().toLowerCase();
+        return name && !statusNames.has(name);
+      });
     const newTypes = templateTypes.filter((type) => {
       const name = type.name?.trim().toLowerCase();
       return name && !typeNames.has(name);
@@ -196,8 +255,10 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ open, onOpenChange
           .insert(newStatuses.map((status) => ({
             workspace_id: workspaceId,
             name: status.name.trim(),
+            emoji: status.emoji ?? null,
             color: status.color ?? '#94a3b8',
-            is_final: Boolean(status.is_final),
+            is_final: Boolean(status.is_final) && !Boolean(status.is_cancelled),
+            is_cancelled: Boolean(status.is_cancelled),
           })));
         if (error) throw error;
       }
@@ -236,14 +297,14 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ open, onOpenChange
 
   return (
     <>
-      <Sheet open={open} onOpenChange={onOpenChange}>
-        <SheetContent className="w-[500px] sm:w-[600px] overflow-y-auto flex flex-col">
-          <SheetHeader>
-            <SheetTitle className="flex items-center gap-2">
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="max-w-[980px] w-[90vw] sm:w-[840px] md:w-[980px] max-h-[90vh] overflow-y-auto flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
               <Settings2 className="w-5 h-5" />
               Workspace settings
-            </SheetTitle>
-          </SheetHeader>
+            </DialogTitle>
+          </DialogHeader>
 
           <Tabs defaultValue="general" className="flex-1 flex flex-col mt-4">
             <TabsList className="flex flex-wrap w-full h-auto items-start justify-start gap-2 mb-4">
@@ -261,7 +322,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ open, onOpenChange
                         <AccordionTrigger className="py-0 hover:no-underline">
                           <span className="text-sm font-semibold">Access</span>
                         </AccordionTrigger>
-                        <AccordionContent>
+                        <AccordionContent className="pt-1">
                           <p className="text-sm text-muted-foreground">
                             You have view access and cannot edit this workspace.
                           </p>
@@ -275,7 +336,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ open, onOpenChange
                       <AccordionTrigger className="py-0 hover:no-underline">
                         <span className="text-sm font-semibold">Workspace name</span>
                       </AccordionTrigger>
-                      <AccordionContent>
+                      <AccordionContent className="pt-1">
                         <div className="space-y-2">
                           <Label htmlFor="workspace-name">Workspace name</Label>
                           <Input
@@ -303,7 +364,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ open, onOpenChange
                       <AccordionTrigger className="py-0 hover:no-underline">
                         <span className="text-sm font-semibold">Template</span>
                       </AccordionTrigger>
-                      <AccordionContent>
+                      <AccordionContent className="pt-1">
                         <div className="space-y-2">
                           <p className="text-xs text-muted-foreground">
                             Apply your saved template to this workspace (adds missing items by name).
@@ -331,7 +392,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ open, onOpenChange
                       <AccordionTrigger className="py-0 text-destructive hover:no-underline">
                         <span className="text-sm font-semibold">Danger zone</span>
                       </AccordionTrigger>
-                      <AccordionContent>
+                      <AccordionContent className="pt-1">
                         <div className="space-y-3">
                           <p className="text-xs text-muted-foreground">
                             Deleting a workspace is permanent. Type the workspace name to enable deletion.
@@ -368,45 +429,110 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ open, onOpenChange
                       <AccordionTrigger className="py-0 hover:no-underline">
                         <span className="text-sm font-semibold">Statuses</span>
                       </AccordionTrigger>
-                      <AccordionContent>
+                      <AccordionContent className="pt-1">
                         <div className="space-y-3">
-                          <div className="flex gap-2">
+                          <div className="flex items-center gap-2">
+                            <EmojiPicker
+                              value={newStatusEmoji}
+                              onChange={setNewStatusEmoji}
+                              className="w-16 text-center"
+                              onKeyDown={(e) => e.key === 'Enter' && handleAddStatus()}
+                            />
                             <Input
                               placeholder="New status name..."
                               value={newStatusName}
                               onChange={(e) => setNewStatusName(e.target.value)}
                               onKeyDown={(e) => e.key === 'Enter' && handleAddStatus()}
                             />
+                            <ColorPicker value={newStatusColor} onChange={setNewStatusColor} />
                             <Button onClick={handleAddStatus} size="icon">
                               <Plus className="w-4 h-4" />
                             </Button>
                           </div>
 
                           <div className="flex items-center gap-2 px-2 text-xs text-muted-foreground">
-                            <span className="w-6" aria-hidden="true" />
+                            <span className="w-16">Emoji</span>
                             <span className="flex-1">Status</span>
-                            <span className="w-11 text-right">Final</span>
+                            <span className="w-10 text-right">Color</span>
+                            <div className="flex w-10 justify-end">
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <span className="inline-flex h-5 w-5 items-center justify-center text-muted-foreground">
+                                    <CheckCircle2 className="h-4 w-4" />
+                                  </span>
+                                </TooltipTrigger>
+                                <TooltipContent>Final</TooltipContent>
+                              </Tooltip>
+                            </div>
+                            <div className="flex w-10 justify-end">
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <span className="inline-flex h-5 w-5 items-center justify-center text-muted-foreground">
+                                    <Ban className="h-4 w-4" />
+                                  </span>
+                                </TooltipTrigger>
+                                <TooltipContent>Cancelled</TooltipContent>
+                              </Tooltip>
+                            </div>
                             <span className="w-8" aria-hidden="true" />
                           </div>
 
                           <div className="space-y-2">
                             {statuses.map((status) => (
-                              <div key={status.id} className="flex items-center gap-2 p-2 bg-muted/50 rounded-lg">
+                              <div key={status.id} className="flex items-start gap-2 p-2 bg-muted/50 rounded-lg">
+                                <EmojiPicker
+                                  value={status.emoji ?? ''}
+                                  onChange={(emoji) => updateStatus(status.id, { emoji })}
+                                  className="w-16 h-8 text-center"
+                                />
+                                <StatusNameInput
+                                  value={status.name}
+                                  onChange={(next) => updateStatus(status.id, { name: next })}
+                                />
                                 <ColorPicker
                                   value={status.color}
                                   onChange={(color) => updateStatus(status.id, { color })}
                                 />
-                                <Input
-                                  value={status.name}
-                                  onChange={(e) => updateStatus(status.id, { name: e.target.value })}
-                                  className="flex-1 h-8"
-                                />
-                                <Switch
-                                  checked={status.isFinal}
-                                  onCheckedChange={(isFinal) => updateStatus(status.id, { isFinal })}
-                                  aria-label="Final status"
-                                  title="Final status"
-                                />
+                                <label className="flex w-10 items-center justify-end">
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <Checkbox
+                                        checked={status.isFinal}
+                                        onCheckedChange={(checked) => {
+                                          const nextFinal = checked === true;
+                                          updateStatus(
+                                            status.id,
+                                            nextFinal
+                                              ? { isFinal: true, isCancelled: false }
+                                              : { isFinal: false },
+                                          );
+                                        }}
+                                        aria-label="Final status"
+                                      />
+                                    </TooltipTrigger>
+                                    <TooltipContent>Final</TooltipContent>
+                                  </Tooltip>
+                                </label>
+                                <label className="flex w-10 items-center justify-end">
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <Checkbox
+                                        checked={status.isCancelled}
+                                        onCheckedChange={(checked) => {
+                                          const nextCancelled = checked === true;
+                                          updateStatus(
+                                            status.id,
+                                            nextCancelled
+                                              ? { isCancelled: true, isFinal: false }
+                                              : { isCancelled: false },
+                                          );
+                                        }}
+                                        aria-label="Cancelled status"
+                                      />
+                                    </TooltipTrigger>
+                                    <TooltipContent>Cancelled</TooltipContent>
+                                  </Tooltip>
+                                </label>
                                 <Button
                                   variant="ghost"
                                   size="icon"
@@ -428,7 +554,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ open, onOpenChange
                       <AccordionTrigger className="py-0 hover:no-underline">
                         <span className="text-sm font-semibold">Task types</span>
                       </AccordionTrigger>
-                      <AccordionContent>
+                      <AccordionContent className="pt-1">
                         <div className="space-y-3">
                           <div className="flex gap-2">
                             <Input
@@ -471,7 +597,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ open, onOpenChange
                       <AccordionTrigger className="py-0 hover:no-underline">
                         <span className="text-sm font-semibold">Tags</span>
                       </AccordionTrigger>
-                      <AccordionContent>
+                      <AccordionContent className="pt-1">
                         <div className="space-y-3">
                           <div className="flex gap-2">
                             <Input
@@ -516,8 +642,8 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ open, onOpenChange
               </TabsContent>
             </div>
           </Tabs>
-        </SheetContent>
-      </Sheet>
+        </DialogContent>
+      </Dialog>
 
       <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <AlertDialogContent>

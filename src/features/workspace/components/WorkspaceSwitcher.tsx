@@ -17,9 +17,11 @@ import { Label } from '@/shared/ui/label';
 import { useAuthStore } from '@/features/auth/store/authStore';
 import { usePlannerStore } from '@/features/planner/store/plannerStore';
 import { ColorPicker } from '@/shared/ui/color-picker';
+import { EmojiPicker } from '@/shared/ui/emoji-picker';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/shared/ui/accordion';
-import { Switch } from '@/shared/ui/switch';
+import { Checkbox } from '@/shared/ui/checkbox';
 import { supabase } from '@/shared/lib/supabaseClient';
+import { splitStatusLabel } from '@/shared/lib/statusLabels';
 
 export const WorkspaceSwitcher: React.FC = () => {
   const {
@@ -35,13 +37,20 @@ export const WorkspaceSwitcher: React.FC = () => {
   const [workspaceName, setWorkspaceName] = useState('');
   const [createError, setCreateError] = useState('');
   const [creating, setCreating] = useState(false);
-  const [templateStatuses, setTemplateStatuses] = useState<Array<{ name: string; color: string; is_final: boolean }>>([]);
+  const [templateStatuses, setTemplateStatuses] = useState<Array<{
+    name: string;
+    emoji: string | null;
+    color: string;
+    is_final: boolean;
+    is_cancelled: boolean;
+  }>>([]);
   const [templateTypes, setTemplateTypes] = useState<Array<{ name: string; icon: string | null }>>([]);
   const [templateTags, setTemplateTags] = useState<Array<{ name: string; color: string }>>([]);
   const [templateLoading, setTemplateLoading] = useState(false);
   const [templateError, setTemplateError] = useState('');
   const [templateSaved, setTemplateSaved] = useState(false);
   const [newTemplateStatusName, setNewTemplateStatusName] = useState('');
+  const [newTemplateStatusEmoji, setNewTemplateStatusEmoji] = useState('');
   const [newTemplateStatusColor, setNewTemplateStatusColor] = useState('#3b82f6');
   const [newTemplateTypeName, setNewTemplateTypeName] = useState('');
   const [newTemplateTagName, setNewTemplateTagName] = useState('');
@@ -76,11 +85,23 @@ export const WorkspaceSwitcher: React.FC = () => {
         return;
       }
 
-      setTemplateStatuses((data?.statuses as Array<{ name: string; color: string; is_final?: boolean }>)?.map((item) => ({
-        name: item.name ?? '',
-        color: item.color ?? '#94a3b8',
-        is_final: Boolean(item.is_final),
-      })) ?? []);
+      setTemplateStatuses((data?.statuses as Array<{
+        name: string;
+        emoji?: string | null;
+        color: string;
+        is_final?: boolean;
+        is_cancelled?: boolean;
+      }>)?.map((item) => {
+        const { name: cleanedName, emoji: inlineEmoji } = splitStatusLabel(item.name ?? '');
+        const explicitEmoji = typeof item.emoji === 'string' ? item.emoji.trim() : item.emoji;
+        return {
+          name: cleanedName,
+          emoji: explicitEmoji || inlineEmoji || null,
+          color: item.color ?? '#94a3b8',
+          is_final: Boolean(item.is_final),
+          is_cancelled: Boolean(item.is_cancelled),
+        };
+      }) ?? []);
       setTemplateTypes((data?.task_types as Array<{ name: string; icon?: string | null }>)?.map((item) => ({
         name: item.name ?? '',
         icon: item.icon ?? null,
@@ -121,8 +142,10 @@ export const WorkspaceSwitcher: React.FC = () => {
   const handleCopyWorkspaceToTemplate = () => {
     setTemplateStatuses(statuses.map((status) => ({
       name: status.name,
+      emoji: status.emoji ?? null,
       color: status.color,
       is_final: status.isFinal,
+      is_cancelled: status.isCancelled,
     })));
     setTemplateTypes(taskTypes.map((type) => ({
       name: type.name,
@@ -135,7 +158,7 @@ export const WorkspaceSwitcher: React.FC = () => {
     setTemplateSaved(false);
   };
 
-  const updateTemplateStatus = (index: number, updates: Partial<{ name: string; color: string; is_final: boolean }>) => {
+  const updateTemplateStatus = (index: number, updates: Partial<{ name: string; emoji: string | null; color: string; is_final: boolean; is_cancelled: boolean }>) => {
     setTemplateStatuses((current) => current.map((item, i) => (i === index ? { ...item, ...updates } : item)));
     setTemplateSaved(false);
   };
@@ -147,6 +170,23 @@ export const WorkspaceSwitcher: React.FC = () => {
 
   const updateTemplateTag = (index: number, updates: Partial<{ name: string; color: string }>) => {
     setTemplateTags((current) => current.map((item, i) => (i === index ? { ...item, ...updates } : item)));
+    setTemplateSaved(false);
+  };
+
+  const handleAddTemplateStatus = () => {
+    if (!newTemplateStatusName.trim()) return;
+    setTemplateStatuses((current) => [
+      ...current,
+      {
+        name: newTemplateStatusName.trim(),
+        emoji: newTemplateStatusEmoji.trim() || null,
+        color: newTemplateStatusColor,
+        is_final: false,
+        is_cancelled: false,
+      },
+    ]);
+    setNewTemplateStatusName('');
+    setNewTemplateStatusEmoji('');
     setTemplateSaved(false);
   };
 
@@ -265,6 +305,12 @@ export const WorkspaceSwitcher: React.FC = () => {
                     <div className="space-y-3">
                       <h4 className="text-sm font-semibold">Statuses</h4>
                       <div className="flex gap-2">
+                        <EmojiPicker
+                          value={newTemplateStatusEmoji}
+                          onChange={setNewTemplateStatusEmoji}
+                          className="w-16 text-center"
+                          onKeyDown={(e) => e.key === 'Enter' && handleAddTemplateStatus()}
+                        />
                         <Input
                           placeholder="New status name..."
                           value={newTemplateStatusName}
@@ -274,15 +320,7 @@ export const WorkspaceSwitcher: React.FC = () => {
                         <Button
                           type="button"
                           size="icon"
-                          onClick={() => {
-                            if (!newTemplateStatusName.trim()) return;
-                            setTemplateStatuses((current) => [
-                              ...current,
-                              { name: newTemplateStatusName.trim(), color: newTemplateStatusColor, is_final: false },
-                            ]);
-                            setNewTemplateStatusName('');
-                            setTemplateSaved(false);
-                          }}
+                          onClick={handleAddTemplateStatus}
                         >
                           <Plus className="w-4 h-4" />
                         </Button>
@@ -290,24 +328,51 @@ export const WorkspaceSwitcher: React.FC = () => {
                       <div className="space-y-2">
                         {templateStatuses.map((status, index) => (
                           <div key={`${status.name}-${index}`} className="flex items-center gap-2 rounded-lg bg-muted/50 p-2">
-                            <ColorPicker
-                              value={status.color}
-                              onChange={(color) => updateTemplateStatus(index, { color })}
+                            <EmojiPicker
+                              value={status.emoji ?? ''}
+                              onChange={(emoji) => updateTemplateStatus(index, { emoji })}
+                              className="w-16 h-8 text-center"
                             />
                             <Input
                               value={status.name}
                               onChange={(e) => updateTemplateStatus(index, { name: e.target.value })}
                               className="flex-1 h-8"
                             />
-                            <div className="flex items-center gap-1">
-                              <Switch
-                                id={`template-final-${index}`}
-                                checked={status.is_final}
-                                onCheckedChange={(isFinal) => updateTemplateStatus(index, { is_final: isFinal })}
-                              />
-                              <Label htmlFor={`template-final-${index}`} className="text-xs text-muted-foreground">
+                            <ColorPicker
+                              value={status.color}
+                              onChange={(color) => updateTemplateStatus(index, { color })}
+                            />
+                            <div className="flex items-center gap-3">
+                              <label className="flex items-center gap-1 text-xs text-muted-foreground">
+                                <Checkbox
+                                  checked={status.is_final}
+                                  onCheckedChange={(checked) => {
+                                    const nextFinal = checked === true;
+                                    updateTemplateStatus(
+                                      index,
+                                      nextFinal
+                                        ? { is_final: true, is_cancelled: false }
+                                        : { is_final: false },
+                                    );
+                                  }}
+                                />
                                 Final
-                              </Label>
+                              </label>
+                              <label className="flex items-center gap-1 text-xs text-muted-foreground">
+                                <Checkbox
+                                  checked={status.is_cancelled}
+                                  onCheckedChange={(checked) => {
+                                    const nextCancelled = checked === true;
+                                    updateTemplateStatus(
+                                      index,
+                                      nextCancelled
+                                        ? { is_cancelled: true, is_final: false }
+                                        : { is_cancelled: false },
+                                    );
+                                  }}
+                                />
+                                Cancelled
+                              </label>
                             </div>
                             <Button
                               type="button"
@@ -444,7 +509,6 @@ export const WorkspaceSwitcher: React.FC = () => {
           </form>
         </DialogContent>
       </Dialog>
-
     </>
   );
 };

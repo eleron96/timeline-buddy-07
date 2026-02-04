@@ -245,7 +245,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({ collapsed, onToggle })
                 className="w-2.5 h-2.5 rounded-full flex-shrink-0"
                 style={{ backgroundColor: status.color }}
               />
-              <span className="text-sm truncate">{formatStatusLabel(status.name)}</span>
+              <span className="text-sm truncate">{formatStatusLabel(status.name, status.emoji)}</span>
             </label>
           ))}
         </FilterSection>

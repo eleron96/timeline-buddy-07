@@ -464,7 +464,9 @@ const MembersPage = () => {
       return;
     }
     const targetIds = statuses
-      .filter((status) => (mode === 'done' ? status.isFinal : !status.isFinal))
+      .filter((status) => (mode === 'done'
+        ? (status.isFinal || status.isCancelled)
+        : (!status.isFinal && !status.isCancelled)))
       .map((status) => status.id);
     setStatusFilterIds(targetIds);
     setPageIndex(1);
@@ -693,7 +695,7 @@ const MembersPage = () => {
                                 onCheckedChange={() => handleToggleStatus(status.id)}
                               />
                               <span className="inline-flex h-2 w-2 rounded-full" style={{ backgroundColor: status.color }} />
-                              <span className="text-sm truncate">{formatStatusLabel(status.name)}</span>
+                              <span className="text-sm truncate">{formatStatusLabel(status.name, status.emoji)}</span>
                             </label>
                           ))}
                         </div>
@@ -855,7 +857,7 @@ const MembersPage = () => {
                                       className="inline-flex h-2 w-2 rounded-full"
                                       style={{ backgroundColor: status?.color ?? '#94a3b8' }}
                                     />
-                                    <span>{status ? formatStatusLabel(status.name) : 'Unknown'}</span>
+                                    <span>{status ? formatStatusLabel(status.name, status.emoji) : 'Unknown'}</span>
                                   </div>
                                 </TableCell>
                                 <TableCell>
@@ -948,7 +950,10 @@ const MembersPage = () => {
                       style={{ backgroundColor: statusById.get(selectedTask.statusId)?.color ?? '#94a3b8' }}
                     />
                     <span>{statusById.get(selectedTask.statusId)
-                      ? formatStatusLabel(statusById.get(selectedTask.statusId)!.name)
+                      ? formatStatusLabel(
+                        statusById.get(selectedTask.statusId)!.name,
+                        statusById.get(selectedTask.statusId)!.emoji,
+                      )
                       : 'Unknown'}
                     </span>
                   </div>

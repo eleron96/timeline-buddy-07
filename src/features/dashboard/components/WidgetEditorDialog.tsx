@@ -272,7 +272,12 @@ export const WidgetEditorDialog: React.FC<WidgetEditorDialogProps> = ({
 
   const getRuleOptions = (field: DashboardFilterField) => {
     if (field === 'project') return orderedProjects;
-    if (field === 'status') return orderedStatuses.map((status) => ({ id: status.id, name: formatStatusLabel(status.name) }));
+    if (field === 'status') {
+      return orderedStatuses.map((status) => ({
+        id: status.id,
+        name: formatStatusLabel(status.name, status.emoji),
+      }));
+    }
     return [
       { id: UNASSIGNED_FILTER_VALUE, name: 'Unassigned' },
       ...orderedAssignees,
@@ -495,7 +500,7 @@ export const WidgetEditorDialog: React.FC<WidgetEditorDialogProps> = ({
                       checked={statusIds.includes(status.id)}
                       onCheckedChange={() => toggleStatus(status.id)}
                     />
-                    <span className="truncate">{formatStatusLabel(status.name)}</span>
+                    <span className="truncate">{formatStatusLabel(status.name, status.emoji)}</span>
                   </label>
                 ))}
               </div>

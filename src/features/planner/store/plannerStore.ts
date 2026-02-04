@@ -13,6 +13,7 @@ import {
 } from 'date-fns';
 import { supabase } from '@/shared/lib/supabaseClient';
 import { reserveAdminEmail } from '@/shared/lib/adminConfig';
+import { getStatusEmoji, splitStatusLabel } from '@/shared/lib/statusLabels';
 import {
   Task,
   Milestone,
@@ -65,8 +66,10 @@ type StatusRow = {
   id: string;
   workspace_id: string;
   name: string;
+  emoji?: string | null;
   color: string;
   is_final: boolean;
+  is_cancelled?: boolean | null;
 };
 
 type TaskTypeRow = {
@@ -246,12 +249,24 @@ const mapAssigneeRow = (row: AssigneeRow): Assignee => ({
   isActive: row.is_active ?? true,
 });
 
-const mapStatusRow = (row: StatusRow): Status => ({
-  id: row.id,
-  name: row.name,
-  color: row.color,
-  isFinal: row.is_final,
-});
+const mapStatusRow = (row: StatusRow): Status => {
+  const { name: cleanedName, emoji: inlineEmoji } = splitStatusLabel(row.name);
+  const hasEmojiField = Object.prototype.hasOwnProperty.call(row, 'emoji');
+  const explicitEmoji = typeof row.emoji === 'string' ? row.emoji.trim() : row.emoji;
+  const resolvedEmoji = hasEmojiField
+    ? (explicitEmoji || null)
+    : (inlineEmoji ?? getStatusEmoji(cleanedName));
+
+  const isCancelled = Boolean(row.is_cancelled);
+  return {
+    id: row.id,
+    name: cleanedName,
+    emoji: resolvedEmoji ?? null,
+    color: row.color,
+    isFinal: Boolean(row.is_final) && !isCancelled,
+    isCancelled,
+  };
+};
 
 const mapTaskTypeRow = (row: TaskTypeRow): TaskType => ({
   id: row.id,
@@ -1030,13 +1045,25 @@ export const usePlannerStore = create<PlannerStore>()(
         const workspaceId = get().workspaceId;
         if (!workspaceId) return;
 
+        const { name: cleanedName } = splitStatusLabel(status.name);
+        const normalizedName = cleanedName.trim().toLowerCase();
+        if (!normalizedName) return;
+        const hasDuplicate = get().statuses.some(
+          (item) => item.name.trim().toLowerCase() === normalizedName,
+        );
+        if (hasDuplicate) return;
+        const emoji = typeof status.emoji === 'string' ? status.emoji.trim() : status.emoji;
+        const isCancelled = Boolean(status.isCancelled);
+        const isFinal = Boolean(status.isFinal) && !isCancelled;
         const { data, error } = await supabase
           .from('statuses')
           .insert({
             workspace_id: workspaceId,
-            name: status.name,
+            name: cleanedName,
+            emoji: emoji || null,
             color: status.color,
-            is_final: status.isFinal,
+            is_final: isFinal,
+            is_cancelled: isCancelled,
           })
           .select('*')
           .single();
@@ -1054,9 +1081,29 @@ export const usePlannerStore = create<PlannerStore>()(
         if (!workspaceId) return;
 
         const payload: Record<string, unknown> = {};
-        if ('name' in updates) payload.name = updates.name;
+        if ('name' in updates) {
+          const { name: cleanedName } = splitStatusLabel(updates.name ?? '');
+          payload.name = cleanedName;
+        }
+        if ('emoji' in updates) {
+          const emoji = typeof updates.emoji === 'string' ? updates.emoji.trim() : updates.emoji;
+          payload.emoji = emoji || null;
+        }
         if ('color' in updates) payload.color = updates.color;
-        if ('isFinal' in updates) payload.is_final = updates.isFinal;
+        if ('isFinal' in updates) {
+          const isFinal = Boolean(updates.isFinal);
+          payload.is_final = isFinal;
+          if (isFinal) {
+            payload.is_cancelled = false;
+          }
+        }
+        if ('isCancelled' in updates) {
+          const isCancelled = Boolean(updates.isCancelled);
+          payload.is_cancelled = isCancelled;
+          if (isCancelled) {
+            payload.is_final = false;
+          }
+        }
         if (Object.keys(payload).length === 0) return;
 
         const { data, error } = await supabase

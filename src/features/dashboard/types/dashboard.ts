@@ -76,7 +76,9 @@ export type DashboardLayouts = Record<string, DashboardLayoutItem[]>;
 export type DashboardStatus = {
   id: string;
   name: string;
+  emoji: string | null;
   isFinal: boolean;
+  isCancelled: boolean;
   color: string;
 };
 

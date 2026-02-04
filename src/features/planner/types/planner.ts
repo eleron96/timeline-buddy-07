@@ -33,8 +33,10 @@ export interface Assignee {
 export interface Status {
   id: string;
   name: string;
+  emoji: string | null;
   color: string; // hex
   isFinal: boolean;
+  isCancelled: boolean;
 }
 
 export interface TaskType {

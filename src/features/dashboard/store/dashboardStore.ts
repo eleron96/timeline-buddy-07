@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { supabase } from '@/shared/lib/supabaseClient';
 import { getAdminUserId } from '@/shared/lib/adminConfig';
+import { getStatusEmoji, splitStatusLabel } from '@/shared/lib/statusLabels';
 import {
   DashboardLayouts,
   DashboardLayoutItem,
@@ -508,7 +509,7 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
     const [statusesRes, projectsRes, assigneesRes] = await Promise.all([
       supabase
         .from('statuses')
-        .select('id, name, color, is_final')
+        .select('id, name, emoji, color, is_final, is_cancelled')
         .eq('workspace_id', workspaceId)
         .order('created_at', { ascending: true }),
       supabase
@@ -534,12 +535,23 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
     }
 
     const adminUserId = await getAdminUserId();
-    const statuses = (statusesRes.data ?? []).map((row) => ({
-      id: row.id as string,
-      name: row.name as string,
-      color: row.color as string,
-      isFinal: Boolean(row.is_final),
-    }));
+    const statuses = (statusesRes.data ?? []).map((row) => {
+      const { name: cleanedName, emoji: inlineEmoji } = splitStatusLabel(row.name as string);
+      const hasEmojiField = Object.prototype.hasOwnProperty.call(row, 'emoji');
+      const explicitEmoji = typeof row.emoji === 'string' ? row.emoji.trim() : row.emoji;
+      const resolvedEmoji = hasEmojiField
+        ? (explicitEmoji || null)
+        : (inlineEmoji ?? getStatusEmoji(cleanedName));
+      const isCancelled = Boolean(row.is_cancelled);
+      return {
+        id: row.id as string,
+        name: cleanedName,
+        emoji: resolvedEmoji ?? null,
+        color: row.color as string,
+        isFinal: Boolean(row.is_final) && !isCancelled,
+        isCancelled,
+      };
+    });
     const projects = (projectsRes.data ?? []).map((row) => ({
       id: row.id as string,
       name: row.name as string,

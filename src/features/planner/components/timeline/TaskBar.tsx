@@ -4,7 +4,7 @@ import { usePlannerStore } from '@/features/planner/store/plannerStore';
 import { useFilteredAssignees } from '@/features/planner/hooks/useFilteredAssignees';
 import { Task, TaskPriority } from '@/features/planner/types/planner';
 import { cn } from '@/shared/lib/classNames';
-import { formatStatusLabel } from '@/shared/lib/statusLabels';
+import { formatStatusLabel, stripStatusEmoji } from '@/shared/lib/statusLabels';
 import { calculateNewDates, calculateResizedDates, formatDateRange, TASK_HEIGHT, TASK_GAP } from '@/features/planner/lib/dateUtils';
 import { Ban, RotateCw } from 'lucide-react';
 import {
@@ -144,7 +144,8 @@ export const TaskBar: React.FC<TaskBarProps> = ({
   const isHighlighted = highlightedTaskId === task.id;
   const priorityMeta = task.priority ? priorityStyles[task.priority] : null;
   const isCancelled = status
-    ? ['отменена', 'cancelled', 'canceled'].includes(status.name.trim().toLowerCase())
+    ? (status.isCancelled
+      ?? ['отменена', 'cancelled', 'canceled'].includes(stripStatusEmoji(status.name).trim().toLowerCase()))
     : false;
   const isRepeating = Boolean(task.repeatId);
   const hasFutureRepeats = isRepeating
@@ -152,11 +153,12 @@ export const TaskBar: React.FC<TaskBarProps> = ({
     : false;
   
   const fallbackProjectColor = projects.length === 1 ? projects[0]?.color : undefined;
-  const bgColor = project?.color || fallbackProjectColor || '#94a3b8';
-  const statusColor = status?.color || '#94a3b8';
+  const baseBgColor = project?.color || fallbackProjectColor || '#94a3b8';
+  const isFinalStatus = Boolean(status?.isFinal);
+  const isFinalStyle = isFinalStatus && !isCancelled;
+  const bgColor = isFinalStyle ? '#ffffff' : baseBgColor;
   const isDarkBackground = isDarkColor(bgColor);
   const textColor = isDarkBackground ? '#f8fafc' : '#0f172a';
-  const statusOutline = isDarkBackground ? 'rgba(248, 250, 252, 0.65)' : 'rgba(15, 23, 42, 0.25)';
   const priorityBadgeStyle = priorityMeta
     ? {
         backgroundColor: '#ffffff',
@@ -167,7 +169,7 @@ export const TaskBar: React.FC<TaskBarProps> = ({
       }
     : undefined;
   const prioritySymbol = task.priority === 'high' ? '‼' : '!';
-  const isFinal = status?.isFinal || false;
+  const isCompleted = isFinalStatus || isCancelled;
   const showTooltip = isHovering && !isDragging && !isResizing;
   
   // Calculate vertical position based on lane
@@ -326,7 +328,7 @@ export const TaskBar: React.FC<TaskBarProps> = ({
             isResizing && 'z-50',
             isSelected && 'ring-2 ring-primary ring-offset-1',
             isHighlighted && 'task-highlight z-40',
-            isFinal && 'opacity-60 saturate-50'
+            isCancelled && 'opacity-60 saturate-50'
           )}
           style={{
             left: visualLeft,
@@ -334,6 +336,7 @@ export const TaskBar: React.FC<TaskBarProps> = ({
             width: Math.max(visualWidth, dayWidth - 4),
             height: TASK_HEIGHT,
             backgroundColor: bgColor,
+            border: isFinalStyle ? '1px solid #24342B' : 'none',
           }}
         >
           {/* Left resize handle */}
@@ -345,10 +348,11 @@ export const TaskBar: React.FC<TaskBarProps> = ({
           {/* Task content */}
           <div className="flex min-w-0 flex-1 flex-col gap-0.5">
             <div className="flex items-center gap-2 min-w-0">
-              <span
-                className="inline-flex h-4 w-1.5 flex-shrink-0 rounded-[2px]"
-                style={{ backgroundColor: statusColor, boxShadow: `0 0 0 1px ${statusOutline}` }}
-              />
+              {status?.emoji && (
+                <span className="inline-flex h-4 w-4 flex-shrink-0 items-center justify-center text-sm leading-none">
+                  {status.emoji}
+                </span>
+              )}
               {isCancelled && (
                 <Ban className="h-3 w-3 text-red-500" aria-label="Cancelled" title="Cancelled" />
               )}
@@ -373,7 +377,7 @@ export const TaskBar: React.FC<TaskBarProps> = ({
                 </span>
               )}
               <span
-                className={cn('task-label text-sm font-semibold leading-tight truncate', isFinal && 'line-through')}
+                className={cn('task-label text-sm font-semibold leading-tight truncate', isCompleted && 'line-through')}
                 style={{ color: textColor }}
               >
                 {task.title}
@@ -404,7 +408,7 @@ export const TaskBar: React.FC<TaskBarProps> = ({
               {statuses.map((item) => (
                 <ContextMenuRadioItem key={item.id} value={item.id} disabled={!canEdit}>
                   <span className="mr-2 inline-flex h-2 w-2 rounded-full" style={{ backgroundColor: item.color }} />
-                  {formatStatusLabel(item.name)}
+                  {formatStatusLabel(item.name, item.emoji)}
                 </ContextMenuRadioItem>
               ))}
             </ContextMenuRadioGroup>
@@ -463,7 +467,7 @@ export const TaskBar: React.FC<TaskBarProps> = ({
             <div className="flex flex-wrap gap-1">
               {status && (
                 <Badge className="text-[10px]" style={getBadgeStyle(status.color)}>
-                  {formatStatusLabel(status.name)}
+                  {formatStatusLabel(status.name, status.emoji)}
                 </Badge>
               )}
               {taskType && (

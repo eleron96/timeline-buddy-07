@@ -450,7 +450,7 @@ export const TaskDetailPanel: React.FC = () => {
                                 className="w-2.5 h-2.5 rounded-full"
                                 style={{ backgroundColor: s.color }}
                               />
-                              {formatStatusLabel(s.name)}
+                              {formatStatusLabel(s.name, s.emoji)}
                             </div>
                           </SelectItem>
                         ))}
