@@ -20,7 +20,7 @@ import { supabase } from '@/shared/lib/supabaseClient';
 import { formatStatusLabel } from '@/shared/lib/statusLabels';
 import { cn } from '@/shared/lib/classNames';
 import { format, parseISO } from 'date-fns';
-import { Settings, User, Users, RefreshCcw } from 'lucide-react';
+import { Settings, User, RefreshCcw } from 'lucide-react';
 import { Task } from '@/features/planner/types/planner';
 import { WorkspaceMembersPanel } from '@/features/workspace/components/WorkspaceMembersPanel';
 import DOMPurify from 'dompurify';
@@ -546,108 +546,102 @@ const MembersPage = () => {
         </div>
       </header>
 
-      <div className="flex flex-1 flex-col overflow-hidden">
-        {mode === 'access' && (
-          <div className="flex-1 overflow-auto px-6 py-4">
-            <div className="mb-4">{modeToggle}</div>
-            <WorkspaceMembersPanel />
-          </div>
-        )}
-
-        {mode === 'tasks' && (
-          <div className="flex flex-1 flex-col overflow-hidden">
-            <div className="px-6 pt-4">
-              <div className="flex flex-wrap items-center gap-3">
-                {modeToggle}
-              </div>
-            </div>
-            <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1 overflow-hidden">
         <aside className="w-80 border-r border-border bg-card flex flex-col">
-          <div className="px-4 py-3 border-b border-border flex items-center gap-2">
-            <Users className="h-4 w-4" />
-            <span className="text-sm font-semibold">Members</span>
+          <div className="px-4 py-3 border-b border-border">
+            {modeToggle}
           </div>
 
-          <Tabs value={tab} onValueChange={(value) => setTab(value as 'active' | 'disabled')} className="flex-1 flex flex-col">
-            <TabsList className="mx-4 mt-3 grid grid-cols-2">
-              <TabsTrigger value="active">Active</TabsTrigger>
-              <TabsTrigger value="disabled">Disabled</TabsTrigger>
-            </TabsList>
-            <TabsContent value="active" className="flex-1 overflow-hidden">
-              <ScrollArea className="h-full px-4 py-3">
-                {activeAssignees.length === 0 && (
-                  <div className="text-sm text-muted-foreground">No active members.</div>
-                )}
-                <div className="space-y-2">
-                  {activeAssignees.map((assignee) => {
-                    const count = assigneeCountsDate ? (assigneeTaskCounts[assignee.id] ?? 0) : null;
-                    return (
-                      <button
-                        key={assignee.id}
-                        type="button"
-                        onClick={() => setSelectedAssigneeId(assignee.id)}
-                        className={`w-full rounded-lg border px-3 py-2 text-left transition-colors ${
-                          selectedAssigneeId === assignee.id ? 'border-foreground/60 bg-muted/60' : 'border-border hover:bg-muted/40'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium truncate">{assignee.name}</span>
-                          {count !== null && (
-                            <Badge variant="secondary" className="ml-auto text-[10px]">
-                              {count}
-                            </Badge>
-                          )}
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </ScrollArea>
-            </TabsContent>
-            <TabsContent value="disabled" className="flex-1 overflow-hidden">
-              <ScrollArea className="h-full px-4 py-3">
-                {disabledAssignees.length === 0 && (
-                  <div className="text-sm text-muted-foreground">No disabled members.</div>
-                )}
-                <div className="space-y-2">
-                  {disabledAssignees.map((assignee) => {
-                    const count = assigneeCountsDate ? (assigneeTaskCounts[assignee.id] ?? 0) : null;
-                    return (
-                      <button
-                        key={assignee.id}
-                        type="button"
-                        onClick={() => setSelectedAssigneeId(assignee.id)}
-                        className={`w-full rounded-lg border px-3 py-2 text-left transition-colors ${
-                          selectedAssigneeId === assignee.id ? 'border-foreground/60 bg-muted/60' : 'border-border hover:bg-muted/40'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium truncate">{assignee.name}</span>
-                          <Badge variant="secondary" className="text-[10px]">Disabled</Badge>
-                          {count !== null && (
-                            <Badge variant="secondary" className="ml-auto text-[10px]">
-                              {count}
-                            </Badge>
-                          )}
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </ScrollArea>
-            </TabsContent>
-          </Tabs>
+          {mode === 'tasks' && (
+            <Tabs value={tab} onValueChange={(value) => setTab(value as 'active' | 'disabled')} className="flex-1 flex flex-col">
+              <TabsList className="mx-4 mt-3 grid grid-cols-2">
+                <TabsTrigger value="active">Active</TabsTrigger>
+                <TabsTrigger value="disabled">Disabled</TabsTrigger>
+              </TabsList>
+              <TabsContent value="active" className="flex-1 overflow-hidden">
+                <ScrollArea className="h-full px-4 py-3">
+                  {activeAssignees.length === 0 && (
+                    <div className="text-sm text-muted-foreground">No active members.</div>
+                  )}
+                  <div className="space-y-2">
+                    {activeAssignees.map((assignee) => {
+                      const count = assigneeCountsDate ? (assigneeTaskCounts[assignee.id] ?? 0) : null;
+                      return (
+                        <button
+                          key={assignee.id}
+                          type="button"
+                          onClick={() => setSelectedAssigneeId(assignee.id)}
+                          className={`w-full rounded-lg border px-3 py-2 text-left transition-colors ${
+                            selectedAssigneeId === assignee.id ? 'border-foreground/60 bg-muted/60' : 'border-border hover:bg-muted/40'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium truncate">{assignee.name}</span>
+                            {count !== null && (
+                              <Badge variant="secondary" className="ml-auto text-[10px]">
+                                {count}
+                              </Badge>
+                            )}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </ScrollArea>
+              </TabsContent>
+              <TabsContent value="disabled" className="flex-1 overflow-hidden">
+                <ScrollArea className="h-full px-4 py-3">
+                  {disabledAssignees.length === 0 && (
+                    <div className="text-sm text-muted-foreground">No disabled members.</div>
+                  )}
+                  <div className="space-y-2">
+                    {disabledAssignees.map((assignee) => {
+                      const count = assigneeCountsDate ? (assigneeTaskCounts[assignee.id] ?? 0) : null;
+                      return (
+                        <button
+                          key={assignee.id}
+                          type="button"
+                          onClick={() => setSelectedAssigneeId(assignee.id)}
+                          className={`w-full rounded-lg border px-3 py-2 text-left transition-colors ${
+                            selectedAssigneeId === assignee.id ? 'border-foreground/60 bg-muted/60' : 'border-border hover:bg-muted/40'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium truncate">{assignee.name}</span>
+                            <Badge variant="secondary" className="text-[10px]">Disabled</Badge>
+                            {count !== null && (
+                              <Badge variant="secondary" className="ml-auto text-[10px]">
+                                {count}
+                              </Badge>
+                            )}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </ScrollArea>
+              </TabsContent>
+            </Tabs>
+          )}
         </aside>
 
         <section className="flex-1 overflow-hidden flex flex-col">
-          {!selectedAssignee && (
-            <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
-              Select a member to view details.
+          {mode === 'access' && (
+            <div className="flex-1 overflow-auto px-6 py-4">
+              <WorkspaceMembersPanel />
             </div>
           )}
 
-          {selectedAssignee && (
-            <div className="flex flex-1 flex-col overflow-hidden">
+          {mode === 'tasks' && (
+            <>
+              {!selectedAssignee && (
+                <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
+                  Select a member to view details.
+                </div>
+              )}
+
+              {selectedAssignee && (
+                <div className="flex flex-1 flex-col overflow-hidden">
               <div className="border-b border-border px-6 py-4">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div className="space-y-2">
@@ -917,12 +911,11 @@ const MembersPage = () => {
                   </>
                 )}
               </div>
-            </div>
+                </div>
+              )}
+            </>
           )}
         </section>
-        </div>
-        </div>
-        )}
       </div>
 
       <Dialog open={Boolean(selectedTaskId)} onOpenChange={(open) => !open && setSelectedTaskId(null)}>

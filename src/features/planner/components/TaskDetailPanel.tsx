@@ -58,6 +58,7 @@ export const TaskDetailPanel: React.FC = () => {
     setSelectedTaskId, 
     tasks, 
     projects, 
+    customers,
     assignees, 
     statuses, 
     taskTypes, 
@@ -73,6 +74,10 @@ export const TaskDetailPanel: React.FC = () => {
   const isReadOnly = !canEdit;
   const filteredAssignees = useFilteredAssignees(assignees);
   const activeProjects = useMemo(() => projects.filter((project) => !project.archived), [projects]);
+  const customerById = useMemo(
+    () => new Map(customers.map((customer) => [customer.id, customer])),
+    [customers],
+  );
 
   const originalTaskRef = useRef<Task | null>(null);
   const repeatInFlightRef = useRef(false);
@@ -97,6 +102,9 @@ export const TaskDetailPanel: React.FC = () => {
     if (!archivedProject) return activeProjects;
     return [archivedProject, ...activeProjects.filter((project) => project.id !== archivedProject.id)];
   }, [activeProjects, archivedProject]);
+  const currentProjectCustomer = currentProject?.customerId
+    ? customerById.get(currentProject.customerId)
+    : null;
   const selectableAssignees = useMemo(() => {
     if (!task) return filteredAssignees.filter((assignee) => assignee.isActive);
     return filteredAssignees.filter(
@@ -355,6 +363,11 @@ export const TaskDetailPanel: React.FC = () => {
                     ))}
                   </SelectContent>
                 </Select>
+                {currentProject && (
+                  <div className="text-xs text-muted-foreground">
+                    Customer: {currentProjectCustomer?.name ?? 'No customer'}
+                  </div>
+                )}
               </div>
 
               <div className="space-y-2">

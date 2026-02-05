@@ -18,6 +18,7 @@ import {
   Task,
   Milestone,
   Project,
+  Customer,
   Assignee,
   Status,
   TaskType,
@@ -52,6 +53,13 @@ type ProjectRow = {
   name: string;
   color: string;
   archived: boolean;
+  customer_id: string | null;
+};
+
+type CustomerRow = {
+  id: string;
+  workspace_id: string;
+  name: string;
 };
 
 type AssigneeRow = {
@@ -139,6 +147,10 @@ interface PlannerStore extends PlannerState {
   addProject: (project: Omit<Project, 'id'>) => Promise<void>;
   updateProject: (id: string, updates: Partial<Project>) => Promise<void>;
   deleteProject: (id: string) => Promise<void>;
+
+  addCustomer: (customer: Omit<Customer, 'id'>) => Promise<Customer | null>;
+  updateCustomer: (id: string, updates: Partial<Customer>) => Promise<void>;
+  deleteCustomer: (id: string) => Promise<void>;
 
   addAssignee: (assignee: Omit<Assignee, 'id'>) => Promise<void>;
   updateAssignee: (id: string, updates: Partial<Assignee>) => Promise<void>;
@@ -240,6 +252,12 @@ const mapProjectRow = (row: ProjectRow): Project => ({
   name: row.name,
   color: row.color,
   archived: row.archived ?? false,
+  customerId: row.customer_id ?? null,
+});
+
+const mapCustomerRow = (row: CustomerRow): Customer => ({
+  id: row.id,
+  name: row.name,
 });
 
 const mapAssigneeRow = (row: AssigneeRow): Assignee => ({
@@ -313,6 +331,7 @@ export const usePlannerStore = create<PlannerStore>()(
       tasks: [],
       milestones: [],
       projects: [],
+      customers: [],
       assignees: [],
       statuses: [],
       taskTypes: [],
@@ -339,6 +358,7 @@ export const usePlannerStore = create<PlannerStore>()(
         tasks: [],
         milestones: [],
         projects: [],
+        customers: [],
         assignees: [],
         statuses: [],
         taskTypes: [],
@@ -395,6 +415,7 @@ export const usePlannerStore = create<PlannerStore>()(
         const [
           tasksRes,
           projectsRes,
+          customersRes,
           assigneesRes,
           statusesRes,
           taskTypesRes,
@@ -409,6 +430,7 @@ export const usePlannerStore = create<PlannerStore>()(
             .gte('end_date', start)
             .lte('start_date', end),
           supabase.from('projects').select('*').eq('workspace_id', workspaceId),
+          supabase.from('customers').select('*').eq('workspace_id', workspaceId),
           supabase.from('assignees').select('*').eq('workspace_id', workspaceId),
           supabase.from('statuses').select('*').eq('workspace_id', workspaceId),
           supabase.from('task_types').select('*').eq('workspace_id', workspaceId),
@@ -424,10 +446,20 @@ export const usePlannerStore = create<PlannerStore>()(
 
         if (get().dataRequestId !== requestId) return;
 
-        if (tasksRes.error || projectsRes.error || assigneesRes.error || statusesRes.error || taskTypesRes.error || tagsRes.error || milestonesRes.error) {
+        if (
+          tasksRes.error
+          || projectsRes.error
+          || customersRes.error
+          || assigneesRes.error
+          || statusesRes.error
+          || taskTypesRes.error
+          || tagsRes.error
+          || milestonesRes.error
+        ) {
           set({
             error: tasksRes.error?.message
               || projectsRes.error?.message
+              || customersRes.error?.message
               || assigneesRes.error?.message
               || statusesRes.error?.message
               || taskTypesRes.error?.message
@@ -472,6 +504,9 @@ export const usePlannerStore = create<PlannerStore>()(
           .map(mapAssigneeRow);
 
         const nextProjects = (projectsRes.data ?? []).map(mapProjectRow);
+        const nextCustomers = (customersRes.data ?? []).map(mapCustomerRow).sort((left, right) => (
+          left.name.localeCompare(right.name)
+        ));
         const activeProjectIds = new Set(nextProjects.filter((project) => !project.archived).map((project) => project.id));
 
         let nextAssigneeCounts = get().assigneeTaskCounts;
@@ -500,6 +535,7 @@ export const usePlannerStore = create<PlannerStore>()(
           tasks: taskRows.map(mapTaskRow),
           milestones: (milestonesRes.data ?? []).map(mapMilestoneRow),
           projects: nextProjects,
+          customers: nextCustomers,
           assignees,
           statuses: (statusesRes.data ?? []).map(mapStatusRow),
           taskTypes: (taskTypesRes.data ?? []).map(mapTaskTypeRow),
@@ -890,6 +926,7 @@ export const usePlannerStore = create<PlannerStore>()(
             name: project.name,
             color: project.color,
             archived: project.archived ?? false,
+            customer_id: project.customerId ?? null,
           })
           .select('*')
           .single();
@@ -910,6 +947,7 @@ export const usePlannerStore = create<PlannerStore>()(
         if ('name' in updates) payload.name = updates.name;
         if ('color' in updates) payload.color = updates.color;
         if ('archived' in updates) payload.archived = updates.archived;
+        if ('customerId' in updates) payload.customer_id = updates.customerId;
         if (Object.keys(payload).length === 0) return;
 
         const { data, error } = await supabase
@@ -963,6 +1001,83 @@ export const usePlannerStore = create<PlannerStore>()(
             ...state.filters,
             projectIds: state.filters.projectIds.filter((projectId) => projectId !== id),
           },
+        }));
+      },
+
+      addCustomer: async (customer) => {
+        const workspaceId = get().workspaceId;
+        if (!workspaceId) return null;
+
+        const { data, error } = await supabase
+          .from('customers')
+          .insert({
+            workspace_id: workspaceId,
+            name: customer.name,
+          })
+          .select('*')
+          .single();
+
+        if (error || !data) {
+          console.error(error);
+          return null;
+        }
+
+        const mapped = mapCustomerRow(data as CustomerRow);
+        set((state) => ({
+          customers: [...state.customers, mapped].sort((left, right) => left.name.localeCompare(right.name)),
+        }));
+        return mapped;
+      },
+
+      updateCustomer: async (id, updates) => {
+        const workspaceId = get().workspaceId;
+        if (!workspaceId) return;
+
+        const payload: Record<string, unknown> = {};
+        if ('name' in updates) payload.name = updates.name;
+        if (Object.keys(payload).length === 0) return;
+
+        const { data, error } = await supabase
+          .from('customers')
+          .update(payload)
+          .eq('id', id)
+          .eq('workspace_id', workspaceId)
+          .select('*')
+          .single();
+
+        if (error || !data) {
+          console.error(error);
+          return;
+        }
+
+        const updated = mapCustomerRow(data as CustomerRow);
+        set((state) => ({
+          customers: state.customers
+            .map((customer) => (customer.id === id ? updated : customer))
+            .sort((left, right) => left.name.localeCompare(right.name)),
+        }));
+      },
+
+      deleteCustomer: async (id) => {
+        const workspaceId = get().workspaceId;
+        if (!workspaceId) return;
+
+        const { error } = await supabase
+          .from('customers')
+          .delete()
+          .eq('id', id)
+          .eq('workspace_id', workspaceId);
+
+        if (error) {
+          console.error(error);
+          return;
+        }
+
+        set((state) => ({
+          customers: state.customers.filter((customer) => customer.id !== id),
+          projects: state.projects.map((project) => (
+            project.customerId === id ? { ...project, customerId: null } : project
+          )),
         }));
       },
 

@@ -20,6 +20,12 @@ export interface Project {
   name: string;
   color: string; // hex
   archived: boolean;
+  customerId: string | null;
+}
+
+export interface Customer {
+  id: string;
+  name: string;
 }
 
 export interface Assignee {
@@ -74,6 +80,7 @@ export interface PlannerState {
   tasks: Task[];
   milestones: Milestone[];
   projects: Project[];
+  customers: Customer[];
   assignees: Assignee[];
   statuses: Status[];
   taskTypes: TaskType[];
