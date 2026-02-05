@@ -85,6 +85,7 @@ export type DashboardStatus = {
 export type DashboardOption = {
   id: string;
   name: string;
+  code?: string | null;
   color?: string;
 };
 

@@ -51,6 +51,7 @@ type ProjectRow = {
   id: string;
   workspace_id: string;
   name: string;
+  code: string | null;
   color: string;
   archived: boolean;
   customer_id: string | null;
@@ -250,6 +251,7 @@ const mapTaskRow = (row: TaskRow): Task => ({
 const mapProjectRow = (row: ProjectRow): Project => ({
   id: row.id,
   name: row.name,
+  code: row.code ?? null,
   color: row.color,
   archived: row.archived ?? false,
   customerId: row.customer_id ?? null,
@@ -924,6 +926,7 @@ export const usePlannerStore = create<PlannerStore>()(
           .insert({
             workspace_id: workspaceId,
             name: project.name,
+            code: project.code ?? null,
             color: project.color,
             archived: project.archived ?? false,
             customer_id: project.customerId ?? null,
@@ -945,6 +948,7 @@ export const usePlannerStore = create<PlannerStore>()(
 
         const payload: Record<string, unknown> = {};
         if ('name' in updates) payload.name = updates.name;
+        if ('code' in updates) payload.code = updates.code;
         if ('color' in updates) payload.color = updates.color;
         if ('archived' in updates) payload.archived = updates.archived;
         if ('customerId' in updates) payload.customer_id = updates.customerId;

@@ -18,6 +18,7 @@ export interface Task {
 export interface Project {
   id: string;
   name: string;
+  code: string | null;
   color: string; // hex
   archived: boolean;
   customerId: string | null;

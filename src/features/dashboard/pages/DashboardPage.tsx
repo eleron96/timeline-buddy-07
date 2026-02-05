@@ -207,8 +207,8 @@ const DashboardPage = () => {
     const seriesRows = useAssigneeRows ? statsState?.seriesRows : (statsState?.seriesRowsBase ?? statsState?.seriesRows);
     const data = statsState && isTaskWidget
       ? (widget.type === 'line' || widget.type === 'area'
-        ? buildTimeSeriesData(seriesRows ?? [], widget, statuses)
-        : buildWidgetData(rows ?? [], widget, statuses))
+        ? buildTimeSeriesData(seriesRows ?? [], widget, statuses, projects)
+        : buildWidgetData(rows ?? [], widget, statuses, projects))
       : null;
     const loading = isTaskWidget ? (statsState?.loading ?? false) : false;
     const widgetError = isTaskWidget ? (statsState?.error ?? null) : null;

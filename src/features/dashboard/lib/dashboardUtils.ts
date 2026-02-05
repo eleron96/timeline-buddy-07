@@ -13,6 +13,8 @@ import {
   DashboardWidgetData,
 } from '@/features/dashboard/types/dashboard';
 import { formatStatusLabel } from '@/shared/lib/statusLabels';
+import { formatProjectLabel } from '@/shared/lib/projectLabels';
+import { DashboardOption } from '@/features/dashboard/types/dashboard';
 
 export const DEFAULT_BAR_PALETTE: DashboardBarPalette = 'pastel-sky';
 
@@ -163,9 +165,13 @@ export const buildWidgetData = (
   rows: DashboardStatsRow[],
   widget: DashboardWidget,
   statuses: DashboardStatus[],
+  projects: DashboardOption[] = [],
 ): DashboardWidgetData => {
   const groupBy = widget.groupBy ?? 'none';
   const statusById = new Map(statuses.map((status) => [status.id, status]));
+  const projectNameById = new Map(
+    projects.map((project) => [project.id, formatProjectLabel(project.name, project.code)]),
+  );
   const statusFilter = statuses.length > 0
     ? resolveStatusFilter(widget, statuses)
     : new Set(rows.map((row) => row.status_id));
@@ -197,7 +203,9 @@ export const buildWidgetData = (
   } else if (groupBy === 'project') {
     filtered.forEach((row) => {
       const key = row.project_id ?? 'no-project';
-      const name = row.project_name ?? 'No project';
+      const name = row.project_id
+        ? projectNameById.get(row.project_id) ?? row.project_name ?? 'No project'
+        : 'No project';
       const existing = seriesMap.get(key) ?? { name, value: 0 };
       existing.value += row.total;
       seriesMap.set(key, existing);
@@ -216,9 +224,13 @@ export const buildTimeSeriesData = (
   rows: DashboardSeriesRow[],
   widget: DashboardWidget,
   statuses: DashboardStatus[],
+  projects: DashboardOption[] = [],
 ): DashboardWidgetData => {
   const groupBy = widget.groupBy ?? 'none';
   const statusById = new Map(statuses.map((status) => [status.id, status]));
+  const projectNameById = new Map(
+    projects.map((project) => [project.id, formatProjectLabel(project.name, project.code)]),
+  );
   const statusFilter = statuses.length > 0
     ? resolveStatusFilter(widget, statuses)
     : new Set(rows.map((row) => row.status_id));
@@ -252,7 +264,9 @@ export const buildTimeSeriesData = (
         : row.status_name;
     } else if (groupBy === 'project') {
       rawKey = row.project_id ?? 'no-project';
-      label = row.project_name ?? 'No project';
+      label = row.project_id
+        ? projectNameById.get(row.project_id) ?? row.project_name ?? 'No project'
+        : 'No project';
     }
     const seriesKey = toSeriesKey(rawKey);
     if (!seriesKeysMap.has(seriesKey)) {

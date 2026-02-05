@@ -5,6 +5,7 @@ import { Button } from '@/shared/ui/button';
 import { Input } from '@/shared/ui/input';
 import { Label } from '@/shared/ui/label';
 import { formatStatusLabel } from '@/shared/lib/statusLabels';
+import { formatProjectLabel } from '@/shared/lib/projectLabels';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/shared/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/shared/ui/select';
 import { RichTextEditor } from '@/features/planner/components/RichTextEditor';
@@ -293,7 +294,7 @@ export const AddTaskDialog: React.FC<AddTaskDialogProps> = ({
                           className="w-2.5 h-2.5 rounded-full"
                           style={{ backgroundColor: p.color }}
                         />
-                        {p.name}
+                        {formatProjectLabel(p.name, p.code)}
                       </div>
                     </SelectItem>
                   ))}

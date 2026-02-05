@@ -5,6 +5,7 @@ import { useFilteredAssignees } from '@/features/planner/hooks/useFilteredAssign
 import { Task, TaskPriority } from '@/features/planner/types/planner';
 import { cn } from '@/shared/lib/classNames';
 import { formatStatusLabel, stripStatusEmoji } from '@/shared/lib/statusLabels';
+import { formatProjectLabel } from '@/shared/lib/projectLabels';
 import { calculateNewDates, calculateResizedDates, formatDateRange, TASK_HEIGHT, TASK_GAP } from '@/features/planner/lib/dateUtils';
 import { Ban, RotateCw } from 'lucide-react';
 import {
@@ -387,7 +388,7 @@ export const TaskBar: React.FC<TaskBarProps> = ({
               className="text-[11px] leading-tight truncate"
               style={{ color: isDarkBackground ? 'rgba(248,250,252,0.8)' : 'rgba(15,23,42,0.7)' }}
             >
-              {project?.name || 'No Project'}
+              {project ? formatProjectLabel(project.name, project.code) : 'No Project'}
             </span>
           </div>
           
@@ -429,7 +430,7 @@ export const TaskBar: React.FC<TaskBarProps> = ({
               {projectOptions.map((item) => (
                 <ContextMenuRadioItem key={item.id} value={item.id} disabled={!canEdit}>
                   <span className="mr-2 inline-flex h-2 w-2 rounded-full" style={{ backgroundColor: item.color }} />
-                  {item.name}
+                  {formatProjectLabel(item.name, item.code)}
                   {item.archived && (
                     <span className="ml-1 text-[10px] text-muted-foreground">(archived)</span>
                   )}

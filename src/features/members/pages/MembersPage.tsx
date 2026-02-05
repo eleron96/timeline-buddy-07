@@ -18,6 +18,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/shared/ui/dialog';
 import { supabase } from '@/shared/lib/supabaseClient';
 import { formatStatusLabel } from '@/shared/lib/statusLabels';
+import { formatProjectLabel } from '@/shared/lib/projectLabels';
 import { cn } from '@/shared/lib/classNames';
 import { format, parseISO } from 'date-fns';
 import { Settings, User, RefreshCcw } from 'lucide-react';
@@ -714,7 +715,9 @@ const MembersPage = () => {
                                 onCheckedChange={() => handleToggleProject(project.id)}
                               />
                               <span className="inline-flex h-2 w-2 rounded-full" style={{ backgroundColor: project.color }} />
-                              <span className="text-sm truncate">{project.name}</span>
+                              <span className="text-sm truncate">
+                                {formatProjectLabel(project.name, project.code)}
+                              </span>
                             </label>
                           ))}
                         </div>
@@ -861,7 +864,7 @@ const MembersPage = () => {
                                         className="inline-flex h-2 w-2 rounded-full"
                                         style={{ backgroundColor: project.color }}
                                       />
-                                      <span>{project.name}</span>
+                                      <span>{formatProjectLabel(project.name, project.code)}</span>
                                       {project.archived && (
                                         <Badge variant="secondary" className="text-[10px]">Archived</Badge>
                                       )}
@@ -932,7 +935,9 @@ const MembersPage = () => {
                 <div>
                   <div className="text-xs text-muted-foreground">Project</div>
                   <div className="text-sm">
-                    {selectedTaskProject?.name ?? 'No project'}
+                    {selectedTaskProject
+                      ? formatProjectLabel(selectedTaskProject.name, selectedTaskProject.code)
+                      : 'No project'}
                   </div>
                 </div>
                 <div>

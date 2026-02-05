@@ -25,6 +25,7 @@ import {
 } from '@/features/dashboard/types/dashboard';
 import { BAR_PALETTES, DEFAULT_BAR_PALETTE, createWidgetId } from '@/features/dashboard/lib/dashboardUtils';
 import { formatStatusLabel } from '@/shared/lib/statusLabels';
+import { formatProjectLabel } from '@/shared/lib/projectLabels';
 
 interface WidgetEditorDialogProps {
   open: boolean;
@@ -271,7 +272,12 @@ export const WidgetEditorDialog: React.FC<WidgetEditorDialogProps> = ({
   };
 
   const getRuleOptions = (field: DashboardFilterField) => {
-    if (field === 'project') return orderedProjects;
+    if (field === 'project') {
+      return orderedProjects.map((project) => ({
+        ...project,
+        name: formatProjectLabel(project.name, project.code),
+      }));
+    }
     if (field === 'status') {
       return orderedStatuses.map((status) => ({
         id: status.id,

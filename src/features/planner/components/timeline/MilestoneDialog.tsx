@@ -4,6 +4,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { Button } from '@/shared/ui/button';
 import { Input } from '@/shared/ui/input';
 import { Label } from '@/shared/ui/label';
+import { formatProjectLabel } from '@/shared/lib/projectLabels';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/shared/ui/select';
 import { Milestone } from '@/features/planner/types/planner';
 import { format, parseISO } from 'date-fns';
@@ -118,7 +119,7 @@ export const MilestoneDialog: React.FC<MilestoneDialogProps> = ({
                         className="w-2.5 h-2.5 rounded-full"
                         style={{ backgroundColor: project.color }}
                       />
-                      {project.name}
+                      {formatProjectLabel(project.name, project.code)}
                       {project.archived && (
                         <span className="ml-1 text-[10px] text-muted-foreground">(archived)</span>
                       )}

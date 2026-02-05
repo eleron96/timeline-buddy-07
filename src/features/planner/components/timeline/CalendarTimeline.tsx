@@ -5,6 +5,7 @@ import { MilestoneDialog } from '@/features/planner/components/timeline/Mileston
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/shared/ui/tooltip';
 import { Button } from '@/shared/ui/button';
 import { cn } from '@/shared/lib/classNames';
+import { formatProjectLabel } from '@/shared/lib/projectLabels';
 import { hexToRgba } from '@/features/planner/lib/colorUtils';
 import { Milestone } from '@/features/planner/types/planner';
 import { ArrowDown, ArrowUp } from 'lucide-react';
@@ -436,7 +437,9 @@ export const CalendarTimeline: React.FC = () => {
                                                     <div className="min-w-0">
                                                       <div className="truncate">{milestone.title}</div>
                                                       <div className="text-[10px] text-muted-foreground truncate">
-                                                        {project?.name ?? 'Проект'}
+                                                        {project
+                                                          ? formatProjectLabel(project.name, project.code)
+                                                          : 'Проект'}
                                                       </div>
                                                     </div>
                                                   </div>

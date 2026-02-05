@@ -439,7 +439,9 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
     }
 
     const widgets = Array.isArray(data.widgets)
-      ? (data.widgets as Array<Partial<DashboardWidget>>).map(normalizeWidget)
+      ? (data.widgets as Array<Partial<DashboardWidget> | null | undefined>)
+        .filter((widget): widget is Partial<DashboardWidget> => Boolean(widget) && typeof widget === 'object')
+        .map(normalizeWidget)
       : createDefaultWidgets();
     const layouts = data.layouts && typeof data.layouts === 'object'
       ? (data.layouts as DashboardLayouts)
@@ -514,7 +516,7 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
         .order('created_at', { ascending: true }),
       supabase
         .from('projects')
-        .select('id, name, color')
+        .select('id, name, code, color')
         .eq('workspace_id', workspaceId)
         .order('created_at', { ascending: true }),
       supabase
@@ -555,6 +557,7 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
     const projects = (projectsRes.data ?? []).map((row) => ({
       id: row.id as string,
       name: row.name as string,
+      code: (row as { code?: string | null }).code ?? null,
       color: row.color ?? undefined,
     }));
     const assignees = (assigneesRes.data ?? [])

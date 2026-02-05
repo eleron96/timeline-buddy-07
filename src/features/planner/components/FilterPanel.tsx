@@ -5,6 +5,7 @@ import { Button } from '@/shared/ui/button';
 import { Checkbox } from '@/shared/ui/checkbox';
 import { ScrollArea } from '@/shared/ui/scroll-area';
 import { formatStatusLabel } from '@/shared/lib/statusLabels';
+import { formatProjectLabel } from '@/shared/lib/projectLabels';
 import { 
   Filter, 
   ChevronDown, 
@@ -195,7 +196,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({ collapsed, onToggle })
                 className="w-2.5 h-2.5 rounded-full flex-shrink-0"
                 style={{ backgroundColor: project.color }}
               />
-              <span className="text-sm truncate">{project.name}</span>
+              <span className="text-sm truncate">{formatProjectLabel(project.name, project.code)}</span>
             </label>
           ))}
           {archivedProjectsCount > 0 && (

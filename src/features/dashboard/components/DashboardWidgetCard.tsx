@@ -32,6 +32,7 @@ import {
 } from 'date-fns';
 import { GripVertical, Pencil } from 'lucide-react';
 import { cn } from '@/shared/lib/classNames';
+import { formatProjectLabel } from '@/shared/lib/projectLabels';
 import { Card } from '@/shared/ui/card';
 import { Button } from '@/shared/ui/button';
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/shared/ui/chart';
@@ -166,7 +167,9 @@ export const DashboardWidgetCard: React.FC<DashboardWidgetCardProps> = ({
     </div>
   ) : null;
 
-  const projectNameById = new Map(projects.map((project) => [project.id, project.name]));
+  const projectNameById = new Map(
+    projects.map((project) => [project.id, formatProjectLabel(project.name, project.code)]),
+  );
   const projectColorById = new Map(
     projects.map((project) => [project.id, project.color ?? '#94A3B8']),
   );

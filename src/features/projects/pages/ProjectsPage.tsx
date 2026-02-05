@@ -27,6 +27,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/shared/ui/di
 import { ColorPicker } from '@/shared/ui/color-picker';
 import { supabase } from '@/shared/lib/supabaseClient';
 import { formatStatusLabel } from '@/shared/lib/statusLabels';
+import { formatProjectLabel } from '@/shared/lib/projectLabels';
 import { format, parseISO } from 'date-fns';
 import {
   ArrowDownAZ,
@@ -259,9 +260,11 @@ const ProjectsPage = () => {
   const [projectSettingsOpen, setProjectSettingsOpen] = useState(false);
   const [projectSettingsTarget, setProjectSettingsTarget] = useState<Project | null>(null);
   const [newProjectName, setNewProjectName] = useState('');
+  const [newProjectCode, setNewProjectCode] = useState('');
   const [newProjectColor, setNewProjectColor] = useState('#3b82f6');
   const [newProjectCustomerId, setNewProjectCustomerId] = useState<string | null>(null);
   const [projectSettingsName, setProjectSettingsName] = useState('');
+  const [projectSettingsCode, setProjectSettingsCode] = useState('');
   const [projectSettingsColor, setProjectSettingsColor] = useState('#3b82f6');
   const [projectSettingsCustomerId, setProjectSettingsCustomerId] = useState<string | null>(null);
   const [newCustomerName, setNewCustomerName] = useState('');
@@ -585,6 +588,7 @@ const ProjectsPage = () => {
 
   const resetCreateProjectForm = useCallback(() => {
     setNewProjectName('');
+    setNewProjectCode('');
     setNewProjectColor('#3b82f6');
     setNewProjectCustomerId(null);
     setEditingCustomerId(null);
@@ -595,13 +599,22 @@ const ProjectsPage = () => {
     if (!canEdit || !newProjectName.trim()) return;
     await addProject({
       name: newProjectName.trim(),
+      code: newProjectCode.trim() ? newProjectCode.trim() : null,
       color: newProjectColor,
       archived: false,
       customerId: newProjectCustomerId,
     });
     setCreateProjectOpen(false);
     resetCreateProjectForm();
-  }, [addProject, canEdit, newProjectColor, newProjectCustomerId, newProjectName, resetCreateProjectForm]);
+  }, [
+    addProject,
+    canEdit,
+    newProjectCode,
+    newProjectColor,
+    newProjectCustomerId,
+    newProjectName,
+    resetCreateProjectForm,
+  ]);
 
   const createCustomerByName = useCallback(async (name: string) => {
     const trimmed = name.trim();
@@ -649,6 +662,7 @@ const ProjectsPage = () => {
     if (!canEdit) return;
     setProjectSettingsTarget(project);
     setProjectSettingsName(project.name);
+    setProjectSettingsCode(project.code ?? '');
     setProjectSettingsColor(project.color);
     setProjectSettingsCustomerId(project.customerId ?? null);
     setProjectSettingsOpen(true);
@@ -658,8 +672,11 @@ const ProjectsPage = () => {
     if (!canEdit || !projectSettingsTarget) return;
     const nextName = projectSettingsName.trim();
     if (!nextName) return;
+    const nextCode = projectSettingsCode.trim();
+    const normalizedCode = nextCode ? nextCode : null;
     const updates: Partial<Project> = {};
     if (nextName !== projectSettingsTarget.name) updates.name = nextName;
+    if ((projectSettingsTarget.code ?? null) !== normalizedCode) updates.code = normalizedCode;
     if (projectSettingsColor !== projectSettingsTarget.color) updates.color = projectSettingsColor;
     if (projectSettingsCustomerId !== projectSettingsTarget.customerId) {
       updates.customerId = projectSettingsCustomerId;
@@ -670,6 +687,7 @@ const ProjectsPage = () => {
     setProjectSettingsOpen(false);
   }, [
     canEdit,
+    projectSettingsCode,
     projectSettingsColor,
     projectSettingsCustomerId,
     projectSettingsName,
@@ -799,7 +817,9 @@ const ProjectsPage = () => {
             <div className="flex items-center gap-2 min-w-0">
               <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: project.color }} />
               <div className="min-w-0 flex-1">
-                <div className="text-sm font-medium truncate">{project.name}</div>
+                <div className="text-sm font-medium truncate">
+                  {formatProjectLabel(project.name, project.code)}
+                </div>
                 <div className="text-xs text-muted-foreground truncate">
                   {customerName ?? 'No customer'}
                 </div>
@@ -1157,7 +1177,9 @@ const ProjectsPage = () => {
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div className="flex items-center gap-3">
                         <div>
-                          <div className="text-lg font-semibold">{selectedProject.name}</div>
+                          <div className="text-lg font-semibold">
+                            {formatProjectLabel(selectedProject.name, selectedProject.code)}
+                          </div>
                           <div className="text-xs text-muted-foreground">
                             {customerById.get(selectedProject.customerId ?? '')?.name ?? 'No customer'}
                           </div>
@@ -1375,7 +1397,9 @@ const ProjectsPage = () => {
                       >
                         <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: project.color }} />
                         <div className="min-w-0 flex-1">
-                          <div className="text-sm font-medium truncate">{project.name}</div>
+                          <div className="text-sm font-medium truncate">
+                            {formatProjectLabel(project.name, project.code)}
+                          </div>
                           {project.archived && (
                             <div className="text-[10px] text-muted-foreground">Archived</div>
                           )}
@@ -1398,13 +1422,23 @@ const ProjectsPage = () => {
             <DialogTitle>New project</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
-            <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
+            <div className="grid gap-3 sm:grid-cols-[1fr_160px_auto]">
               <div className="space-y-1">
                 <Label>Project name</Label>
                 <Input
                   placeholder="Enter project name..."
                   value={newProjectName}
                   onChange={(event) => setNewProjectName(event.target.value)}
+                  onKeyDown={(event) => event.key === 'Enter' && handleCreateProject()}
+                  disabled={!canEdit}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label>Code</Label>
+                <Input
+                  placeholder="Code"
+                  value={newProjectCode}
+                  onChange={(event) => setNewProjectCode(event.target.value)}
                   onKeyDown={(event) => event.key === 'Enter' && handleCreateProject()}
                   disabled={!canEdit}
                 />
@@ -1447,13 +1481,28 @@ const ProjectsPage = () => {
           )}
           {projectSettingsTarget && (
             <div className="space-y-4">
-              <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
+              <div className="grid gap-3 sm:grid-cols-[1fr_160px_auto]">
                 <div className="space-y-1">
                   <Label>Project name</Label>
                   <Input
                     placeholder="Enter project name..."
                     value={projectSettingsName}
                     onChange={(event) => setProjectSettingsName(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') {
+                        event.preventDefault();
+                        handleSaveProjectSettings();
+                      }
+                    }}
+                    disabled={!canEdit}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label>Code</Label>
+                  <Input
+                    placeholder="Code"
+                    value={projectSettingsCode}
+                    onChange={(event) => setProjectSettingsCode(event.target.value)}
                     onKeyDown={(event) => {
                       if (event.key === 'Enter') {
                         event.preventDefault();
@@ -1509,7 +1558,9 @@ const ProjectsPage = () => {
                 <div>
                   <div className="text-xs text-muted-foreground">Project</div>
                   <div className="text-sm">
-                    {selectedTaskProject?.name ?? 'No project'}
+                    {selectedTaskProject
+                      ? formatProjectLabel(selectedTaskProject.name, selectedTaskProject.code)
+                      : 'No project'}
                   </div>
                   {selectedTaskProject && (
                     <div className="mt-1 text-xs text-muted-foreground">
@@ -1626,10 +1677,12 @@ const ProjectsPage = () => {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete project?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will remove "{deleteProjectTarget?.name ?? 'this project'}". Tasks will remain, but the project
+          <AlertDialogDescription>
+              This will remove "{deleteProjectTarget
+                ? formatProjectLabel(deleteProjectTarget.name, deleteProjectTarget.code)
+                : 'this project'}". Tasks will remain, but the project
               will be cleared from them.
-            </AlertDialogDescription>
+          </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel onClick={() => setDeleteProjectTarget(null)}>Cancel</AlertDialogCancel>

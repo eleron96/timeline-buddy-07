@@ -8,6 +8,7 @@ import { Input } from '@/shared/ui/input';
 import { RichTextEditor } from '@/features/planner/components/RichTextEditor';
 import { Label } from '@/shared/ui/label';
 import { formatStatusLabel } from '@/shared/lib/statusLabels';
+import { formatProjectLabel } from '@/shared/lib/projectLabels';
 import { cn } from '@/shared/lib/classNames';
 import { Popover, PopoverContent, PopoverTrigger } from '@/shared/ui/popover';
 import { ScrollArea } from '@/shared/ui/scroll-area';
@@ -354,7 +355,7 @@ export const TaskDetailPanel: React.FC = () => {
                             className="w-2.5 h-2.5 rounded-full"
                             style={{ backgroundColor: project.color }}
                           />
-                          {project.name}
+                          {formatProjectLabel(project.name, project.code)}
                           {project.archived && (
                             <span className="ml-1 text-[10px] text-muted-foreground">(archived)</span>
                           )}

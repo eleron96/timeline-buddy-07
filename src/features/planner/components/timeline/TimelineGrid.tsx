@@ -15,6 +15,7 @@ const ASSIGNEE_ROW_GAP = 20;
 import { calculateTaskLanes, getMaxLanes, TaskWithLane } from '@/features/planner/lib/taskLanes';
 import { Button } from '@/shared/ui/button';
 import { cn } from '@/shared/lib/classNames';
+import { formatProjectLabel } from '@/shared/lib/projectLabels';
 import { hexToRgba } from '@/features/planner/lib/colorUtils';
 import { differenceInDays, format, isSameDay, parseISO } from 'date-fns';
 
@@ -192,7 +193,7 @@ export const TimelineGrid: React.FC<TimelineGridProps> = ({ onCreateTask }) => {
       });
       return sorted.map(a => ({ id: a.id, name: a.name, color: undefined }));
     }
-    return projects.map(p => ({ id: p.id, name: p.name, color: p.color }));
+    return projects.map(p => ({ id: p.id, name: formatProjectLabel(p.name, p.code), color: p.color }));
   }, [groupMode, visibleAssignees, projects, myAssigneeId]);
   
   // Group tasks by row with lane calculation
