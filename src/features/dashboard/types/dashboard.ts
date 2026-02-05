@@ -89,6 +89,12 @@ export type DashboardOption = {
   color?: string;
 };
 
+export type DashboardSummary = {
+  id: string;
+  name: string;
+  createdAt?: string | null;
+};
+
 export type DashboardMilestone = {
   id: string;
   title: string;

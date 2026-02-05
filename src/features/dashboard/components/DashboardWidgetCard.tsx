@@ -502,8 +502,11 @@ export const DashboardWidgetCard: React.FC<DashboardWidgetCardProps> = ({
                 {!isSmall && <span>{milestonesInCalendar.length} milestones</span>}
               </div>
               <div className={cn('grid grid-cols-7', isSmall ? 'text-[9px]' : 'text-[10px]')}>
-                {weekdayLabels.map((label) => (
-                  <div key={label} className="text-muted-foreground">
+                {weekdayLabels.map((label, index) => (
+                  <div
+                    key={format(addDays(calendarStart, index), 'yyyy-MM-dd')}
+                    className="text-muted-foreground"
+                  >
                     {label}
                   </div>
                 ))}

@@ -8,6 +8,7 @@ import {
   DashboardPeriod,
   DashboardOption,
   DashboardStatus,
+  DashboardSummary,
   DashboardMilestone,
   DashboardSeriesRow,
   DashboardStatsRow,
@@ -30,6 +31,9 @@ type DashboardStatsState = {
 };
 
 type DashboardState = {
+  dashboards: DashboardSummary[];
+  dashboardsWorkspaceId: string | null;
+  currentDashboardId: string | null;
   widgets: DashboardWidget[];
   layouts: DashboardLayouts;
   statuses: DashboardStatus[];
@@ -41,8 +45,14 @@ type DashboardState = {
   error: string | null;
   dirty: boolean;
   statsByPeriod: Record<DashboardPeriod, DashboardStatsState>;
-  loadDashboard: (workspaceId: string) => Promise<void>;
-  saveDashboard: (workspaceId: string) => Promise<void>;
+  loadDashboards: (workspaceId: string) => Promise<void>;
+  setCurrentDashboardId: (id: string | null) => void;
+  loadDashboard: (workspaceId: string, dashboardId: string | null) => Promise<void>;
+  saveDashboard: (workspaceId: string, dashboardId: string | null) => Promise<void>;
+  createDashboard: (workspaceId: string, name: string) => Promise<{ id?: string; error?: string }>;
+  deleteDashboard: (id: string) => Promise<{ nextId: string | null; error?: string }>;
+  renameDashboard: (id: string, name: string) => Promise<{ error?: string }>;
+  resetDashboardState: () => void;
   addWidget: (widget: DashboardWidget) => void;
   updateWidget: (id: string, updates: Partial<DashboardWidget>) => void;
   removeWidget: (id: string) => void;
@@ -410,7 +420,31 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
     week: { ...emptyStatsState },
     month: { ...emptyStatsState },
   },
-  loadDashboard: async (workspaceId) => {
+  dashboards: [],
+  dashboardsWorkspaceId: null,
+  currentDashboardId: null,
+  loadDashboards: async (workspaceId) => {
+    set({ error: null });
+    const { data, error } = await supabase
+      .from('workspace_dashboards')
+      .select('id, name, created_at')
+      .eq('workspace_id', workspaceId)
+      .order('created_at', { ascending: true });
+
+    if (error) {
+      set({ error: error.message, dashboards: [], dashboardsWorkspaceId: workspaceId });
+      return;
+    }
+
+    const dashboards = (data ?? []).map((row) => ({
+      id: row.id as string,
+      name: (row.name as string) ?? 'Dashboard',
+      createdAt: (row.created_at as string) ?? null,
+    }));
+    set({ dashboards, dashboardsWorkspaceId: workspaceId });
+  },
+  setCurrentDashboardId: (id) => set({ currentDashboardId: id }),
+  loadDashboard: async (workspaceId, dashboardId) => {
     set({
       loading: true,
       error: null,
@@ -420,10 +454,19 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
         month: { ...emptyStatsState },
       },
     });
+
+    if (!dashboardId) {
+      const widgets = createDefaultWidgets();
+      const layouts = buildDefaultLayouts(widgets);
+      set({ widgets, layouts, loading: false, dirty: false, currentDashboardId: null });
+      return;
+    }
+
     const { data, error } = await supabase
       .from('workspace_dashboards')
-      .select('layouts, widgets')
+      .select('id, name, layouts, widgets')
       .eq('workspace_id', workspaceId)
+      .eq('id', dashboardId)
       .maybeSingle();
 
     if (error && (error as { code?: string }).code !== 'PGRST116') {
@@ -451,20 +494,120 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
       layouts: normalizeLayouts(layouts, widgets),
       loading: false,
       dirty: false,
+      currentDashboardId: data.id ?? dashboardId,
     });
   },
-  saveDashboard: async (workspaceId) => {
+  saveDashboard: async (workspaceId, dashboardId) => {
+    if (!dashboardId) return;
     const { widgets, layouts } = get();
     set({ saving: true, error: null });
     const { error } = await supabase
       .from('workspace_dashboards')
-      .upsert({ workspace_id: workspaceId, widgets, layouts }, { onConflict: 'workspace_id' });
+      .update({ widgets, layouts })
+      .eq('workspace_id', workspaceId)
+      .eq('id', dashboardId);
     if (error) {
       set({ saving: false, error: error.message });
       return;
     }
     set({ saving: false, dirty: false });
   },
+  createDashboard: async (workspaceId, name) => {
+    const trimmed = name.trim();
+    if (!trimmed) return { error: 'Dashboard name is required.' };
+    const { dashboards } = get();
+    if (dashboards.length >= 10) return { error: 'Dashboard limit reached (10).' };
+
+    const widgets = createDefaultWidgets();
+    const layouts = buildDefaultLayouts(widgets);
+    const { data, error } = await supabase
+      .from('workspace_dashboards')
+      .insert({
+        workspace_id: workspaceId,
+        name: trimmed,
+        widgets,
+        layouts,
+      })
+      .select('id, name, created_at')
+      .single();
+
+    if (error || !data) {
+      const errCode = (error as { code?: string })?.code;
+      if (errCode === '23505') {
+        return { error: 'Dashboard name already exists.' };
+      }
+      return { error: error?.message ?? 'Failed to create dashboard.' };
+    }
+
+    const next = {
+      id: data.id as string,
+      name: (data.name as string) ?? trimmed,
+      createdAt: (data.created_at as string) ?? null,
+    };
+    set((state) => ({
+      dashboards: [...state.dashboards, next],
+      currentDashboardId: next.id,
+    }));
+    return { id: next.id };
+  },
+  deleteDashboard: async (id) => {
+    const { error } = await supabase
+      .from('workspace_dashboards')
+      .delete()
+      .eq('id', id);
+    if (error) {
+      set({ error: error.message });
+      return { nextId: get().currentDashboardId };
+    }
+    const dashboards = get().dashboards.filter((dashboard) => dashboard.id !== id);
+    const nextId = dashboards[0]?.id ?? null;
+    set((state) => ({
+      dashboards,
+      currentDashboardId: state.currentDashboardId === id ? nextId : state.currentDashboardId,
+    }));
+    return { nextId };
+  },
+  renameDashboard: async (id, name) => {
+    const trimmed = name.trim();
+    if (!trimmed) return { error: 'Dashboard name is required.' };
+    const { error } = await supabase
+      .from('workspace_dashboards')
+      .update({ name: trimmed })
+      .eq('id', id);
+    if (error) {
+      const errCode = (error as { code?: string })?.code;
+      if (errCode === '23505') {
+        return { error: 'Dashboard name already exists.' };
+      }
+      return { error: error.message };
+    }
+    set((state) => ({
+      dashboards: state.dashboards.map((dashboard) => (
+        dashboard.id === id ? { ...dashboard, name: trimmed } : dashboard
+      )),
+    }));
+    return {};
+  },
+  resetDashboardState: () => set({
+    dashboards: [],
+    dashboardsWorkspaceId: null,
+    currentDashboardId: null,
+    widgets: [],
+    layouts: {},
+    statuses: [],
+    projects: [],
+    assignees: [],
+    milestones: [],
+    loading: false,
+    saving: false,
+    error: null,
+    dirty: false,
+    statsByPeriod: {
+      day: { ...emptyStatsState },
+      week: { ...emptyStatsState },
+      month: { ...emptyStatsState },
+    },
+  }),
   addWidget: (widget) => set((state) => {
     const normalized = normalizeWidget(widget);
     return {
