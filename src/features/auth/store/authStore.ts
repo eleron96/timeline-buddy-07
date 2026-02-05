@@ -16,6 +16,7 @@ interface WorkspaceMember {
   email: string;
   displayName: string | null;
   role: WorkspaceRole;
+  groupId: string | null;
 }
 
 interface WorkspaceMemberRow {
@@ -27,6 +28,7 @@ interface WorkspaceMemberRow {
 interface WorkspaceMemberProfileRow {
   user_id: string;
   role: WorkspaceRole;
+  group_id: string | null;
   profiles: { email: string; display_name: string | null } | null;
 }
 
@@ -118,8 +120,9 @@ interface AuthState {
   deleteWorkspace: (workspaceId?: string) => Promise<{ error?: string }>;
   updateWorkspaceName: (workspaceId: string, name: string) => Promise<{ error?: string }>;
   fetchMembers: (workspaceId?: string) => Promise<void>;
-  inviteMember: (email: string, role: WorkspaceRole) => Promise<{ error?: string; actionLink?: string; warning?: string }>;
+  inviteMember: (email: string, role: WorkspaceRole, groupId?: string | null) => Promise<{ error?: string; actionLink?: string; warning?: string }>;
   updateMemberRole: (userId: string, role: WorkspaceRole) => Promise<{ error?: string }>;
+  updateMemberGroup: (userId: string, groupId: string | null) => Promise<{ error?: string }>;
   removeMember: (userId: string) => Promise<{ error?: string }>;
   updateDisplayName: (displayName: string) => Promise<{ error?: string }>;
 }
@@ -600,7 +603,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
     const { data, error } = await supabase
       .from('workspace_members')
-      .select('user_id, role, profiles(email, display_name)')
+      .select('user_id, role, group_id, profiles(email, display_name)')
       .eq('workspace_id', targetWorkspaceId)
       .order('created_at', { ascending: true });
 
@@ -616,16 +619,17 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       role: row.role as WorkspaceRole,
       email: row.profiles?.email ?? 'unknown',
       displayName: row.profiles?.display_name ?? null,
+      groupId: row.group_id ?? null,
     }));
 
     set({ members, membersLoading: false });
   },
-  inviteMember: async (email, role) => {
+  inviteMember: async (email, role, groupId = null) => {
     const workspaceId = get().currentWorkspaceId;
     if (!workspaceId) return { error: 'Workspace not selected.' };
 
     const { data, error, response } = await supabase.functions.invoke('invite', {
-      body: { workspaceId, email, role },
+      body: { workspaceId, email, role, groupId },
     });
 
     if (error) {
@@ -664,6 +668,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
     await get().fetchMembers(workspaceId);
     await usePlannerStore.getState().refreshAssignees();
+    await usePlannerStore.getState().refreshMemberGroups();
     return { actionLink: data?.actionLink, warning: data?.warning };
   },
   updateMemberRole: async (userId, role) => {
@@ -682,6 +687,24 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
     await get().fetchMembers(workspaceId);
     await usePlannerStore.getState().refreshAssignees();
+    return {};
+  },
+  updateMemberGroup: async (userId, groupId) => {
+    const workspaceId = get().currentWorkspaceId;
+    if (!workspaceId) return { error: 'Workspace not selected.' };
+
+    const { error } = await supabase
+      .from('workspace_members')
+      .update({ group_id: groupId })
+      .eq('workspace_id', workspaceId)
+      .eq('user_id', userId);
+
+    if (error) {
+      return { error: error.message };
+    }
+
+    await get().fetchMembers(workspaceId);
+    await usePlannerStore.getState().refreshMemberGroups();
     return {};
   },
   removeMember: async (userId) => {
@@ -703,6 +726,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
 
     await get().fetchMembers(workspaceId);
+    await usePlannerStore.getState().refreshMemberGroups();
     return {};
   },
   updateDisplayName: async (displayName) => {

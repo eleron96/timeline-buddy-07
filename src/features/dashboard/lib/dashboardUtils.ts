@@ -108,9 +108,13 @@ const resolveStatusFilter = (widget: DashboardWidget, statuses: DashboardStatus[
   return sets.all;
 };
 
-const getFieldValue = (row: Pick<DashboardStatsRow, 'assignee_id' | 'project_id' | 'status_id'>, field: DashboardFilterField) => {
+const getFieldValue = (
+  row: Pick<DashboardStatsRow, 'assignee_id' | 'project_id' | 'status_id' | 'group_id'>,
+  field: DashboardFilterField,
+) => {
   if (field === 'assignee') return row.assignee_id ?? null;
   if (field === 'project') return row.project_id ?? null;
+  if (field === 'group') return row.group_id ?? null;
   return row.status_id;
 };
 
@@ -121,7 +125,7 @@ const matchesOperator = (value: string | null, operator: DashboardFilterOperator
   return operator === 'eq' ? isMatch : !isMatch;
 };
 
-type FilterRow = Pick<DashboardStatsRow, 'assignee_id' | 'project_id' | 'status_id'>;
+type FilterRow = Pick<DashboardStatsRow, 'assignee_id' | 'project_id' | 'status_id' | 'group_id'>;
 
 const matchesGroup = (row: FilterRow, group: DashboardFilterGroup) => {
   const rules = group.rules.filter((rule) => rule.value);
@@ -140,7 +144,9 @@ const matchesFilterGroups = (row: FilterRow, groups?: DashboardFilterGroup[]) =>
 };
 
 const widgetUsesAssigneeFilters = (widget: DashboardWidget) => (
-  widget.filterGroups?.some((group) => group.rules.some((rule) => rule.field === 'assignee' && rule.value))
+  widget.filterGroups?.some((group) => group.rules.some((rule) => (
+    (rule.field === 'assignee' || rule.field === 'group') && rule.value
+  )))
 );
 
 export const shouldUseAssigneeRows = (widget: DashboardWidget) => (

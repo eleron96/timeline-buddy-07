@@ -33,6 +33,7 @@ interface WidgetEditorDialogProps {
   statuses: DashboardStatus[];
   projects: DashboardOption[];
   assignees: DashboardOption[];
+  groups: DashboardOption[];
   initialWidget?: DashboardWidget | null;
   onSave: (widget: DashboardWidget) => void;
 }
@@ -68,6 +69,7 @@ const statusFilterOptions: Array<{ value: DashboardStatusFilter; label: string }
 
 const filterFieldOptions: Array<{ value: DashboardFilterField; label: string }> = [
   { value: 'assignee', label: 'User' },
+  { value: 'group', label: 'Group' },
   { value: 'status', label: 'Status' },
   { value: 'project', label: 'Project' },
 ];
@@ -100,6 +102,7 @@ export const WidgetEditorDialog: React.FC<WidgetEditorDialogProps> = ({
   statuses,
   projects,
   assignees,
+  groups,
   initialWidget,
   onSave,
 }) => {
@@ -223,6 +226,11 @@ export const WidgetEditorDialog: React.FC<WidgetEditorDialogProps> = ({
     [assignees],
   );
 
+  const orderedGroups = useMemo(
+    () => [...groups].sort((a, b) => a.name.localeCompare(b.name)),
+    [groups],
+  );
+
   const toggleStatus = (statusId: string) => {
     setStatusIds((current) => (
       current.includes(statusId)
@@ -277,6 +285,9 @@ export const WidgetEditorDialog: React.FC<WidgetEditorDialogProps> = ({
         ...project,
         name: formatProjectLabel(project.name, project.code),
       }));
+    }
+    if (field === 'group') {
+      return orderedGroups;
     }
     if (field === 'status') {
       return orderedStatuses.map((status) => ({

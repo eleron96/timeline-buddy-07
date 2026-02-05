@@ -28,6 +28,7 @@ const normalizeFilters = (value: unknown): Filters => {
   return {
     projectIds: normalizeFilterIds(candidate.projectIds),
     assigneeIds: normalizeFilterIds(candidate.assigneeIds),
+    groupIds: normalizeFilterIds(candidate.groupIds),
     statusIds: normalizeFilterIds(candidate.statusIds),
     typeIds: normalizeFilterIds(candidate.typeIds),
     tagIds: normalizeFilterIds(candidate.tagIds),
@@ -79,6 +80,7 @@ const PlannerPage = () => {
   const centeredOnLoadRef = useRef(false);
   const hasActiveFilters = filters.projectIds.length > 0
     || filters.assigneeIds.length > 0
+    || filters.groupIds.length > 0
     || filters.statusIds.length > 0
     || filters.typeIds.length > 0
     || filters.tagIds.length > 0;

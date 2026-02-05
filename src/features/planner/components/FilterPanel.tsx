@@ -12,6 +12,7 @@ import {
   ChevronRight,
   FolderKanban,
   Users,
+  UsersRound,
   CircleDot,
   Tag,
   Layers,
@@ -75,6 +76,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({ collapsed, onToggle })
   const { 
     projects, 
     assignees, 
+    memberGroups,
     statuses, 
     taskTypes, 
     tags,
@@ -90,12 +92,13 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({ collapsed, onToggle })
   const hasActiveFilters = 
     filters.projectIds.length > 0 ||
     filters.assigneeIds.length > 0 ||
+    filters.groupIds.length > 0 ||
     filters.statusIds.length > 0 ||
     filters.typeIds.length > 0 ||
     filters.tagIds.length > 0;
   
   const toggleFilter = (
-    type: 'projectIds' | 'assigneeIds' | 'statusIds' | 'typeIds' | 'tagIds',
+    type: 'projectIds' | 'assigneeIds' | 'groupIds' | 'statusIds' | 'typeIds' | 'tagIds',
     id: string,
   ) => {
     const current = filters[type];
@@ -130,6 +133,13 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({ collapsed, onToggle })
           <FilterSection 
             title="" 
             icon={<Users className="w-4 h-4 text-muted-foreground" />}
+            collapsed
+          >
+            <></>
+          </FilterSection>
+          <FilterSection 
+            title="" 
+            icon={<UsersRound className="w-4 h-4 text-muted-foreground" />}
             collapsed
           >
             <></>
@@ -225,6 +235,27 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({ collapsed, onToggle })
                   <span className="ml-1 text-[10px] text-muted-foreground">(disabled)</span>
                 )}
               </span>
+            </label>
+          ))}
+        </FilterSection>
+
+        <FilterSection 
+          title="Groups" 
+          icon={<UsersRound className="w-4 h-4 text-muted-foreground" />}
+        >
+          {memberGroups.length === 0 && (
+            <div className="text-xs text-muted-foreground">No groups yet.</div>
+          )}
+          {memberGroups.map((group) => (
+            <label
+              key={group.id}
+              className="flex items-center gap-2 py-1 cursor-pointer"
+            >
+              <Checkbox
+                checked={filters.groupIds.includes(group.id)}
+                onCheckedChange={() => toggleFilter('groupIds', group.id)}
+              />
+              <span className="text-sm truncate">{group.name}</span>
             </label>
           ))}
         </FilterSection>

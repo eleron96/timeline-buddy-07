@@ -34,6 +34,7 @@ export const TimelineGrid: React.FC<TimelineGridProps> = ({ onCreateTask }) => {
     milestones,
     projects, 
     assignees, 
+    memberGroupAssignments,
     viewMode, 
     groupMode, 
     currentDate,
@@ -49,6 +50,19 @@ export const TimelineGrid: React.FC<TimelineGridProps> = ({ onCreateTask }) => {
   const currentWorkspaceRole = useAuthStore((state) => state.currentWorkspaceRole);
   const canEdit = currentWorkspaceRole === 'editor' || currentWorkspaceRole === 'admin';
   const filteredAssignees = useFilteredAssignees(assignees);
+
+  const assigneeGroupMap = useMemo(() => {
+    const groupByUserId = new Map(memberGroupAssignments.map((assignment) => [assignment.userId, assignment.groupId]));
+    const map = new Map<string, string>();
+    assignees.forEach((assignee) => {
+      if (!assignee.userId) return;
+      const groupId = groupByUserId.get(assignee.userId);
+      if (groupId) {
+        map.set(assignee.id, groupId);
+      }
+    });
+    return map;
+  }, [assignees, memberGroupAssignments]);
 
   const myAssigneeId = useMemo(() => {
     if (!user?.id) return null;
@@ -173,15 +187,33 @@ export const TimelineGrid: React.FC<TimelineGridProps> = ({ onCreateTask }) => {
       if (filters.tagIds.length > 0 && !filters.tagIds.some(id => task.tagIds.includes(id))) {
         return false;
       }
+      if (filters.groupIds.length > 0) {
+        const matchesGroup = task.assigneeIds.some((id) => {
+          const groupId = assigneeGroupMap.get(id);
+          return groupId ? filters.groupIds.includes(groupId) : false;
+        });
+        if (!matchesGroup) {
+          return false;
+        }
+      }
       return true;
     });
-  }, [tasks, filters]);
+  }, [tasks, filters, assigneeGroupMap]);
   
   const visibleAssignees = useMemo(() => {
     if (groupMode !== 'assignee') return filteredAssignees;
-    if (filters.assigneeIds.length === 0) return filteredAssignees;
-    return filteredAssignees.filter((assignee) => filters.assigneeIds.includes(assignee.id));
-  }, [filteredAssignees, filters.assigneeIds, groupMode]);
+    let list = filteredAssignees;
+    if (filters.assigneeIds.length > 0) {
+      list = list.filter((assignee) => filters.assigneeIds.includes(assignee.id));
+    }
+    if (filters.groupIds.length > 0) {
+      list = list.filter((assignee) => {
+        const groupId = assigneeGroupMap.get(assignee.id);
+        return groupId ? filters.groupIds.includes(groupId) : false;
+      });
+    }
+    return list;
+  }, [assigneeGroupMap, filteredAssignees, filters.assigneeIds, filters.groupIds, groupMode]);
 
   // Group items (assignees or projects). При группировке по исполнителям: сначала текущий пользователь, затем остальные по алфавиту.
   const groupItems = useMemo(() => {

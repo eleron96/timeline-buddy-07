@@ -37,6 +37,7 @@ export const CalendarTimeline: React.FC = () => {
     milestones,
     projects,
     assignees,
+    memberGroupAssignments,
     filters,
     currentDate,
     setCurrentDate,
@@ -60,6 +61,19 @@ export const CalendarTimeline: React.FC = () => {
   const initialScrollTopRef = useRef(0);
   const scrollReadyRef = useRef(false);
 
+  const assigneeGroupMap = useMemo(() => {
+    const groupByUserId = new Map(memberGroupAssignments.map((assignment) => [assignment.userId, assignment.groupId]));
+    const map = new Map<string, string>();
+    assignees.forEach((assignee) => {
+      if (!assignee.userId) return;
+      const groupId = groupByUserId.get(assignee.userId);
+      if (groupId) {
+        map.set(assignee.id, groupId);
+      }
+    });
+    return map;
+  }, [assignees, memberGroupAssignments]);
+
   const filteredTasks = useMemo(() => {
     return tasks.filter(task => {
       if (filters.projectIds.length > 0 && task.projectId && !filters.projectIds.includes(task.projectId)) {
@@ -81,9 +95,18 @@ export const CalendarTimeline: React.FC = () => {
       if (filters.tagIds.length > 0 && !filters.tagIds.some(id => task.tagIds.includes(id))) {
         return false;
       }
+      if (filters.groupIds.length > 0) {
+        const matchesGroup = task.assigneeIds.some((id) => {
+          const groupId = assigneeGroupMap.get(id);
+          return groupId ? filters.groupIds.includes(groupId) : false;
+        });
+        if (!matchesGroup) {
+          return false;
+        }
+      }
       return true;
     });
-  }, [tasks, filters]);
+  }, [tasks, filters, assigneeGroupMap]);
 
   const projectById = useMemo(
     () => new Map(projects.map((project) => [project.id, project])),

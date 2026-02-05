@@ -81,6 +81,8 @@ const DashboardPage = () => {
     statuses,
     projects,
     assignees,
+    groups,
+    assigneeGroupMap,
     milestones,
     loading,
     saving,
@@ -380,10 +382,18 @@ const DashboardPage = () => {
     const useAssigneeRows = shouldUseAssigneeRows(widget);
     const rows = useAssigneeRows ? statsState?.rows : (statsState?.rowsBase ?? statsState?.rows);
     const seriesRows = useAssigneeRows ? statsState?.seriesRows : (statsState?.seriesRowsBase ?? statsState?.seriesRows);
+    const rowsWithGroups = (rows ?? []).map((row) => ({
+      ...row,
+      group_id: row.assignee_id ? assigneeGroupMap[row.assignee_id] ?? null : null,
+    }));
+    const seriesRowsWithGroups = (seriesRows ?? []).map((row) => ({
+      ...row,
+      group_id: row.assignee_id ? assigneeGroupMap[row.assignee_id] ?? null : null,
+    }));
     const data = statsState && isTaskWidget
       ? (widget.type === 'line' || widget.type === 'area'
-        ? buildTimeSeriesData(seriesRows ?? [], widget, statuses, projects)
-        : buildWidgetData(rows ?? [], widget, statuses, projects))
+        ? buildTimeSeriesData(seriesRowsWithGroups, widget, statuses, projects)
+        : buildWidgetData(rowsWithGroups, widget, statuses, projects))
       : null;
     const loading = isTaskWidget ? (statsState?.loading ?? false) : false;
     const widgetError = isTaskWidget ? (statsState?.error ?? null) : null;
@@ -602,6 +612,7 @@ const DashboardPage = () => {
         statuses={statuses}
         projects={projects}
         assignees={assignees}
+        groups={groups}
         initialWidget={editingWidget}
         onSave={handleSaveWidget}
       />

@@ -37,6 +37,16 @@ export interface Assignee {
   isActive: boolean;
 }
 
+export interface MemberGroup {
+  id: string;
+  name: string;
+}
+
+export interface MemberGroupAssignment {
+  userId: string;
+  groupId: string | null;
+}
+
 export interface Status {
   id: string;
   name: string;
@@ -71,6 +81,7 @@ export type GroupMode = 'assignee' | 'project';
 export interface Filters {
   projectIds: string[];
   assigneeIds: string[];
+  groupIds: string[];
   statusIds: string[];
   typeIds: string[];
   tagIds: string[];
@@ -83,6 +94,8 @@ export interface PlannerState {
   projects: Project[];
   customers: Customer[];
   assignees: Assignee[];
+  memberGroups: MemberGroup[];
+  memberGroupAssignments: MemberGroupAssignment[];
   statuses: Status[];
   taskTypes: TaskType[];
   tags: Tag[];

@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { usePlannerStore } from '@/features/planner/store/plannerStore';
-import { useAuthStore } from '@/features/auth/store/authStore';
+import { useAuthStore, WorkspaceRole } from '@/features/auth/store/authStore';
 import { WorkspaceSwitcher } from '@/features/workspace/components/WorkspaceSwitcher';
 import { WorkspaceNav } from '@/features/workspace/components/WorkspaceNav';
 import { SettingsPanel } from '@/features/workspace/components/SettingsPanel';
@@ -40,6 +40,26 @@ type TaskRow = {
   tag_ids: string[] | null;
   description: string | null;
   repeat_id: string | null;
+};
+
+type MemberGroup = {
+  id: string;
+  workspace_id: string;
+  name: string;
+  created_at: string;
+};
+
+type GroupMemberRow = {
+  user_id: string;
+  role: WorkspaceRole;
+  profiles: { email: string; display_name: string | null } | null;
+};
+
+type GroupMember = {
+  userId: string;
+  role: WorkspaceRole;
+  email: string;
+  displayName: string | null;
 };
 
 const normalizeAssigneeIds = (assigneeIds: string[] | null | undefined, legacyId: string | null | undefined) => {
@@ -98,7 +118,7 @@ const MembersPage = () => {
   const [showSettings, setShowSettings] = useState(false);
   const [showAccountSettings, setShowAccountSettings] = useState(false);
   const [tab, setTab] = useState<'active' | 'disabled'>('active');
-  const [mode, setMode] = useState<'tasks' | 'access'>('tasks');
+  const [mode, setMode] = useState<'tasks' | 'access' | 'groups'>('tasks');
   const [selectedAssigneeId, setSelectedAssigneeId] = useState<string | null>(null);
   const [assigneeTasks, setAssigneeTasks] = useState<Task[]>([]);
   const [tasksLoading, setTasksLoading] = useState(false);
@@ -114,6 +134,18 @@ const MembersPage = () => {
   const [totalCount, setTotalCount] = useState(0);
   const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set());
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [groups, setGroups] = useState<MemberGroup[]>([]);
+  const [groupsLoading, setGroupsLoading] = useState(false);
+  const [groupsError, setGroupsError] = useState('');
+  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
+  const [groupMembers, setGroupMembers] = useState<GroupMember[]>([]);
+  const [groupMembersLoading, setGroupMembersLoading] = useState(false);
+  const [groupMembersError, setGroupMembersError] = useState('');
+  const [newGroupName, setNewGroupName] = useState('');
+  const [creatingGroup, setCreatingGroup] = useState(false);
+  const [groupActionLoading, setGroupActionLoading] = useState(false);
+  const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
+  const [editingGroupName, setEditingGroupName] = useState('');
   const pageSize = 100;
   const modeToggle = (
     <div className="inline-flex items-center gap-2 rounded-lg bg-muted/60 p-1">
@@ -138,6 +170,17 @@ const MembersPage = () => {
         )}
       >
         Access
+      </Button>
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={() => setMode('groups')}
+        className={cn(
+          'h-7 px-3 text-xs rounded-md',
+          mode === 'groups' && 'bg-foreground text-background shadow-sm'
+        )}
+      >
+        Groups
       </Button>
     </div>
   );
@@ -181,6 +224,7 @@ const MembersPage = () => {
     taskTypes,
     tags,
     loadWorkspaceData,
+    refreshMemberGroups,
     assigneeTaskCounts,
     assigneeCountsDate,
     deleteTasks,
@@ -200,6 +244,7 @@ const MembersPage = () => {
   } = useAuthStore();
 
   const canEdit = currentWorkspaceRole === 'editor' || currentWorkspaceRole === 'admin';
+  const isAdmin = currentWorkspaceRole === 'admin';
   const userLabel = profileDisplayName || user?.email || user?.id || '';
   const navigate = useNavigate();
   const modeStorageKey = currentWorkspaceId
@@ -219,7 +264,7 @@ const MembersPage = () => {
     modeHydratedRef.current = false;
     if (typeof window === 'undefined') return;
     const saved = window.localStorage.getItem(modeStorageKey);
-    if (saved === 'tasks' || saved === 'access') {
+    if (saved === 'tasks' || saved === 'access' || saved === 'groups') {
       setMode(saved);
     }
     modeHydratedRef.current = true;
@@ -268,6 +313,15 @@ const MembersPage = () => {
     () => new Map(assignees.map((assignee) => [assignee.id, assignee])),
     [assignees],
   );
+  const assigneeByUserId = useMemo(() => {
+    const map = new Map<string, typeof assignees[number]>();
+    assignees.forEach((assignee) => {
+      if (assignee.userId) {
+        map.set(assignee.userId, assignee);
+      }
+    });
+    return map;
+  }, [assignees]);
   const taskTypeById = useMemo(
     () => new Map(taskTypes.map((type) => [type.id, type])),
     [taskTypes],
@@ -289,6 +343,95 @@ const MembersPage = () => {
     () => [...projects].sort((a, b) => a.name.localeCompare(b.name)),
     [projects],
   );
+
+  const selectedGroup = useMemo(
+    () => groups.find((group) => group.id === selectedGroupId) ?? null,
+    [groups, selectedGroupId],
+  );
+
+  const fetchGroups = useCallback(async () => {
+    if (!currentWorkspaceId) return;
+    setGroupsLoading(true);
+    setGroupsError('');
+    const { data, error } = await supabase
+      .from('member_groups')
+      .select('id, workspace_id, name, created_at')
+      .eq('workspace_id', currentWorkspaceId)
+      .order('name', { ascending: true });
+
+    if (error) {
+      setGroupsError(error.message);
+      setGroupsLoading(false);
+      return;
+    }
+
+    setGroups((data ?? []) as MemberGroup[]);
+    setGroupsLoading(false);
+  }, [currentWorkspaceId]);
+
+  const fetchGroupMembers = useCallback(async (groupId: string) => {
+    if (!currentWorkspaceId) return;
+    setGroupMembersLoading(true);
+    setGroupMembersError('');
+    const { data, error } = await supabase
+      .from('workspace_members')
+      .select('user_id, role, profiles(email, display_name)')
+      .eq('workspace_id', currentWorkspaceId)
+      .eq('group_id', groupId);
+
+    if (error) {
+      setGroupMembersError(error.message);
+      setGroupMembersLoading(false);
+      return;
+    }
+
+    const rows = (data ?? []) as GroupMemberRow[];
+    const members = rows.map((row) => ({
+      userId: row.user_id,
+      role: row.role,
+      email: row.profiles?.email ?? 'unknown',
+      displayName: row.profiles?.display_name ?? null,
+    }));
+    members.sort((a, b) => {
+      const left = (a.displayName || a.email).toLowerCase();
+      const right = (b.displayName || b.email).toLowerCase();
+      return left.localeCompare(right);
+    });
+    setGroupMembers(members);
+    setGroupMembersLoading(false);
+  }, [currentWorkspaceId]);
+
+  useEffect(() => {
+    if (currentWorkspaceId) {
+      fetchGroups();
+    }
+  }, [currentWorkspaceId, fetchGroups]);
+
+  useEffect(() => {
+    if (groups.length === 0) {
+      setSelectedGroupId(null);
+      return;
+    }
+    if (!selectedGroupId || !groups.some((group) => group.id === selectedGroupId)) {
+      setSelectedGroupId(groups[0].id);
+    }
+  }, [groups, selectedGroupId]);
+
+  useEffect(() => {
+    if (mode !== 'groups') return;
+    if (!selectedGroupId) {
+      setGroupMembers([]);
+      return;
+    }
+    fetchGroupMembers(selectedGroupId);
+  }, [fetchGroupMembers, mode, selectedGroupId]);
+
+  useEffect(() => {
+    if (!selectedGroupId || selectedGroupId !== editingGroupId) {
+      setEditingGroupId(null);
+      setEditingGroupName('');
+    }
+  }, [editingGroupId, selectedGroupId]);
 
   const fetchAssigneeTasks = useCallback(async (assigneeId: string) => {
     if (!currentWorkspaceId) return;
@@ -510,6 +653,98 @@ const MembersPage = () => {
     setTasksLoading(false);
   }, [deleteTasks, selectedCount, selectedTaskIds, tasksLoading]);
 
+  const handleCreateGroup = useCallback(async () => {
+    if (!currentWorkspaceId || !isAdmin) return;
+    const trimmedName = newGroupName.trim();
+    if (!trimmedName) return;
+    setGroupActionLoading(true);
+    setGroupsError('');
+    const { data, error } = await supabase
+      .from('member_groups')
+      .insert({ workspace_id: currentWorkspaceId, name: trimmedName })
+      .select('id')
+      .single();
+
+    if (error) {
+      setGroupsError(error.message);
+      setGroupActionLoading(false);
+      return;
+    }
+
+    setNewGroupName('');
+    setCreatingGroup(false);
+    await fetchGroups();
+    await refreshMemberGroups();
+    if (data?.id) {
+      setSelectedGroupId(data.id);
+    }
+    setGroupActionLoading(false);
+  }, [currentWorkspaceId, fetchGroups, isAdmin, newGroupName, refreshMemberGroups]);
+
+  const handleStartEditGroup = useCallback((group: MemberGroup) => {
+    setEditingGroupId(group.id);
+    setEditingGroupName(group.name);
+  }, []);
+
+  const handleSaveGroupName = useCallback(async () => {
+    if (!currentWorkspaceId || !editingGroupId || !isAdmin) return;
+    const trimmedName = editingGroupName.trim();
+    if (!trimmedName) return;
+    setGroupActionLoading(true);
+    setGroupsError('');
+    const { error } = await supabase
+      .from('member_groups')
+      .update({ name: trimmedName })
+      .eq('id', editingGroupId)
+      .eq('workspace_id', currentWorkspaceId);
+
+    if (error) {
+      setGroupsError(error.message);
+      setGroupActionLoading(false);
+      return;
+    }
+
+    await fetchGroups();
+    await refreshMemberGroups();
+    setEditingGroupId(null);
+    setEditingGroupName('');
+    setGroupActionLoading(false);
+  }, [currentWorkspaceId, editingGroupId, editingGroupName, fetchGroups, isAdmin, refreshMemberGroups]);
+
+  const handleDeleteGroup = useCallback(async () => {
+    if (!currentWorkspaceId || !selectedGroupId || !isAdmin) return;
+    if (typeof window !== 'undefined') {
+      const groupName = selectedGroup?.name ?? 'this group';
+      const confirmed = window.confirm(`Delete "${groupName}"?`);
+      if (!confirmed) return;
+    }
+    setGroupActionLoading(true);
+    setGroupsError('');
+    const { error } = await supabase
+      .from('member_groups')
+      .delete()
+      .eq('id', selectedGroupId)
+      .eq('workspace_id', currentWorkspaceId);
+
+    if (error) {
+      setGroupsError(error.message);
+      setGroupActionLoading(false);
+      return;
+    }
+
+    await fetchGroups();
+    await refreshMemberGroups();
+    setGroupActionLoading(false);
+  }, [currentWorkspaceId, fetchGroups, isAdmin, refreshMemberGroups, selectedGroup?.name, selectedGroupId]);
+
+  const handleGroupMemberClick = useCallback((userId: string) => {
+    const assignee = assigneeByUserId.get(userId);
+    if (!assignee) return;
+    setTab(assignee.isActive ? 'active' : 'disabled');
+    setSelectedAssigneeId(assignee.id);
+    setMode('tasks');
+  }, [assigneeByUserId, setMode, setSelectedAssigneeId, setTab]);
+
   if (isSuperAdmin) {
     return <Navigate to="/admin/users" replace />;
   }
@@ -624,12 +859,198 @@ const MembersPage = () => {
               </TabsContent>
             </Tabs>
           )}
+
+          {mode === 'groups' && (
+            <div className="flex flex-1 flex-col">
+              <div className="px-4 py-3 border-b border-border space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-semibold">Groups</span>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => setCreatingGroup((value) => !value)}
+                    disabled={!isAdmin}
+                  >
+                    New group
+                  </Button>
+                </div>
+                {creatingGroup && (
+                  <div className="space-y-2">
+                    <Input
+                      placeholder="Group name"
+                      value={newGroupName}
+                      onChange={(event) => setNewGroupName(event.target.value)}
+                      disabled={!isAdmin || groupActionLoading}
+                    />
+                    <div className="flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        onClick={handleCreateGroup}
+                        disabled={!isAdmin || groupActionLoading || !newGroupName.trim()}
+                      >
+                        Create
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => {
+                          setCreatingGroup(false);
+                          setNewGroupName('');
+                        }}
+                        disabled={groupActionLoading}
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  </div>
+                )}
+                {groupsError && (
+                  <div className="text-xs text-destructive">{groupsError}</div>
+                )}
+              </div>
+              <ScrollArea className="h-full px-4 py-3">
+                {groupsLoading && (
+                  <div className="text-sm text-muted-foreground">Loading groups...</div>
+                )}
+                {!groupsLoading && groups.length === 0 && (
+                  <div className="text-sm text-muted-foreground">No groups yet.</div>
+                )}
+                {!groupsLoading && groups.length > 0 && (
+                  <div className="space-y-2">
+                    {groups.map((group) => (
+                      <button
+                        key={group.id}
+                        type="button"
+                        onClick={() => setSelectedGroupId(group.id)}
+                        className={`w-full rounded-lg border px-3 py-2 text-left transition-colors ${
+                          selectedGroupId === group.id ? 'border-foreground/60 bg-muted/60' : 'border-border hover:bg-muted/40'
+                        }`}
+                      >
+                        <div className="text-sm font-medium truncate">{group.name}</div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </ScrollArea>
+            </div>
+          )}
         </aside>
 
         <section className="flex-1 overflow-hidden flex flex-col">
           {mode === 'access' && (
             <div className="flex-1 overflow-auto px-6 py-4">
               <WorkspaceMembersPanel />
+            </div>
+          )}
+
+          {mode === 'groups' && (
+            <div className="flex-1 overflow-auto px-6 py-4">
+              {!selectedGroup && (
+                <div className="text-sm text-muted-foreground">
+                  Select a group to see members.
+                </div>
+              )}
+
+              {selectedGroup && (
+                <div className="space-y-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    {editingGroupId === selectedGroup.id ? (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Input
+                          className="w-[240px]"
+                          value={editingGroupName}
+                          onChange={(event) => setEditingGroupName(event.target.value)}
+                          disabled={!isAdmin || groupActionLoading}
+                        />
+                        <Button
+                          size="sm"
+                          onClick={handleSaveGroupName}
+                          disabled={!isAdmin || groupActionLoading || !editingGroupName.trim()}
+                        >
+                          Save
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => {
+                            setEditingGroupId(null);
+                            setEditingGroupName('');
+                          }}
+                          disabled={groupActionLoading}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="text-lg font-semibold">{selectedGroup.name}</div>
+                    )}
+                    <div className="flex items-center gap-2">
+                      {editingGroupId !== selectedGroup.id && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleStartEditGroup(selectedGroup)}
+                          disabled={!isAdmin}
+                        >
+                          Rename
+                        </Button>
+                      )}
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        onClick={handleDeleteGroup}
+                        disabled={!isAdmin || groupActionLoading}
+                      >
+                        Delete
+                      </Button>
+                    </div>
+                  </div>
+
+                  {groupMembersLoading && (
+                    <div className="text-sm text-muted-foreground">Loading members...</div>
+                  )}
+                  {!groupMembersLoading && groupMembersError && (
+                    <div className="text-sm text-destructive">{groupMembersError}</div>
+                  )}
+                  {!groupMembersLoading && !groupMembersError && (
+                    <>
+                      {groupMembers.length === 0 ? (
+                        <div className="text-sm text-muted-foreground">No members in this group.</div>
+                      ) : (
+                        <div className="space-y-2">
+                          {groupMembers.map((member) => {
+                            const assignee = assigneeByUserId.get(member.userId);
+                            const isActive = assignee?.isActive ?? true;
+                            return (
+                              <button
+                                key={member.userId}
+                                type="button"
+                                onClick={() => handleGroupMemberClick(member.userId)}
+                                className="w-full rounded-lg border px-3 py-2 text-left transition-colors hover:bg-muted/40"
+                              >
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="text-sm font-medium truncate">
+                                    {member.displayName || member.email}
+                                  </span>
+                                  {!isActive && (
+                                    <Badge variant="secondary" className="text-[10px]">Disabled</Badge>
+                                  )}
+                                  <Badge variant="outline" className="text-[10px]">
+                                    {member.role}
+                                  </Badge>
+                                </div>
+                                <div className="text-xs text-muted-foreground truncate">
+                                  {member.displayName ? member.email : 'View tasks'}
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
             </div>
           )}
 

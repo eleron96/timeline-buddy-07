@@ -20,6 +20,8 @@ import {
   Project,
   Customer,
   Assignee,
+  MemberGroup,
+  MemberGroupAssignment,
   Status,
   TaskType,
   Tag,
@@ -69,6 +71,18 @@ type AssigneeRow = {
   name: string;
   user_id: string | null;
   is_active: boolean;
+};
+
+type MemberGroupRow = {
+  id: string;
+  workspace_id: string;
+  name: string;
+  created_at: string;
+};
+
+type MemberGroupAssignmentRow = {
+  user_id: string;
+  group_id: string | null;
 };
 
 type StatusRow = {
@@ -133,6 +147,7 @@ interface PlannerStore extends PlannerState {
   setWorkspaceId: (id: string | null) => void;
   loadWorkspaceData: (workspaceId: string) => Promise<void>;
   refreshAssignees: () => Promise<void>;
+  refreshMemberGroups: () => Promise<void>;
   reset: () => void;
 
   addTask: (task: Omit<Task, 'id'>) => Promise<Task | null>;
@@ -187,6 +202,7 @@ interface PlannerStore extends PlannerState {
 const initialFilters: Filters = {
   projectIds: [],
   assigneeIds: [],
+  groupIds: [],
   statusIds: [],
   typeIds: [],
   tagIds: [],
@@ -335,6 +351,8 @@ export const usePlannerStore = create<PlannerStore>()(
       projects: [],
       customers: [],
       assignees: [],
+      memberGroups: [],
+      memberGroupAssignments: [],
       statuses: [],
       taskTypes: [],
       tags: [],
@@ -362,6 +380,8 @@ export const usePlannerStore = create<PlannerStore>()(
         projects: [],
         customers: [],
         assignees: [],
+        memberGroups: [],
+        memberGroupAssignments: [],
         statuses: [],
         taskTypes: [],
         tags: [],
@@ -419,6 +439,8 @@ export const usePlannerStore = create<PlannerStore>()(
           projectsRes,
           customersRes,
           assigneesRes,
+          memberGroupsRes,
+          memberAssignmentsRes,
           statusesRes,
           taskTypesRes,
           tagsRes,
@@ -434,6 +456,8 @@ export const usePlannerStore = create<PlannerStore>()(
           supabase.from('projects').select('*').eq('workspace_id', workspaceId),
           supabase.from('customers').select('*').eq('workspace_id', workspaceId),
           supabase.from('assignees').select('*').eq('workspace_id', workspaceId),
+          supabase.from('member_groups').select('*').eq('workspace_id', workspaceId),
+          supabase.from('workspace_members').select('user_id, group_id').eq('workspace_id', workspaceId),
           supabase.from('statuses').select('*').eq('workspace_id', workspaceId),
           supabase.from('task_types').select('*').eq('workspace_id', workspaceId),
           supabase.from('tags').select('*').eq('workspace_id', workspaceId),
@@ -453,6 +477,8 @@ export const usePlannerStore = create<PlannerStore>()(
           || projectsRes.error
           || customersRes.error
           || assigneesRes.error
+          || memberGroupsRes.error
+          || memberAssignmentsRes.error
           || statusesRes.error
           || taskTypesRes.error
           || tagsRes.error
@@ -463,6 +489,8 @@ export const usePlannerStore = create<PlannerStore>()(
               || projectsRes.error?.message
               || customersRes.error?.message
               || assigneesRes.error?.message
+              || memberGroupsRes.error?.message
+              || memberAssignmentsRes.error?.message
               || statusesRes.error?.message
               || taskTypesRes.error?.message
               || tagsRes.error?.message
@@ -505,11 +533,24 @@ export const usePlannerStore = create<PlannerStore>()(
           .sort((left, right) => left.name.localeCompare(right.name))
           .map(mapAssigneeRow);
 
+        const memberGroups = (memberGroupsRes.data ?? [])
+          .map((row) => ({
+            id: (row as MemberGroupRow).id,
+            name: (row as MemberGroupRow).name,
+          }))
+          .sort((left, right) => left.name.localeCompare(right.name));
+
+        const memberGroupAssignments = (memberAssignmentsRes.data ?? []).map((row) => ({
+          userId: (row as MemberGroupAssignmentRow).user_id,
+          groupId: (row as MemberGroupAssignmentRow).group_id ?? null,
+        }));
+
         const nextProjects = (projectsRes.data ?? []).map(mapProjectRow);
         const nextCustomers = (customersRes.data ?? []).map(mapCustomerRow).sort((left, right) => (
           left.name.localeCompare(right.name)
         ));
         const activeProjectIds = new Set(nextProjects.filter((project) => !project.archived).map((project) => project.id));
+        const activeGroupIds = new Set(memberGroups.map((group) => group.id));
 
         let nextAssigneeCounts = get().assigneeTaskCounts;
         let nextAssigneeCountsDate = get().assigneeCountsDate;
@@ -539,6 +580,8 @@ export const usePlannerStore = create<PlannerStore>()(
           projects: nextProjects,
           customers: nextCustomers,
           assignees,
+          memberGroups,
+          memberGroupAssignments,
           statuses: (statusesRes.data ?? []).map(mapStatusRow),
           taskTypes: (taskTypesRes.data ?? []).map(mapTaskTypeRow),
           tags: (tagsRes.data ?? []).map(mapTagRow),
@@ -549,6 +592,7 @@ export const usePlannerStore = create<PlannerStore>()(
           filters: {
             ...state.filters,
             projectIds: state.filters.projectIds.filter((id) => activeProjectIds.has(id)),
+            groupIds: state.filters.groupIds.filter((id) => activeGroupIds.has(id)),
           },
           loading: false,
         }));
@@ -594,6 +638,45 @@ export const usePlannerStore = create<PlannerStore>()(
           .map(mapAssigneeRow);
 
         set({ assignees });
+      },
+      refreshMemberGroups: async () => {
+        const workspaceId = get().workspaceId;
+        if (!workspaceId) return;
+
+        const [groupsRes, membersRes] = await Promise.all([
+          supabase
+            .from('member_groups')
+            .select('id, name')
+            .eq('workspace_id', workspaceId)
+            .order('name', { ascending: true }),
+          supabase
+            .from('workspace_members')
+            .select('user_id, group_id')
+            .eq('workspace_id', workspaceId),
+        ]);
+
+        if (groupsRes.error || membersRes.error) {
+          console.error(groupsRes.error ?? membersRes.error);
+          return;
+        }
+
+        const memberGroups = (groupsRes.data ?? []).map((row) => ({
+          id: (row as { id: string }).id,
+          name: (row as { name: string }).name,
+        }));
+        const memberGroupAssignments = (membersRes.data ?? []).map((row) => ({
+          userId: (row as MemberGroupAssignmentRow).user_id,
+          groupId: (row as MemberGroupAssignmentRow).group_id ?? null,
+        }));
+        const groupIds = new Set(memberGroups.map((group) => group.id));
+        set((state) => ({
+          memberGroups,
+          memberGroupAssignments,
+          filters: {
+            ...state.filters,
+            groupIds: state.filters.groupIds.filter((id) => groupIds.has(id)),
+          },
+        }));
       },
 
       addTask: async (task) => {
@@ -1495,6 +1578,7 @@ export const usePlannerStore = create<PlannerStore>()(
           ...state.filters,
           projectIds: [],
           assigneeIds: [],
+          groupIds: [],
           statusIds: [],
           typeIds: [],
           tagIds: [],

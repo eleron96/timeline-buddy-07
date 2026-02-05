@@ -200,7 +200,12 @@ const handleInvite = async (req: Request) => {
     return jsonResponse({ error: authResult.error }, authResult.status ?? 401);
   }
 
-  const { data: payload, error } = await readJson<{ workspaceId?: string; email?: string; role?: string }>(req);
+  const { data: payload, error } = await readJson<{
+    workspaceId?: string;
+    email?: string;
+    role?: string;
+    groupId?: string | null;
+  }>(req);
   if (error) {
     return jsonResponse({ error }, 400);
   }
@@ -208,6 +213,7 @@ const handleInvite = async (req: Request) => {
   const workspaceId = payload.workspaceId?.trim();
   const email = payload.email?.trim().toLowerCase();
   const role = payload.role ?? "viewer";
+  const groupId = payload.groupId?.trim() || null;
 
   if (!workspaceId || !email) {
     return jsonResponse({ error: "workspaceId and email are required" }, 400);
@@ -236,6 +242,19 @@ const handleInvite = async (req: Request) => {
 
   const workspaceName = workspace?.name ?? "workspace";
   const redirectTo = `${appUrl}/invite/${workspaceId}`;
+
+  if (groupId) {
+    const { data: group, error: groupError } = await supabaseAdmin
+      .from("member_groups")
+      .select("id")
+      .eq("id", groupId)
+      .eq("workspace_id", workspaceId)
+      .maybeSingle();
+
+    if (groupError || !group) {
+      return jsonResponse({ error: "Group not found." }, 400);
+    }
+  }
 
   let invitedUserId: string | null = null;
   let actionLink: string | null = null;
@@ -278,7 +297,7 @@ const handleInvite = async (req: Request) => {
 
   const { error: membershipInsertError } = await supabaseAdmin
     .from("workspace_members")
-    .upsert({ workspace_id: workspaceId, user_id: invitedUserId, role });
+    .upsert({ workspace_id: workspaceId, user_id: invitedUserId, role, group_id: groupId });
 
   if (membershipInsertError) {
     return jsonResponse({ error: membershipInsertError.message }, 400);

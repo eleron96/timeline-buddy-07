@@ -26,7 +26,7 @@ export type DashboardBarPalette =
   | 'mono'
   | 'checker';
 
-export type DashboardFilterField = 'assignee' | 'status' | 'project';
+export type DashboardFilterField = 'assignee' | 'status' | 'project' | 'group';
 
 export type DashboardFilterOperator = 'eq' | 'neq';
 
@@ -105,6 +105,7 @@ export type DashboardMilestone = {
 export type DashboardStatsRow = {
   assignee_id: string | null;
   assignee_name: string | null;
+  group_id?: string | null;
   project_id: string | null;
   project_name: string | null;
   status_id: string;
@@ -122,6 +123,7 @@ export type DashboardSeriesRow = {
   bucket_date: string;
   assignee_id: string | null;
   assignee_name: string | null;
+  group_id?: string | null;
   project_id: string | null;
   project_name: string | null;
   status_id: string;

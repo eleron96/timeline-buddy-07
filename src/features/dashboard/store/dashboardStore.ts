@@ -39,6 +39,8 @@ type DashboardState = {
   statuses: DashboardStatus[];
   projects: DashboardOption[];
   assignees: DashboardOption[];
+  groups: DashboardOption[];
+  assigneeGroupMap: Record<string, string | null>;
   milestones: DashboardMilestone[];
   loading: boolean;
   saving: boolean;
@@ -410,6 +412,8 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
   statuses: [],
   projects: [],
   assignees: [],
+  groups: [],
+  assigneeGroupMap: {},
   milestones: [],
   loading: false,
   saving: false,
@@ -597,6 +601,8 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
     statuses: [],
     projects: [],
     assignees: [],
+    groups: [],
+    assigneeGroupMap: {},
     milestones: [],
     loading: false,
     saving: false,
@@ -651,7 +657,7 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
     dirty: true,
   })),
   loadFilterOptions: async (workspaceId) => {
-    const [statusesRes, projectsRes, assigneesRes] = await Promise.all([
+    const [statusesRes, projectsRes, assigneesRes, groupsRes, membersRes] = await Promise.all([
       supabase
         .from('statuses')
         .select('id, name, emoji, color, is_final, is_cancelled')
@@ -667,13 +673,24 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
         .select('id, name, user_id')
         .eq('workspace_id', workspaceId)
         .order('created_at', { ascending: true }),
+      supabase
+        .from('member_groups')
+        .select('id, name')
+        .eq('workspace_id', workspaceId)
+        .order('name', { ascending: true }),
+      supabase
+        .from('workspace_members')
+        .select('user_id, group_id')
+        .eq('workspace_id', workspaceId),
     ]);
 
-    if (statusesRes.error || projectsRes.error || assigneesRes.error) {
+    if (statusesRes.error || projectsRes.error || assigneesRes.error || groupsRes.error || membersRes.error) {
       set({
         error: statusesRes.error?.message
           || projectsRes.error?.message
           || assigneesRes.error?.message
+          || groupsRes.error?.message
+          || membersRes.error?.message
           || 'Failed to load filter options.',
       });
       return;
@@ -710,7 +727,21 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
         name: row.name as string,
       }));
 
-    set({ statuses, projects, assignees });
+    const groups = (groupsRes.data ?? []).map((row) => ({
+      id: row.id as string,
+      name: row.name as string,
+    }));
+
+    const groupByUserId = new Map(
+      (membersRes.data ?? []).map((row) => [row.user_id as string, row.group_id as string | null]),
+    );
+    const assigneeGroupMap = (assigneesRes.data ?? []).reduce<Record<string, string | null>>((acc, row) => {
+      const groupId = row.user_id ? groupByUserId.get(row.user_id as string) ?? null : null;
+      acc[row.id as string] = groupId;
+      return acc;
+    }, {});
+
+    set({ statuses, projects, assignees, groups, assigneeGroupMap });
   },
   loadMilestones: async (workspaceId) => {
     const { data, error } = await supabase

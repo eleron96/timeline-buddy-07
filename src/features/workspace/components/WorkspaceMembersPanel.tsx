@@ -10,12 +10,18 @@ import { Badge } from '@/shared/ui/badge';
 import { usePlannerStore } from '@/features/planner/store/plannerStore';
 import { cn } from '@/shared/lib/classNames';
 import { Popover, PopoverContent, PopoverTrigger } from '@/shared/ui/popover';
+import { supabase } from '@/shared/lib/supabaseClient';
 
 interface WorkspaceMembersPanelProps {
   active?: boolean;
   showTitle?: boolean;
   className?: string;
 }
+
+type MemberGroup = {
+  id: string;
+  name: string;
+};
 
 export const WorkspaceMembersPanel: React.FC<WorkspaceMembersPanelProps> = ({
   active = true,
@@ -29,6 +35,7 @@ export const WorkspaceMembersPanel: React.FC<WorkspaceMembersPanelProps> = ({
     fetchMembers,
     inviteMember,
     updateMemberRole,
+    updateMemberGroup,
     removeMember,
     currentWorkspaceId,
     currentWorkspaceRole,
@@ -42,6 +49,10 @@ export const WorkspaceMembersPanel: React.FC<WorkspaceMembersPanelProps> = ({
   const [actionLink, setActionLink] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [groups, setGroups] = useState<MemberGroup[]>([]);
+  const [groupsLoading, setGroupsLoading] = useState(false);
+  const [groupsError, setGroupsError] = useState('');
+  const [inviteGroupId, setInviteGroupId] = useState('none');
 
   const isAdmin = currentWorkspaceRole === 'admin';
   const currentUserId = user?.id ?? null;
@@ -53,6 +64,31 @@ export const WorkspaceMembersPanel: React.FC<WorkspaceMembersPanelProps> = ({
       refreshAssignees();
     }
   }, [active, currentWorkspaceId, fetchMembers, refreshAssignees, setWorkspaceId]);
+
+  useEffect(() => {
+    if (!active || !currentWorkspaceId) return;
+    let isMounted = true;
+    setGroupsLoading(true);
+    setGroupsError('');
+    supabase
+      .from('member_groups')
+      .select('id, name')
+      .eq('workspace_id', currentWorkspaceId)
+      .order('name', { ascending: true })
+      .then(({ data, error }) => {
+        if (!isMounted) return;
+        if (error) {
+          setGroupsError(error.message);
+          setGroupsLoading(false);
+          return;
+        }
+        setGroups((data ?? []) as MemberGroup[]);
+        setGroupsLoading(false);
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, [active, currentWorkspaceId]);
 
   const assigneeByUserId = useMemo(() => {
     const map = new Map<string, typeof assignees[number]>();
@@ -72,7 +108,11 @@ export const WorkspaceMembersPanel: React.FC<WorkspaceMembersPanelProps> = ({
     if (!email.trim()) return;
 
     setSubmitting(true);
-    const result = await inviteMember(email.trim(), role);
+    const result = await inviteMember(
+      email.trim(),
+      role,
+      inviteGroupId === 'none' ? null : inviteGroupId,
+    );
     if (result.error) {
       setError(result.error);
     }
@@ -86,6 +126,7 @@ export const WorkspaceMembersPanel: React.FC<WorkspaceMembersPanelProps> = ({
     if (!result.error) {
       setEmail('');
       setRole('viewer');
+      setInviteGroupId('none');
       setInviteOpen(false);
     }
   };
@@ -93,6 +134,15 @@ export const WorkspaceMembersPanel: React.FC<WorkspaceMembersPanelProps> = ({
   const handleRoleChange = async (userId: string, nextRole: WorkspaceRole) => {
     if (!isAdmin) return;
     const result = await updateMemberRole(userId, nextRole);
+    if (result.error) {
+      setError(result.error);
+    }
+  };
+
+  const handleGroupChange = async (userId: string, nextGroupId: string) => {
+    if (!isAdmin) return;
+    const groupId = nextGroupId === 'none' ? null : nextGroupId;
+    const result = await updateMemberGroup(userId, groupId);
     if (result.error) {
       setError(result.error);
     }
@@ -166,6 +216,32 @@ export const WorkspaceMembersPanel: React.FC<WorkspaceMembersPanelProps> = ({
                     </SelectContent>
                   </Select>
                 </div>
+                <div className="space-y-1">
+                  <Label>Group</Label>
+                  <Select
+                    value={inviteGroupId}
+                    onValueChange={setInviteGroupId}
+                    disabled={!isAdmin}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder={groupsLoading ? 'Loading groups...' : 'No group'} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">No group</SelectItem>
+                      {groups.map((group) => (
+                        <SelectItem key={group.id} value={group.id}>
+                          {group.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {groupsError && (
+                    <div className="text-xs text-destructive">{groupsError}</div>
+                  )}
+                  {!groupsError && groups.length === 0 && (
+                    <div className="text-xs text-muted-foreground">No groups created yet.</div>
+                  )}
+                </div>
                 <Button type="submit" disabled={!isAdmin || submitting || !email.trim()}>
                   Send invite
                 </Button>
@@ -206,13 +282,14 @@ export const WorkspaceMembersPanel: React.FC<WorkspaceMembersPanelProps> = ({
         <div>
           <div className="text-sm font-semibold">Members & roles</div>
           <div className="text-xs text-muted-foreground">
-            Manage roles, access, and status.
+            Manage roles, groups, and status.
           </div>
         </div>
 
-        <div className="hidden md:grid grid-cols-[1fr,140px,120px,90px] gap-3 text-xs text-muted-foreground px-2">
+        <div className="hidden md:grid grid-cols-[1fr,140px,180px,120px,90px] gap-3 text-xs text-muted-foreground px-2">
           <span>Member</span>
           <span>Role</span>
+          <span>Group</span>
           <span>Status</span>
           <span className="text-right">Actions</span>
         </div>
@@ -228,7 +305,7 @@ export const WorkspaceMembersPanel: React.FC<WorkspaceMembersPanelProps> = ({
           const assignee = assigneeByUserId.get(member.userId);
           const isActive = assignee?.isActive ?? true;
           return (
-            <div key={member.userId} className="grid items-center gap-3 rounded-md border px-3 py-3 md:grid-cols-[1fr,140px,120px,90px]">
+            <div key={member.userId} className="grid items-center gap-3 rounded-md border px-3 py-3 md:grid-cols-[1fr,140px,180px,120px,90px]">
               <div className="min-w-0">
                 <div className="text-sm font-medium truncate">
                   {member.email}
@@ -253,6 +330,23 @@ export const WorkspaceMembersPanel: React.FC<WorkspaceMembersPanelProps> = ({
                   <SelectItem value="viewer">Viewer</SelectItem>
                   <SelectItem value="editor">Editor</SelectItem>
                   <SelectItem value="admin">Admin</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select
+                value={member.groupId ?? 'none'}
+                onValueChange={(value) => handleGroupChange(member.userId, value)}
+                disabled={!isAdmin}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder={groupsLoading ? 'Loading groups...' : 'No group'} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No group</SelectItem>
+                  {groups.map((group) => (
+                    <SelectItem key={group.id} value={group.id}>
+                      {group.name}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
               <div className="flex items-center gap-3">

@@ -251,6 +251,7 @@ const ProjectsPage = () => {
   const [search, setSearch] = useState('');
   const [statusFilterIds, setStatusFilterIds] = useState<string[]>([]);
   const [assigneeFilterIds, setAssigneeFilterIds] = useState<string[]>([]);
+  const [groupFilterIds, setGroupFilterIds] = useState<string[]>([]);
   const [customerFilterIds, setCustomerFilterIds] = useState<string[]>([]);
   const [customerSort, setCustomerSort] = useState<'asc' | 'desc'>('asc');
   const [groupByCustomer, setGroupByCustomer] = useState(false);
@@ -281,6 +282,8 @@ const ProjectsPage = () => {
     customers,
     statuses,
     assignees,
+    memberGroups,
+    memberGroupAssignments,
     taskTypes,
     tags,
     loadWorkspaceData,
@@ -346,6 +349,18 @@ const ProjectsPage = () => {
     () => new Map(assignees.map((assignee) => [assignee.id, assignee])),
     [assignees],
   );
+  const assigneeGroupMap = useMemo(() => {
+    const groupByUserId = new Map(memberGroupAssignments.map((assignment) => [assignment.userId, assignment.groupId]));
+    const map = new Map<string, string>();
+    assignees.forEach((assignee) => {
+      if (!assignee.userId) return;
+      const groupId = groupByUserId.get(assignee.userId);
+      if (groupId) {
+        map.set(assignee.id, groupId);
+      }
+    });
+    return map;
+  }, [assignees, memberGroupAssignments]);
   const taskTypeById = useMemo(
     () => new Map(taskTypes.map((type) => [type.id, type])),
     [taskTypes],
@@ -510,9 +525,16 @@ const ProjectsPage = () => {
       if (assigneeFilterIds.length > 0) {
         if (!task.assigneeIds.some((id) => assigneeFilterIds.includes(id))) return false;
       }
+      if (groupFilterIds.length > 0) {
+        const matchesGroup = task.assigneeIds.some((id) => {
+          const groupId = assigneeGroupMap.get(id);
+          return groupId ? groupFilterIds.includes(groupId) : false;
+        });
+        if (!matchesGroup) return false;
+      }
       return true;
     })
-  ), [assigneeFilterIds, projectTasks, search, statusFilterIds]);
+  ), [assigneeFilterIds, projectTasks, search, statusFilterIds, groupFilterIds, assigneeGroupMap]);
 
   const statusFilterLabel = statusFilterIds.length === 0
     ? 'All statuses'
@@ -521,6 +543,10 @@ const ProjectsPage = () => {
   const assigneeFilterLabel = assigneeFilterIds.length === 0
     ? 'All assignees'
     : `${assigneeFilterIds.length} selected`;
+
+  const groupFilterLabel = groupFilterIds.length === 0
+    ? 'All groups'
+    : `${groupFilterIds.length} selected`;
 
   const customerFilterLabel = customerFilterIds.length === 0
     ? 'All'
@@ -562,6 +588,14 @@ const ProjectsPage = () => {
       current.includes(assigneeId)
         ? current.filter((id) => id !== assigneeId)
         : [...current, assigneeId]
+    ));
+  };
+
+  const handleToggleGroup = (groupId: string) => {
+    setGroupFilterIds((current) => (
+      current.includes(groupId)
+        ? current.filter((id) => id !== groupId)
+        : [...current, groupId]
     ));
   };
 
@@ -1256,12 +1290,37 @@ const ProjectsPage = () => {
                         </PopoverContent>
                       </Popover>
 
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button variant="outline">{groupFilterLabel}</Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-56 p-2" align="start">
+                          <ScrollArea className="max-h-48 pr-2">
+                            <div className="space-y-1">
+                              {memberGroups.length === 0 && (
+                                <div className="text-xs text-muted-foreground">No groups created yet.</div>
+                              )}
+                              {memberGroups.map((group) => (
+                                <label key={group.id} className="flex items-center gap-2 py-1 cursor-pointer">
+                                  <Checkbox
+                                    checked={groupFilterIds.includes(group.id)}
+                                    onCheckedChange={() => handleToggleGroup(group.id)}
+                                  />
+                                  <span className="text-sm truncate">{group.name}</span>
+                                </label>
+                              ))}
+                            </div>
+                          </ScrollArea>
+                        </PopoverContent>
+                      </Popover>
+
                       <Button
                         variant="ghost"
                         onClick={() => {
                           setSearch('');
                           setStatusFilterIds([]);
                           setAssigneeFilterIds([]);
+                          setGroupFilterIds([]);
                         }}
                       >
                         Clear filters
