@@ -7,10 +7,21 @@ import { Label } from '@/shared/ui/label';
 import { formatStatusLabel } from '@/shared/lib/statusLabels';
 import { formatProjectLabel } from '@/shared/lib/projectLabels';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/shared/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/shared/ui/alert-dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/shared/ui/select';
 import { RichTextEditor } from '@/features/planner/components/RichTextEditor';
 import { Badge } from '@/shared/ui/badge';
 import { Checkbox } from '@/shared/ui/checkbox';
+import { Switch } from '@/shared/ui/switch';
 import { Popover, PopoverContent, PopoverTrigger } from '@/shared/ui/popover';
 import { ScrollArea } from '@/shared/ui/scroll-area';
 import { ChevronDown, Plus } from 'lucide-react';
@@ -81,6 +92,9 @@ export const AddTaskDialog: React.FC<AddTaskDialogProps> = ({
   const [repeatCount, setRepeatCount] = useState(4);
   const [repeatError, setRepeatError] = useState('');
   const [repeatCreating, setRepeatCreating] = useState(false);
+  const [repeatOpen, setRepeatOpen] = useState(false);
+  const [hasChanges, setHasChanges] = useState(false);
+  const [confirmCloseOpen, setConfirmCloseOpen] = useState(false);
 
   const normalizeAssigneeSelection = useCallback((ids: string[] | undefined) => {
     if (!ids || ids.length === 0) return [];
@@ -90,7 +104,12 @@ export const AddTaskDialog: React.FC<AddTaskDialogProps> = ({
     ));
   }, [assignees]);
 
+  const markChanged = useCallback(() => {
+    setHasChanges(true);
+  }, []);
+
   const handleTagToggle = (tagId: string) => {
+    markChanged();
     setTagIds((prev) => (
       prev.includes(tagId)
         ? prev.filter((id) => id !== tagId)
@@ -99,6 +118,7 @@ export const AddTaskDialog: React.FC<AddTaskDialogProps> = ({
   };
 
   const handleAssigneeToggle = (assigneeId: string) => {
+    markChanged();
     setAssigneeIds((prev) => {
       const next = prev.includes(assigneeId)
         ? prev.filter((id) => id !== assigneeId)
@@ -111,6 +131,7 @@ export const AddTaskDialog: React.FC<AddTaskDialogProps> = ({
   };
 
   const handleRepeatFrequencyChange = (value: typeof repeatFrequency) => {
+    markChanged();
     setRepeatFrequency(value);
     if (value === 'none') return;
     if (repeatEnds !== 'on') return;
@@ -119,13 +140,43 @@ export const AddTaskDialog: React.FC<AddTaskDialogProps> = ({
   };
 
   const handleRepeatEndsChange = (value: typeof repeatEnds) => {
+    markChanged();
     setRepeatEnds(value);
     if (value !== 'on') return;
     repeatUntilAutoRef.current = true;
     setRepeatUntil(getDefaultRepeatUntil(startDate));
   };
 
+  const handleRepeatToggle = (enabled: boolean) => {
+    markChanged();
+    setRepeatOpen(enabled);
+    if (enabled) return;
+    setRepeatFrequency('none');
+    setRepeatEnds('never');
+    repeatUntilAutoRef.current = true;
+    setRepeatUntil(getDefaultRepeatUntil(startDate));
+    setRepeatCount(4);
+    setRepeatError('');
+  };
+
+  const requestClose = () => {
+    if (hasChanges) {
+      setConfirmCloseOpen(true);
+      return;
+    }
+    onOpenChange(false);
+  };
+
+  const handleDialogOpenChange = (nextOpen: boolean) => {
+    if (!nextOpen) {
+      requestClose();
+      return;
+    }
+    onOpenChange(true);
+  };
+
   const handleStartDateChange = (value: string) => {
+    markChanged();
     setStartDate(value);
     if (repeatEnds !== 'on' || repeatFrequency === 'none') return;
     if (!repeatUntilAutoRef.current) return;
@@ -203,6 +254,8 @@ export const AddTaskDialog: React.FC<AddTaskDialogProps> = ({
     setRepeatCount(4);
     setRepeatError('');
     setRepeatCreating(false);
+    setRepeatOpen(false);
+    setHasChanges(false);
     
     onOpenChange(false);
   };
@@ -216,6 +269,9 @@ export const AddTaskDialog: React.FC<AddTaskDialogProps> = ({
   useEffect(() => {
     if (!open) {
       setProjectInitialized(false);
+      setHasChanges(false);
+      setRepeatOpen(false);
+      setConfirmCloseOpen(false);
       return;
     }
     if (projectInitialized) return;
@@ -237,6 +293,8 @@ export const AddTaskDialog: React.FC<AddTaskDialogProps> = ({
     setRepeatUntil(getDefaultRepeatUntil(nextStart));
     setRepeatCount(4);
     setRepeatError('');
+    setRepeatOpen(false);
+    setHasChanges(false);
     setProjectInitialized(true);
   }, [
     activeProjects,
@@ -267,7 +325,7 @@ export const AddTaskDialog: React.FC<AddTaskDialogProps> = ({
   }, [assigneeIds, selectableAssignees]);
   
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleDialogOpenChange}>
       <DialogContent className="sm:max-w-[520px] max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Create New Task</DialogTitle>
@@ -279,7 +337,10 @@ export const AddTaskDialog: React.FC<AddTaskDialogProps> = ({
             <Input
               id="new-title"
               value={title}
-              onChange={(e) => setTitle(e.target.value)}
+              onChange={(e) => {
+                markChanged();
+                setTitle(e.target.value);
+              }}
               placeholder="Enter task title..."
               autoFocus
             />
@@ -288,7 +349,13 @@ export const AddTaskDialog: React.FC<AddTaskDialogProps> = ({
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label>Project</Label>
-              <Select value={projectId} onValueChange={setProjectId}>
+              <Select
+                value={projectId}
+                onValueChange={(value) => {
+                  markChanged();
+                  setProjectId(value);
+                }}
+              >
                 <SelectTrigger>
                   <SelectValue placeholder="Select project" />
                 </SelectTrigger>
@@ -344,7 +411,13 @@ export const AddTaskDialog: React.FC<AddTaskDialogProps> = ({
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label>Status</Label>
-              <Select value={statusId} onValueChange={setStatusId}>
+              <Select
+                value={statusId}
+                onValueChange={(value) => {
+                  markChanged();
+                  setStatusId(value);
+                }}
+              >
                 <SelectTrigger>
                   <SelectValue placeholder="Select status" />
                 </SelectTrigger>
@@ -366,7 +439,13 @@ export const AddTaskDialog: React.FC<AddTaskDialogProps> = ({
             
             <div className="space-y-1.5">
               <Label>Type</Label>
-              <Select value={typeId} onValueChange={setTypeId}>
+              <Select
+                value={typeId}
+                onValueChange={(value) => {
+                  markChanged();
+                  setTypeId(value);
+                }}
+              >
                 <SelectTrigger>
                   <SelectValue placeholder="Select type" />
                 </SelectTrigger>
@@ -381,7 +460,13 @@ export const AddTaskDialog: React.FC<AddTaskDialogProps> = ({
 
           <div className="space-y-1.5">
             <Label>Priority</Label>
-            <Select value={priority} onValueChange={(value) => setPriority(value as TaskPriority | 'none')}>
+            <Select
+              value={priority}
+              onValueChange={(value) => {
+                markChanged();
+                setPriority(value as TaskPriority | 'none');
+              }}
+            >
               <SelectTrigger>
                 <SelectValue placeholder="Select priority" />
               </SelectTrigger>
@@ -410,72 +495,91 @@ export const AddTaskDialog: React.FC<AddTaskDialogProps> = ({
                 id="new-end"
                 type="date"
                 value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
+                onChange={(e) => {
+                  markChanged();
+                  setEndDate(e.target.value);
+                }}
               />
             </div>
           </div>
 
           <div className="space-y-2">
-            <Label>Repeat</Label>
-            <div className="grid grid-cols-2 gap-3">
-              <Select
-                value={repeatFrequency}
-                onValueChange={(value) => handleRepeatFrequencyChange(value as typeof repeatFrequency)}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Repeat" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Does not repeat</SelectItem>
-                  <SelectItem value="daily">Daily</SelectItem>
-                  <SelectItem value="weekly">Weekly</SelectItem>
-                  <SelectItem value="monthly">Monthly</SelectItem>
-                  <SelectItem value="yearly">Yearly</SelectItem>
-                </SelectContent>
-              </Select>
-              <Select
-                value={repeatEnds}
-                onValueChange={(value) => handleRepeatEndsChange(value as typeof repeatEnds)}
-                disabled={repeatFrequency === 'none'}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Ends" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="never">Never</SelectItem>
-                  <SelectItem value="on">On date</SelectItem>
-                  <SelectItem value="after">After count</SelectItem>
-                </SelectContent>
-              </Select>
+            <div className="flex items-center justify-between">
+              <Label>Repeat</Label>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">
+                  {repeatOpen ? 'On' : 'Off'}
+                </span>
+                <Switch checked={repeatOpen} onCheckedChange={handleRepeatToggle} />
+              </div>
             </div>
-            {repeatFrequency !== 'none' && repeatEnds === 'on' && (
-              <div className="space-y-1.5">
-                <Label htmlFor="new-repeat-until" className="text-xs text-muted-foreground">End date</Label>
-                <Input
-                  id="new-repeat-until"
-                  type="date"
-                  value={repeatUntil}
-                  onChange={(e) => {
-                    repeatUntilAutoRef.current = false;
-                    setRepeatUntil(e.target.value);
-                  }}
-                />
-              </div>
-            )}
-            {repeatFrequency !== 'none' && repeatEnds === 'after' && (
-              <div className="space-y-1.5">
-                <Label htmlFor="new-repeat-count" className="text-xs text-muted-foreground">Occurrences</Label>
-                <Input
-                  id="new-repeat-count"
-                  type="number"
-                  min={1}
-                  value={repeatCount}
-                  onChange={(e) => setRepeatCount(Number(e.target.value))}
-                />
-              </div>
-            )}
-            {repeatError && (
-              <div className="text-xs text-destructive">{repeatError}</div>
+            {repeatOpen && (
+              <>
+                <div className="grid grid-cols-2 gap-3">
+                  <Select
+                    value={repeatFrequency}
+                    onValueChange={(value) => handleRepeatFrequencyChange(value as typeof repeatFrequency)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Repeat" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Does not repeat</SelectItem>
+                      <SelectItem value="daily">Daily</SelectItem>
+                      <SelectItem value="weekly">Weekly</SelectItem>
+                      <SelectItem value="monthly">Monthly</SelectItem>
+                      <SelectItem value="yearly">Yearly</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Select
+                    value={repeatEnds}
+                    onValueChange={(value) => handleRepeatEndsChange(value as typeof repeatEnds)}
+                    disabled={repeatFrequency === 'none'}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Ends" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="never">Never</SelectItem>
+                      <SelectItem value="on">On date</SelectItem>
+                      <SelectItem value="after">After count</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                {repeatFrequency !== 'none' && repeatEnds === 'on' && (
+                  <div className="space-y-1.5">
+                    <Label htmlFor="new-repeat-until" className="text-xs text-muted-foreground">End date</Label>
+                    <Input
+                      id="new-repeat-until"
+                      type="date"
+                      value={repeatUntil}
+                      onChange={(e) => {
+                        markChanged();
+                        repeatUntilAutoRef.current = false;
+                        setRepeatUntil(e.target.value);
+                      }}
+                    />
+                  </div>
+                )}
+                {repeatFrequency !== 'none' && repeatEnds === 'after' && (
+                  <div className="space-y-1.5">
+                    <Label htmlFor="new-repeat-count" className="text-xs text-muted-foreground">Occurrences</Label>
+                    <Input
+                      id="new-repeat-count"
+                      type="number"
+                      min={1}
+                      value={repeatCount}
+                      onChange={(e) => {
+                        markChanged();
+                        setRepeatCount(Number(e.target.value));
+                      }}
+                    />
+                  </div>
+                )}
+                {repeatError && (
+                  <div className="text-xs text-destructive">{repeatError}</div>
+                )}
+              </>
             )}
           </div>
           
@@ -484,7 +588,10 @@ export const AddTaskDialog: React.FC<AddTaskDialogProps> = ({
             <RichTextEditor
               id="new-description"
               value={description}
-              onChange={setDescription}
+              onChange={(value) => {
+                markChanged();
+                setDescription(value);
+              }}
               placeholder="Add a description..."
             />
           </div>
@@ -523,7 +630,7 @@ export const AddTaskDialog: React.FC<AddTaskDialogProps> = ({
           </div>
           
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+            <Button type="button" variant="outline" onClick={requestClose}>
               Cancel
             </Button>
             <Button type="submit" disabled={!title.trim() || !statusId || !typeId || repeatCreating}>
@@ -532,6 +639,29 @@ export const AddTaskDialog: React.FC<AddTaskDialogProps> = ({
             </Button>
           </DialogFooter>
         </form>
+        <AlertDialog open={confirmCloseOpen} onOpenChange={setConfirmCloseOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Discard task?</AlertDialogTitle>
+              <AlertDialogDescription>
+                You have unsaved changes. Close without creating the task?
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Keep editing</AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                onClick={() => {
+                  setConfirmCloseOpen(false);
+                  setHasChanges(false);
+                  onOpenChange(false);
+                }}
+              >
+                Discard
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </DialogContent>
     </Dialog>
   );
