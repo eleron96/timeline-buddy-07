@@ -27,6 +27,7 @@ export const TimelineControls: React.FC = () => {
     setFilters,
   } = usePlannerStore();
   const hideUnassignedId = 'hide-unassigned-toggle';
+  const showUnassigned = !filters.hideUnassigned;
   
   const handlePrev = () => {
     const date = parseISO(currentDate);
@@ -135,6 +136,7 @@ export const TimelineControls: React.FC = () => {
             variant="ghost"
             size="sm"
             onClick={() => setGroupMode('assignee')}
+            disabled={viewMode === 'calendar'}
             className={cn(
               'h-7 px-3 text-xs rounded-md gap-1.5',
               groupMode === 'assignee' && 'bg-background shadow-sm'
@@ -147,6 +149,7 @@ export const TimelineControls: React.FC = () => {
             variant="ghost"
             size="sm"
             onClick={() => setGroupMode('project')}
+            disabled={viewMode === 'calendar'}
             className={cn(
               'h-7 px-3 text-xs rounded-md gap-1.5',
               groupMode === 'project' && 'bg-background shadow-sm'
@@ -159,16 +162,20 @@ export const TimelineControls: React.FC = () => {
 
         <div
           className="flex items-center gap-2 text-[11px] text-muted-foreground/70 select-none"
-          title={t`Hide unassigned`}
+          title={t`Show unassigned`}
         >
           <Checkbox
             id={hideUnassignedId}
-            checked={filters.hideUnassigned}
-            onCheckedChange={(value) => setFilters({ hideUnassigned: value === true })}
+            checked={showUnassigned}
+            onCheckedChange={(value) => setFilters({ hideUnassigned: value !== true })}
+            disabled={viewMode === 'calendar'}
             className="scale-75 border-muted-foreground/40 data-[state=checked]:bg-muted-foreground/60 data-[state=checked]:border-muted-foreground/60 data-[state=checked]:text-white/90"
-            aria-label={t`Hide unassigned`}
+            aria-label={t`Show unassigned`}
           />
-          <label htmlFor={hideUnassignedId} className="cursor-pointer">
+          <label
+            htmlFor={hideUnassignedId}
+            className={cn('cursor-pointer', viewMode === 'calendar' && 'opacity-60 cursor-not-allowed')}
+          >
             {t`Unassigned`}
           </label>
         </div>

@@ -14,7 +14,7 @@ msgstr ""
 "Plural-Forms: \n"
 
 #: src/features/members/pages/MembersPage.tsx:1581
-#: src/features/planner/components/FilterPanel.tsx:244
+#: src/features/planner/components/FilterPanel.tsx:258
 #: src/features/projects/pages/ProjectsPage.tsx:1319
 #: src/features/projects/pages/ProjectsPage.tsx:1440
 #: src/features/projects/pages/ProjectsPage.tsx:1806
@@ -203,7 +203,7 @@ msgstr "Архивировать"
 msgid "Archived"
 msgstr "Архивирован"
 
-#: src/features/planner/components/FilterPanel.tsx:223
+#: src/features/planner/components/FilterPanel.tsx:232
 msgid "Archived projects are hidden from filters."
 msgstr "Архивные проекты скрыты в фильтрах."
 
@@ -244,7 +244,7 @@ msgstr "По статусу"
 msgid "By user"
 msgstr "По пользователю"
 
-#: src/features/planner/components/timeline/TimelineControls.tsx:128
+#: src/features/planner/components/timeline/TimelineControls.tsx:129
 msgid "Calendar"
 msgstr "Календарь"
 
@@ -306,7 +306,7 @@ msgstr "Проверяем приглашение..."
 msgid "Choose a customer to see their projects."
 msgstr "Выберите клиента, чтобы увидеть его проекты."
 
-#: src/features/planner/components/FilterPanel.tsx:183
+#: src/features/planner/components/FilterPanel.tsx:191
 #: src/features/projects/pages/ProjectsPage.tsx:1157
 msgid "Clear"
 msgstr "Очистить"
@@ -457,7 +457,7 @@ msgid "Dates"
 msgstr "Даты"
 
 #: src/features/dashboard/components/WidgetEditorDialog.tsx:43
-#: src/features/planner/components/timeline/TimelineControls.tsx:106
+#: src/features/planner/components/timeline/TimelineControls.tsx:107
 msgid "Day"
 msgstr "День"
 
@@ -644,7 +644,7 @@ msgstr "Равно"
 msgid "Error"
 msgstr "Ошибка"
 
-#: src/features/planner/components/FilterPanel.tsx:125
+#: src/features/planner/components/FilterPanel.tsx:133
 msgid "Expand filters"
 msgstr "Развернуть фильтры"
 
@@ -685,7 +685,7 @@ msgstr "Настройки фильтра"
 msgid "Filter: {0}"
 msgstr "Фильтр: {0}"
 
-#: src/features/planner/components/FilterPanel.tsx:173
+#: src/features/planner/components/FilterPanel.tsx:181
 msgid "Filters"
 msgstr "Фильтры"
 
@@ -753,14 +753,14 @@ msgid "Group name"
 msgstr "Название группы"
 
 #: src/features/members/pages/MembersPage.tsx:233
-#: src/features/planner/components/FilterPanel.tsx:252
+#: src/features/planner/components/FilterPanel.tsx:266
 msgid "Groups"
 msgstr "Группы"
 
 #: src/features/planner/components/timeline/TimelineControls.tsx:162
 #: src/features/planner/components/timeline/TimelineControls.tsx:169
-msgid "Hide unassigned"
-msgstr "Скрыть неназначенные"
+#~ msgid "Hide unassigned"
+#~ msgstr "Скрыть неназначенные"
 
 #: src/features/planner/components/AddTaskDialog.tsx:478
 #: src/features/planner/components/TaskDetailPanel.tsx:536
@@ -1009,7 +1009,7 @@ msgstr "Далее"
 msgid "No active members."
 msgstr "Нет активных участников."
 
-#: src/features/planner/components/FilterPanel.tsx:203
+#: src/features/planner/components/FilterPanel.tsx:212
 #: src/features/projects/pages/ProjectsPage.tsx:1218
 msgid "No active projects."
 msgstr "Нет активных проектов."
@@ -1087,7 +1087,7 @@ msgid "No groups created yet."
 msgstr "Группы еще не созданы."
 
 #: src/features/members/pages/MembersPage.tsx:1051
-#: src/features/planner/components/FilterPanel.tsx:256
+#: src/features/planner/components/FilterPanel.tsx:272
 msgid "No groups yet."
 msgstr "Групп пока нет."
 
@@ -1243,8 +1243,8 @@ msgstr "Пароли не совпадают."
 msgid "Past"
 msgstr "Прошлые"
 
-#: src/features/planner/components/FilterPanel.tsx:229
-#: src/features/planner/components/timeline/TimelineControls.tsx:144
+#: src/features/planner/components/FilterPanel.tsx:238
+#: src/features/planner/components/timeline/TimelineControls.tsx:146
 msgid "People"
 msgstr "Люди"
 
@@ -1286,8 +1286,8 @@ msgstr "Название проекта"
 msgid "Project not found."
 msgstr "Проект не найден."
 
-#: src/features/planner/components/FilterPanel.tsx:199
-#: src/features/planner/components/timeline/TimelineControls.tsx:156
+#: src/features/planner/components/FilterPanel.tsx:207
+#: src/features/planner/components/timeline/TimelineControls.tsx:159
 #: src/features/projects/pages/ProjectsPage.tsx:593
 #: src/features/workspace/components/WorkspaceNav.tsx:34
 msgid "Projects"
@@ -1486,6 +1486,11 @@ msgstr "Отправить ссылку"
 msgid "Show tasks without an assignee."
 msgstr "Показывать задачи без исполнителя."
 
+#: src/features/planner/components/timeline/TimelineControls.tsx:165
+#: src/features/planner/components/timeline/TimelineControls.tsx:173
+msgid "Show unassigned"
+msgstr "Показывать без назначения"
+
 #: src/features/auth/pages/AuthPage.tsx:186
 msgid "Sign in"
 msgstr "Войти"
@@ -1519,7 +1524,7 @@ msgstr "Дата начала ↓"
 #: src/features/members/pages/MembersPage.tsx:1386
 #: src/features/members/pages/MembersPage.tsx:1554
 #: src/features/planner/components/AddTaskDialog.tsx:414
-#: src/features/planner/components/FilterPanel.tsx:273
+#: src/features/planner/components/FilterPanel.tsx:292
 #: src/features/planner/components/TaskDetailPanel.tsx:456
 #: src/features/planner/components/TaskDetailPanel.tsx:459
 #: src/features/projects/pages/ProjectsPage.tsx:1393
@@ -1548,7 +1553,7 @@ msgstr "Вс"
 
 #: src/features/members/pages/MembersPage.tsx:1604
 #: src/features/planner/components/AddTaskDialog.tsx:601
-#: src/features/planner/components/FilterPanel.tsx:314
+#: src/features/planner/components/FilterPanel.tsx:342
 #: src/features/projects/pages/ProjectsPage.tsx:1829
 #: src/features/workspace/components/SettingsPanel.tsx:599
 #: src/features/workspace/components/WorkspaceSwitcher.tsx:445
@@ -1675,7 +1680,7 @@ msgstr "Название А–Я"
 msgid "Title Z–A"
 msgstr "Название Я–А"
 
-#: src/features/planner/components/timeline/TimelineControls.tsx:75
+#: src/features/planner/components/timeline/TimelineControls.tsx:76
 msgid "Today"
 msgstr "Сегодня"
 
@@ -1694,7 +1699,7 @@ msgstr "Вт"
 #: src/features/dashboard/components/WidgetEditorDialog.tsx:362
 #: src/features/members/pages/MembersPage.tsx:1594
 #: src/features/planner/components/AddTaskDialog.tsx:442
-#: src/features/planner/components/FilterPanel.tsx:295
+#: src/features/planner/components/FilterPanel.tsx:319
 #: src/features/planner/components/TaskDetailPanel.tsx:492
 #: src/features/planner/components/TaskDetailPanel.tsx:495
 #: src/features/projects/pages/ProjectsPage.tsx:1819
@@ -1708,7 +1713,7 @@ msgstr "Типы"
 #: src/features/dashboard/components/WidgetEditorDialog.tsx:300
 #: src/features/members/pages/MembersPage.tsx:1573
 #: src/features/planner/components/AddTaskDialog.tsx:320
-#: src/features/planner/components/timeline/TimelineControls.tsx:172
+#: src/features/planner/components/timeline/TimelineControls.tsx:179
 #: src/features/projects/pages/ProjectsPage.tsx:1430
 #: src/features/projects/pages/ProjectsPage.tsx:1798
 msgid "Unassigned"
@@ -1772,7 +1777,7 @@ msgid "Wed"
 msgstr "Ср"
 
 #: src/features/dashboard/components/WidgetEditorDialog.tsx:44
-#: src/features/planner/components/timeline/TimelineControls.tsx:117
+#: src/features/planner/components/timeline/TimelineControls.tsx:118
 msgid "Week"
 msgstr "Неделя"
 

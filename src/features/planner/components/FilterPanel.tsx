@@ -27,6 +27,7 @@ interface FilterSectionProps {
   children: React.ReactNode;
   defaultOpen?: boolean;
   collapsed?: boolean;
+  disabled?: boolean;
 }
 
 const FilterSection: React.FC<FilterSectionProps> = ({ 
@@ -35,12 +36,13 @@ const FilterSection: React.FC<FilterSectionProps> = ({
   children, 
   defaultOpen = true,
   collapsed = false,
+  disabled = false,
 }) => {
   const [isOpen, setIsOpen] = useState(defaultOpen);
   
   if (collapsed) {
     return (
-      <div className="p-2 flex justify-center">
+      <div className={`p-2 flex justify-center ${disabled ? 'opacity-60' : ''}`}>
         {icon}
       </div>
     );
@@ -49,8 +51,12 @@ const FilterSection: React.FC<FilterSectionProps> = ({
   return (
     <div className="border-b border-border last:border-b-0">
       <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-2 w-full px-4 py-3 hover:bg-accent transition-colors text-left"
+        type="button"
+        onClick={() => !disabled && setIsOpen(!isOpen)}
+        disabled={disabled}
+        className={`flex items-center gap-2 w-full px-4 py-3 transition-colors text-left ${
+          disabled ? 'cursor-not-allowed opacity-60' : 'hover:bg-accent'
+        }`}
       >
         {icon}
         <span className="text-sm font-medium flex-1">{title}</span>
@@ -83,10 +89,12 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({ collapsed, onToggle })
     statuses, 
     taskTypes, 
     tags,
+    viewMode,
     filters,
     setFilters,
     clearFilterCriteria,
   } = usePlannerStore();
+  const isCalendarView = viewMode === 'calendar';
   
   const filteredAssignees = useFilteredAssignees(assignees);
   const activeProjects = useMemo(
@@ -198,6 +206,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({ collapsed, onToggle })
         <FilterSection 
           title={t`Projects`} 
           icon={<FolderKanban className="w-4 h-4 text-muted-foreground" />}
+          defaultOpen={false}
         >
           {activeProjects.length === 0 && (
             <div className="text-xs text-muted-foreground">{t`No active projects.`}</div>
@@ -228,15 +237,20 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({ collapsed, onToggle })
         <FilterSection 
           title={t`People`} 
           icon={<Users className="w-4 h-4 text-muted-foreground" />}
+          defaultOpen={false}
+          disabled={isCalendarView}
         >
           {filteredAssignees.map(assignee => (
             <label
               key={assignee.id}
-              className="flex items-center gap-2 py-1 cursor-pointer"
+              className={`flex items-center gap-2 py-1 ${
+                isCalendarView ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
+              }`}
             >
               <Checkbox
                 checked={filters.assigneeIds.includes(assignee.id)}
                 onCheckedChange={() => toggleFilter('assigneeIds', assignee.id)}
+                disabled={isCalendarView}
               />
               <span className="text-sm truncate">
                 {assignee.name}
@@ -251,6 +265,8 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({ collapsed, onToggle })
         <FilterSection 
           title={t`Groups`} 
           icon={<UsersRound className="w-4 h-4 text-muted-foreground" />}
+          defaultOpen={false}
+          disabled={isCalendarView}
         >
           {memberGroups.length === 0 && (
             <div className="text-xs text-muted-foreground">{t`No groups yet.`}</div>
@@ -258,11 +274,14 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({ collapsed, onToggle })
           {memberGroups.map((group) => (
             <label
               key={group.id}
-              className="flex items-center gap-2 py-1 cursor-pointer"
+              className={`flex items-center gap-2 py-1 ${
+                isCalendarView ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
+              }`}
             >
               <Checkbox
                 checked={filters.groupIds.includes(group.id)}
                 onCheckedChange={() => toggleFilter('groupIds', group.id)}
+                disabled={isCalendarView}
               />
               <span className="text-sm truncate">{group.name}</span>
             </label>
@@ -272,15 +291,20 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({ collapsed, onToggle })
         <FilterSection 
           title={t`Status`} 
           icon={<CircleDot className="w-4 h-4 text-muted-foreground" />}
+          defaultOpen={false}
+          disabled={isCalendarView}
         >
           {statuses.map(status => (
             <label
               key={status.id}
-              className="flex items-center gap-2 py-1 cursor-pointer"
+              className={`flex items-center gap-2 py-1 ${
+                isCalendarView ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
+              }`}
             >
               <Checkbox
                 checked={filters.statusIds.includes(status.id)}
                 onCheckedChange={() => toggleFilter('statusIds', status.id)}
+                disabled={isCalendarView}
               />
               <div 
                 className="w-2.5 h-2.5 rounded-full flex-shrink-0"
@@ -295,15 +319,19 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({ collapsed, onToggle })
           title={t`Type`} 
           icon={<Layers className="w-4 h-4 text-muted-foreground" />}
           defaultOpen={false}
+          disabled={isCalendarView}
         >
           {taskTypes.map(type => (
             <label
               key={type.id}
-              className="flex items-center gap-2 py-1 cursor-pointer"
+              className={`flex items-center gap-2 py-1 ${
+                isCalendarView ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
+              }`}
             >
               <Checkbox
                 checked={filters.typeIds.includes(type.id)}
                 onCheckedChange={() => toggleFilter('typeIds', type.id)}
+                disabled={isCalendarView}
               />
               <span className="text-sm truncate">{type.name}</span>
             </label>
@@ -314,15 +342,19 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({ collapsed, onToggle })
           title={t`Tags`} 
           icon={<Tag className="w-4 h-4 text-muted-foreground" />}
           defaultOpen={false}
+          disabled={isCalendarView}
         >
           {tags.map(tag => (
             <label
               key={tag.id}
-              className="flex items-center gap-2 py-1 cursor-pointer"
+              className={`flex items-center gap-2 py-1 ${
+                isCalendarView ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
+              }`}
             >
               <Checkbox
                 checked={filters.tagIds.includes(tag.id)}
                 onCheckedChange={() => toggleFilter('tagIds', tag.id)}
+                disabled={isCalendarView}
               />
               <div 
                 className="w-2.5 h-2.5 rounded-full flex-shrink-0"
