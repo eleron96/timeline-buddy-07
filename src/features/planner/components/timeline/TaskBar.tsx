@@ -159,7 +159,11 @@ export const TaskBar: React.FC<TaskBarProps> = ({
   const isFinalStyle = isFinalStatus && !isCancelled;
   const bgColor = isFinalStyle ? '#ffffff' : baseBgColor;
   const isDarkBackground = isDarkColor(bgColor);
-  const textColor = isDarkBackground ? '#f8fafc' : '#14181F';
+  const baseTextColor = isDarkBackground ? '#f8fafc' : '#14181F';
+  const textColor = isFinalStyle ? '#64748b' : baseTextColor;
+  const secondaryTextColor = isFinalStyle
+    ? 'rgba(100,116,139,0.85)'
+    : (isDarkBackground ? 'rgba(248,250,252,0.8)' : 'rgba(15,23,42,0.7)');
   const priorityBadgeStyle = priorityMeta
     ? {
         backgroundColor: '#ffffff',
@@ -386,7 +390,7 @@ export const TaskBar: React.FC<TaskBarProps> = ({
             </div>
             <span
               className="text-[11px] leading-tight truncate"
-              style={{ color: isDarkBackground ? 'rgba(248,250,252,0.8)' : 'rgba(15,23,42,0.7)' }}
+              style={{ color: secondaryTextColor }}
             >
               {project ? formatProjectLabel(project.name, project.code) : 'No Project'}
             </span>
