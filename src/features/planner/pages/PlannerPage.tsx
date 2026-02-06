@@ -186,6 +186,7 @@ const PlannerPage = () => {
               setAddTaskDefaults(null);
               setShowAddTask(true);
             }}
+            size="sm"
             className="gap-2"
             disabled={!canEdit}
           >

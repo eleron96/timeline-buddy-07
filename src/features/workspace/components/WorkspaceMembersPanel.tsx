@@ -11,6 +11,7 @@ import { usePlannerStore } from '@/features/planner/store/plannerStore';
 import { cn } from '@/shared/lib/classNames';
 import { Popover, PopoverContent, PopoverTrigger } from '@/shared/ui/popover';
 import { supabase } from '@/shared/lib/supabaseClient';
+import { ChevronDown, ChevronUp, ChevronsUpDown } from 'lucide-react';
 
 interface WorkspaceMembersPanelProps {
   active?: boolean;
@@ -22,6 +23,9 @@ type MemberGroup = {
   id: string;
   name: string;
 };
+
+type MemberSortKey = 'member' | 'role' | 'group' | 'status';
+type MemberSortDirection = 'asc' | 'desc';
 
 export const WorkspaceMembersPanel: React.FC<WorkspaceMembersPanelProps> = ({
   active = true,
@@ -53,6 +57,8 @@ export const WorkspaceMembersPanel: React.FC<WorkspaceMembersPanelProps> = ({
   const [groupsLoading, setGroupsLoading] = useState(false);
   const [groupsError, setGroupsError] = useState('');
   const [inviteGroupId, setInviteGroupId] = useState('none');
+  const [memberSortKey, setMemberSortKey] = useState<MemberSortKey>('member');
+  const [memberSortDirection, setMemberSortDirection] = useState<MemberSortDirection>('asc');
 
   const isAdmin = currentWorkspaceRole === 'admin';
   const currentUserId = user?.id ?? null;
@@ -99,6 +105,59 @@ export const WorkspaceMembersPanel: React.FC<WorkspaceMembersPanelProps> = ({
     });
     return map;
   }, [assignees]);
+
+  const groupNameById = useMemo(() => (
+    new Map(groups.map((group) => [group.id, group.name]))
+  ), [groups]);
+
+  const handleMemberSortChange = (key: MemberSortKey) => {
+    setMemberSortKey((currentKey) => {
+      if (currentKey === key) {
+        setMemberSortDirection((currentDirection) => (currentDirection === 'asc' ? 'desc' : 'asc'));
+        return currentKey;
+      }
+      setMemberSortDirection('asc');
+      return key;
+    });
+  };
+
+  const sortedMembers = useMemo(() => {
+    const direction = memberSortDirection === 'asc' ? 1 : -1;
+    const list = [...members];
+    const getSortValue = (member: typeof members[number]) => {
+      switch (memberSortKey) {
+        case 'role':
+          return member.role ?? '';
+        case 'group':
+          return groupNameById.get(member.groupId ?? '') ?? 'No group';
+        case 'status': {
+          const assignee = assigneeByUserId.get(member.userId);
+          if (!assignee) return 'Unknown';
+          return assignee.isActive ? 'Active' : 'Disabled';
+        }
+        case 'member':
+        default:
+          return member.email ?? '';
+      }
+    };
+    list.sort((left, right) => {
+      const leftValue = getSortValue(left);
+      const rightValue = getSortValue(right);
+      const compare = leftValue.localeCompare(rightValue, undefined, { sensitivity: 'base' });
+      if (compare !== 0) return compare * direction;
+      return (left.email ?? '').localeCompare(right.email ?? '', undefined, { sensitivity: 'base' });
+    });
+    return list;
+  }, [assigneeByUserId, groupNameById, memberSortDirection, memberSortKey, members]);
+
+  const renderSortIcon = (key: MemberSortKey) => {
+    if (memberSortKey !== key) {
+      return <ChevronsUpDown className="h-3 w-3 text-muted-foreground/70" />;
+    }
+    return memberSortDirection === 'asc'
+      ? <ChevronUp className="h-3 w-3 text-foreground" />
+      : <ChevronDown className="h-3 w-3 text-foreground" />;
+  };
 
   const handleInvite = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -223,7 +282,7 @@ export const WorkspaceMembersPanel: React.FC<WorkspaceMembersPanelProps> = ({
                     onValueChange={setInviteGroupId}
                     disabled={!isAdmin}
                   >
-                    <SelectTrigger>
+                    <SelectTrigger className="w-[220px] max-w-[220px] [&>span]:truncate">
                       <SelectValue placeholder={groupsLoading ? 'Loading groups...' : 'No group'} />
                     </SelectTrigger>
                     <SelectContent>
@@ -287,10 +346,38 @@ export const WorkspaceMembersPanel: React.FC<WorkspaceMembersPanelProps> = ({
         </div>
 
         <div className="hidden md:grid grid-cols-[1fr,140px,180px,120px,90px] gap-3 text-xs text-muted-foreground px-2">
-          <span>Member</span>
-          <span>Role</span>
-          <span>Group</span>
-          <span>Status</span>
+          <button
+            type="button"
+            onClick={() => handleMemberSortChange('member')}
+            className="inline-flex items-center gap-1 text-left hover:text-foreground"
+          >
+            <span>Member</span>
+            {renderSortIcon('member')}
+          </button>
+          <button
+            type="button"
+            onClick={() => handleMemberSortChange('role')}
+            className="inline-flex items-center gap-1 text-left hover:text-foreground"
+          >
+            <span>Role</span>
+            {renderSortIcon('role')}
+          </button>
+          <button
+            type="button"
+            onClick={() => handleMemberSortChange('group')}
+            className="inline-flex items-center gap-1 text-left hover:text-foreground"
+          >
+            <span>Group</span>
+            {renderSortIcon('group')}
+          </button>
+          <button
+            type="button"
+            onClick={() => handleMemberSortChange('status')}
+            className="inline-flex items-center gap-1 text-left hover:text-foreground"
+          >
+            <span>Status</span>
+            {renderSortIcon('status')}
+          </button>
           <span className="text-right">Actions</span>
         </div>
 
@@ -300,7 +387,7 @@ export const WorkspaceMembersPanel: React.FC<WorkspaceMembersPanelProps> = ({
         {!membersLoading && members.length === 0 && (
           <div className="text-sm text-muted-foreground">No members found.</div>
         )}
-        {members.map((member) => {
+        {sortedMembers.map((member) => {
           const isSelf = Boolean(currentUserId && member.userId === currentUserId);
           const assignee = assigneeByUserId.get(member.userId);
           const isActive = assignee?.isActive ?? true;
@@ -337,7 +424,7 @@ export const WorkspaceMembersPanel: React.FC<WorkspaceMembersPanelProps> = ({
                 onValueChange={(value) => handleGroupChange(member.userId, value)}
                 disabled={!isAdmin}
               >
-                <SelectTrigger className="w-full">
+                <SelectTrigger className="w-[180px] max-w-[180px] [&>span]:truncate">
                   <SelectValue placeholder={groupsLoading ? 'Loading groups...' : 'No group'} />
                 </SelectTrigger>
                 <SelectContent>

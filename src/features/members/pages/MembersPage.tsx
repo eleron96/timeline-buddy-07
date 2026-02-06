@@ -16,6 +16,7 @@ import { ScrollArea } from '@/shared/ui/scroll-area';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/shared/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/shared/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/shared/ui/dialog';
+import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from '@/shared/ui/context-menu';
 import { supabase } from '@/shared/lib/supabaseClient';
 import { formatStatusLabel } from '@/shared/lib/statusLabels';
 import { formatProjectLabel } from '@/shared/lib/projectLabels';
@@ -147,6 +148,37 @@ const MembersPage = () => {
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
   const [editingGroupName, setEditingGroupName] = useState('');
   const pageSize = 100;
+
+  const {
+    assignees,
+    projects,
+    statuses,
+    taskTypes,
+    tags,
+    loadWorkspaceData,
+    refreshMemberGroups,
+    assigneeTaskCounts,
+    assigneeCountsDate,
+    deleteTasks,
+    setHighlightedTaskId,
+    setViewMode,
+    setCurrentDate,
+    requestScrollToDate,
+    clearFilters,
+  } = usePlannerStore();
+
+  const {
+    user,
+    profileDisplayName,
+    currentWorkspaceId,
+    currentWorkspaceRole,
+    isSuperAdmin,
+  } = useAuthStore();
+
+  const canEdit = currentWorkspaceRole === 'editor' || currentWorkspaceRole === 'admin';
+  const isAdmin = currentWorkspaceRole === 'admin';
+  const userLabel = profileDisplayName || user?.email || user?.id || '';
+  const navigate = useNavigate();
   const modeToggle = (
     <div className="inline-flex items-center gap-2 rounded-lg bg-muted/60 p-1">
       <Button
@@ -160,17 +192,19 @@ const MembersPage = () => {
       >
         Tasks
       </Button>
-      <Button
-        variant="ghost"
-        size="sm"
-        onClick={() => setMode('access')}
-        className={cn(
-          'h-7 px-3 text-xs rounded-md',
-          mode === 'access' && 'bg-foreground text-background shadow-sm'
-        )}
-      >
-        Access
-      </Button>
+      {isAdmin && (
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => setMode('access')}
+          className={cn(
+            'h-7 px-3 text-xs rounded-md',
+            mode === 'access' && 'bg-foreground text-background shadow-sm'
+          )}
+        >
+          Access
+        </Button>
+      )}
       <Button
         variant="ghost"
         size="sm"
@@ -216,37 +250,6 @@ const MembersPage = () => {
       </Button>
     </div>
   );
-
-  const {
-    assignees,
-    projects,
-    statuses,
-    taskTypes,
-    tags,
-    loadWorkspaceData,
-    refreshMemberGroups,
-    assigneeTaskCounts,
-    assigneeCountsDate,
-    deleteTasks,
-    setHighlightedTaskId,
-    setViewMode,
-    setCurrentDate,
-    requestScrollToDate,
-    clearFilters,
-  } = usePlannerStore();
-
-  const {
-    user,
-    profileDisplayName,
-    currentWorkspaceId,
-    currentWorkspaceRole,
-    isSuperAdmin,
-  } = useAuthStore();
-
-  const canEdit = currentWorkspaceRole === 'editor' || currentWorkspaceRole === 'admin';
-  const isAdmin = currentWorkspaceRole === 'admin';
-  const userLabel = profileDisplayName || user?.email || user?.id || '';
-  const navigate = useNavigate();
   const modeStorageKey = currentWorkspaceId
     ? `members-mode-${currentWorkspaceId}`
     : user?.id
@@ -264,11 +267,20 @@ const MembersPage = () => {
     modeHydratedRef.current = false;
     if (typeof window === 'undefined') return;
     const saved = window.localStorage.getItem(modeStorageKey);
-    if (saved === 'tasks' || saved === 'access' || saved === 'groups') {
+    if (saved === 'tasks' || saved === 'groups' || (saved === 'access' && isAdmin)) {
       setMode(saved);
+    } else if (saved === 'access' && !isAdmin) {
+      setMode('tasks');
     }
     modeHydratedRef.current = true;
-  }, [modeStorageKey]);
+  }, [isAdmin, modeStorageKey]);
+
+  useEffect(() => {
+    if (mode !== 'access') return;
+    if (!isAdmin) {
+      setMode('tasks');
+    }
+  }, [isAdmin, mode]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -711,10 +723,12 @@ const MembersPage = () => {
     setGroupActionLoading(false);
   }, [currentWorkspaceId, editingGroupId, editingGroupName, fetchGroups, isAdmin, refreshMemberGroups]);
 
-  const handleDeleteGroup = useCallback(async () => {
-    if (!currentWorkspaceId || !selectedGroupId || !isAdmin) return;
+  const handleDeleteGroup = useCallback(async (group?: MemberGroup) => {
+    if (!currentWorkspaceId || !isAdmin) return;
+    const targetGroupId = group?.id ?? selectedGroupId;
+    if (!targetGroupId) return;
     if (typeof window !== 'undefined') {
-      const groupName = selectedGroup?.name ?? 'this group';
+      const groupName = group?.name ?? selectedGroup?.name ?? 'this group';
       const confirmed = window.confirm(`Delete "${groupName}"?`);
       if (!confirmed) return;
     }
@@ -723,7 +737,7 @@ const MembersPage = () => {
     const { error } = await supabase
       .from('member_groups')
       .delete()
-      .eq('id', selectedGroupId)
+      .eq('id', targetGroupId)
       .eq('workspace_id', currentWorkspaceId);
 
     if (error) {
@@ -918,16 +932,38 @@ const MembersPage = () => {
                 {!groupsLoading && groups.length > 0 && (
                   <div className="space-y-2">
                     {groups.map((group) => (
-                      <button
-                        key={group.id}
-                        type="button"
-                        onClick={() => setSelectedGroupId(group.id)}
-                        className={`w-full rounded-lg border px-3 py-2 text-left transition-colors ${
-                          selectedGroupId === group.id ? 'border-foreground/60 bg-muted/60' : 'border-border hover:bg-muted/40'
-                        }`}
-                      >
-                        <div className="text-sm font-medium truncate">{group.name}</div>
-                      </button>
+                      <ContextMenu key={group.id}>
+                        <ContextMenuTrigger asChild>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedGroupId(group.id)}
+                            onContextMenu={() => setSelectedGroupId(group.id)}
+                            className={`w-full rounded-lg border px-3 py-2 text-left transition-colors ${
+                              selectedGroupId === group.id ? 'border-foreground/60 bg-muted/60' : 'border-border hover:bg-muted/40'
+                            }`}
+                          >
+                            <div className="text-sm font-medium truncate">{group.name}</div>
+                          </button>
+                        </ContextMenuTrigger>
+                        <ContextMenuContent>
+                          <ContextMenuItem
+                            disabled={!isAdmin}
+                            onSelect={() => {
+                              setSelectedGroupId(group.id);
+                              handleStartEditGroup(group);
+                            }}
+                          >
+                            Rename
+                          </ContextMenuItem>
+                          <ContextMenuItem
+                            disabled={!isAdmin}
+                            onSelect={() => void handleDeleteGroup(group)}
+                            className="text-destructive focus:text-destructive"
+                          >
+                            Delete
+                          </ContextMenuItem>
+                        </ContextMenuContent>
+                      </ContextMenu>
                     ))}
                   </div>
                 )}
@@ -984,26 +1020,6 @@ const MembersPage = () => {
                     ) : (
                       <div className="text-lg font-semibold">{selectedGroup.name}</div>
                     )}
-                    <div className="flex items-center gap-2">
-                      {editingGroupId !== selectedGroup.id && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleStartEditGroup(selectedGroup)}
-                          disabled={!isAdmin}
-                        >
-                          Rename
-                        </Button>
-                      )}
-                      <Button
-                        size="sm"
-                        variant="destructive"
-                        onClick={handleDeleteGroup}
-                        disabled={!isAdmin || groupActionLoading}
-                      >
-                        Delete
-                      </Button>
-                    </div>
                   </div>
 
                   {groupMembersLoading && (

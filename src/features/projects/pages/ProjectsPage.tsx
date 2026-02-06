@@ -251,6 +251,7 @@ const ProjectsPage = () => {
   const [tasksLoading, setTasksLoading] = useState(false);
   const [tasksError, setTasksError] = useState('');
   const [search, setSearch] = useState('');
+  const [projectSearch, setProjectSearch] = useState('');
   const [statusFilterIds, setStatusFilterIds] = useState<string[]>([]);
   const [assigneeFilterIds, setAssigneeFilterIds] = useState<string[]>([]);
   const [groupFilterIds, setGroupFilterIds] = useState<string[]>([]);
@@ -408,14 +409,20 @@ const ProjectsPage = () => {
     return customerFilterIds.includes(targetId);
   }, [customerFilterIds]);
 
+  const matchesProjectSearch = useCallback((project: Project) => {
+    const query = projectSearch.trim().toLowerCase();
+    if (!query) return true;
+    return project.name.toLowerCase().includes(query);
+  }, [projectSearch]);
+
   const filteredActiveProjects = useMemo(
-    () => activeProjects.filter(matchesCustomerFilter),
-    [activeProjects, matchesCustomerFilter],
+    () => activeProjects.filter((project) => matchesCustomerFilter(project) && matchesProjectSearch(project)),
+    [activeProjects, matchesCustomerFilter, matchesProjectSearch],
   );
 
   const filteredArchivedProjects = useMemo(
-    () => archivedProjects.filter(matchesCustomerFilter),
-    [archivedProjects, matchesCustomerFilter],
+    () => archivedProjects.filter((project) => matchesCustomerFilter(project) && matchesProjectSearch(project)),
+    [archivedProjects, matchesCustomerFilter, matchesProjectSearch],
   );
 
   useEffect(() => {
@@ -954,6 +961,15 @@ const ProjectsPage = () => {
             </span>
           )}
           <Button
+            onClick={() => setCreateProjectOpen(true)}
+            size="sm"
+            className="gap-2"
+            disabled={!canEdit}
+          >
+            <Plus className="h-4 w-4" />
+            New project
+          </Button>
+          <Button
             variant="outline"
             size="icon"
             onClick={() => setShowSettings(true)}
@@ -978,21 +994,6 @@ const ProjectsPage = () => {
           <div className="px-4 py-3 border-b border-border">
             {modeToggle}
           </div>
-          {mode === 'projects' && (
-            <>
-              <div className="p-4 space-y-3 border-b border-border">
-                <Button
-                  className="w-full justify-center"
-                  onClick={() => setCreateProjectOpen(true)}
-                  disabled={!canEdit}
-                >
-                  <Plus className="mr-2 h-4 w-4" />
-                  New project
-                </Button>
-              </div>
-            </>
-          )}
-
           {mode === 'customers' && (
             <>
               <div className="p-4 space-y-3 border-b border-border">
@@ -1191,6 +1192,14 @@ const ProjectsPage = () => {
                     <Layers className="h-4 w-4" />
                   </Button>
                 </div>
+              </div>
+              <div className="mx-4 mt-2">
+                <Input
+                  className="h-9"
+                  placeholder="Search projects..."
+                  value={projectSearch}
+                  onChange={(event) => setProjectSearch(event.target.value)}
+                />
               </div>
               <TabsList className="mx-4 mt-2 grid grid-cols-2">
                 <TabsTrigger value="active">Active</TabsTrigger>
