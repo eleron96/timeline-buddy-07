@@ -18,6 +18,7 @@ import { format, addDays } from '@/features/planner/lib/dateUtils';
 import { cn } from '@/shared/lib/classNames';
 import { TaskPriority } from '@/features/planner/types/planner';
 import { endOfMonth, isSameMonth, isSameYear, parseISO } from 'date-fns';
+import { sortProjectsByTracking } from '@/shared/lib/projectSorting';
 
 interface AddTaskDialogProps {
   open: boolean;
@@ -36,9 +37,15 @@ export const AddTaskDialog: React.FC<AddTaskDialogProps> = ({
   initialProjectId,
   initialAssigneeIds,
 }) => {
-  const { projects, assignees, statuses, taskTypes, tags, addTask, createRepeats } = usePlannerStore();
+  const { projects, trackedProjectIds, assignees, statuses, taskTypes, tags, addTask, createRepeats } = usePlannerStore();
   const filteredAssignees = useFilteredAssignees(assignees);
-  const activeProjects = useMemo(() => projects.filter((project) => !project.archived), [projects]);
+  const activeProjects = useMemo(
+    () => sortProjectsByTracking(
+      projects.filter((project) => !project.archived),
+      trackedProjectIds,
+    ),
+    [projects, trackedProjectIds],
+  );
   const selectableAssignees = useMemo(
     () => filteredAssignees.filter((assignee) => assignee.isActive),
     [filteredAssignees],

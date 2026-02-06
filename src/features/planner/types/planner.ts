@@ -92,6 +92,7 @@ export interface PlannerState {
   tasks: Task[];
   milestones: Milestone[];
   projects: Project[];
+  trackedProjectIds: string[];
   customers: Customer[];
   assignees: Assignee[];
   memberGroups: MemberGroup[];

@@ -59,6 +59,10 @@ type ProjectRow = {
   customer_id: string | null;
 };
 
+type ProjectTrackingRow = {
+  project_id: string;
+};
+
 type CustomerRow = {
   id: string;
   workspace_id: string;
@@ -163,6 +167,7 @@ interface PlannerStore extends PlannerState {
   addProject: (project: Omit<Project, 'id'>) => Promise<void>;
   updateProject: (id: string, updates: Partial<Project>) => Promise<void>;
   deleteProject: (id: string) => Promise<void>;
+  toggleTrackedProject: (projectId: string, isTracked?: boolean) => Promise<void>;
 
   addCustomer: (customer: Omit<Customer, 'id'>) => Promise<Customer | null>;
   updateCustomer: (id: string, updates: Partial<Customer>) => Promise<void>;
@@ -349,6 +354,7 @@ export const usePlannerStore = create<PlannerStore>()(
       tasks: [],
       milestones: [],
       projects: [],
+      trackedProjectIds: [],
       customers: [],
       assignees: [],
       memberGroups: [],
@@ -378,6 +384,7 @@ export const usePlannerStore = create<PlannerStore>()(
         tasks: [],
         milestones: [],
         projects: [],
+        trackedProjectIds: [],
         customers: [],
         assignees: [],
         memberGroups: [],
@@ -434,6 +441,16 @@ export const usePlannerStore = create<PlannerStore>()(
           })
           : Promise.resolve({ data: null, error: null });
 
+        const { data: authData } = await supabase.auth.getUser();
+        const userId = authData?.user?.id ?? null;
+        const trackedPromise = userId
+          ? supabase
+            .from('project_tracking')
+            .select('project_id')
+            .eq('workspace_id', workspaceId)
+            .eq('user_id', userId)
+          : Promise.resolve({ data: [], error: null });
+
         const [
           tasksRes,
           projectsRes,
@@ -446,6 +463,7 @@ export const usePlannerStore = create<PlannerStore>()(
           tagsRes,
           milestonesRes,
           countsRes,
+          trackedRes,
         ] = await Promise.all([
           supabase
             .from('tasks')
@@ -468,6 +486,7 @@ export const usePlannerStore = create<PlannerStore>()(
             .gte('date', start)
             .lte('date', end),
           countsPromise,
+          trackedPromise,
         ]);
 
         if (get().dataRequestId !== requestId) return;
@@ -483,6 +502,7 @@ export const usePlannerStore = create<PlannerStore>()(
           || taskTypesRes.error
           || tagsRes.error
           || milestonesRes.error
+          || trackedRes.error
         ) {
           set({
             error: tasksRes.error?.message
@@ -495,6 +515,7 @@ export const usePlannerStore = create<PlannerStore>()(
               || taskTypesRes.error?.message
               || tagsRes.error?.message
               || milestonesRes.error?.message
+              || trackedRes.error?.message
               || 'Failed to load workspace data.',
             loading: false,
           });
@@ -549,6 +570,7 @@ export const usePlannerStore = create<PlannerStore>()(
         const nextCustomers = (customersRes.data ?? []).map(mapCustomerRow).sort((left, right) => (
           left.name.localeCompare(right.name)
         ));
+        const nextTrackedProjectIds = (trackedRes.data ?? []).map((row) => (row as ProjectTrackingRow).project_id);
         const activeProjectIds = new Set(nextProjects.filter((project) => !project.archived).map((project) => project.id));
         const activeGroupIds = new Set(memberGroups.map((group) => group.id));
 
@@ -578,6 +600,7 @@ export const usePlannerStore = create<PlannerStore>()(
           tasks: taskRows.map(mapTaskRow),
           milestones: (milestonesRes.data ?? []).map(mapMilestoneRow),
           projects: nextProjects,
+          trackedProjectIds: nextTrackedProjectIds,
           customers: nextCustomers,
           assignees,
           memberGroups,
@@ -1084,10 +1107,54 @@ export const usePlannerStore = create<PlannerStore>()(
         set((state) => ({
           projects: state.projects.filter((project) => project.id !== id),
           tasks: state.tasks.map((task) => task.projectId === id ? { ...task, projectId: null } : task),
+          trackedProjectIds: state.trackedProjectIds.filter((projectId) => projectId !== id),
           filters: {
             ...state.filters,
             projectIds: state.filters.projectIds.filter((projectId) => projectId !== id),
           },
+        }));
+      },
+
+      toggleTrackedProject: async (projectId, isTracked) => {
+        const workspaceId = get().workspaceId;
+        if (!workspaceId) return;
+
+        const { data: authData } = await supabase.auth.getUser();
+        const userId = authData?.user?.id ?? null;
+        if (!userId) return;
+
+        const isAlreadyTracked = get().trackedProjectIds.includes(projectId);
+        const nextTracked = typeof isTracked === 'boolean' ? isTracked : !isAlreadyTracked;
+        if (nextTracked === isAlreadyTracked) return;
+
+        if (nextTracked) {
+          const { error } = await supabase
+            .from('project_tracking')
+            .insert({
+              workspace_id: workspaceId,
+              project_id: projectId,
+              user_id: userId,
+            });
+          if (error) {
+            console.error(error);
+            return;
+          }
+          set((state) => ({ trackedProjectIds: [...state.trackedProjectIds, projectId] }));
+          return;
+        }
+
+        const { error } = await supabase
+          .from('project_tracking')
+          .delete()
+          .eq('workspace_id', workspaceId)
+          .eq('project_id', projectId)
+          .eq('user_id', userId);
+        if (error) {
+          console.error(error);
+          return;
+        }
+        set((state) => ({
+          trackedProjectIds: state.trackedProjectIds.filter((id) => id !== projectId),
         }));
       },
 

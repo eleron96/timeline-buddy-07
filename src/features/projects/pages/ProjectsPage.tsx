@@ -28,6 +28,7 @@ import { ColorPicker } from '@/shared/ui/color-picker';
 import { supabase } from '@/shared/lib/supabaseClient';
 import { formatStatusLabel } from '@/shared/lib/statusLabels';
 import { formatProjectLabel } from '@/shared/lib/projectLabels';
+import { sortProjectsByTracking } from '@/shared/lib/projectSorting';
 import { format, parseISO } from 'date-fns';
 import {
   ArrowDownAZ,
@@ -39,6 +40,7 @@ import {
   User,
   Plus,
   RefreshCcw,
+  Star,
 } from 'lucide-react';
 import { Customer, Project, Task } from '@/features/planner/types/planner';
 import DOMPurify from 'dompurify';
@@ -279,6 +281,7 @@ const ProjectsPage = () => {
 
   const {
     projects,
+    trackedProjectIds,
     customers,
     statuses,
     assignees,
@@ -293,6 +296,7 @@ const ProjectsPage = () => {
     updateCustomer,
     deleteCustomer,
     deleteProject,
+    toggleTrackedProject,
     setHighlightedTaskId,
     setViewMode,
     setCurrentDate,
@@ -318,12 +322,18 @@ const ProjectsPage = () => {
   }, [currentWorkspaceId, loadWorkspaceData]);
 
   const activeProjects = useMemo(
-    () => [...projects].filter((project) => !project.archived).sort((a, b) => a.name.localeCompare(b.name)),
-    [projects],
+    () => sortProjectsByTracking(
+      projects.filter((project) => !project.archived),
+      trackedProjectIds,
+    ),
+    [projects, trackedProjectIds],
   );
   const archivedProjects = useMemo(
-    () => [...projects].filter((project) => project.archived).sort((a, b) => a.name.localeCompare(b.name)),
-    [projects],
+    () => sortProjectsByTracking(
+      projects.filter((project) => project.archived),
+      trackedProjectIds,
+    ),
+    [projects, trackedProjectIds],
   );
   const customerById = useMemo(
     () => new Map(customers.map((customer) => [customer.id, customer])),
@@ -469,10 +479,11 @@ const ProjectsPage = () => {
   );
   const selectedCustomerProjects = useMemo(() => {
     if (!selectedCustomerId) return [];
-    return projects
-      .filter((project) => project.customerId === selectedCustomerId)
-      .sort((a, b) => a.name.localeCompare(b.name));
-  }, [projects, selectedCustomerId]);
+    return sortProjectsByTracking(
+      projects.filter((project) => project.customerId === selectedCustomerId),
+      trackedProjectIds,
+    );
+  }, [projects, selectedCustomerId, trackedProjectIds]);
   const selectedTaskCustomer = useMemo(() => (
     selectedTaskProject?.customerId ? customerById.get(selectedTaskProject.customerId) ?? null : null
   ), [customerById, selectedTaskProject?.customerId]);
@@ -807,17 +818,17 @@ const ProjectsPage = () => {
     sortedCustomers.forEach((customer) => {
       const bucket = grouped.get(customer.id);
       if (bucket && bucket.length > 0) {
-        result.push({ id: customer.id, name: customer.name, projects: bucket });
+        result.push({ id: customer.id, name: customer.name, projects: sortProjectsByTracking(bucket, trackedProjectIds) });
       }
     });
 
     const noCustomer = grouped.get('none');
     if (noCustomer && noCustomer.length > 0) {
-      result.push({ id: 'none', name: 'No customer', projects: noCustomer });
+      result.push({ id: 'none', name: 'No customer', projects: sortProjectsByTracking(noCustomer, trackedProjectIds) });
     }
 
     return result;
-  }, [groupByCustomer, sortedCustomers]);
+  }, [groupByCustomer, sortedCustomers, trackedProjectIds]);
 
   const handleOpenProjectFromCustomer = useCallback((project: Project) => {
     setMode('projects');
@@ -831,6 +842,7 @@ const ProjectsPage = () => {
 
   const renderProjectItem = (project: Project, showArchivedBadge: boolean) => {
     const customerName = project.customerId ? customerById.get(project.customerId)?.name : null;
+    const isTracked = trackedProjectIds.includes(project.id);
     return (
       <ContextMenu key={project.id}>
         <ContextMenuTrigger asChild>
@@ -858,13 +870,21 @@ const ProjectsPage = () => {
                   {customerName ?? 'No customer'}
                 </div>
               </div>
-              {showArchivedBadge && (
-                <Badge variant="secondary" className="text-[10px]">Archived</Badge>
-              )}
+              <div className="flex items-center gap-2">
+                {isTracked && (
+                  <Star className="h-4 w-4 text-amber-500 fill-amber-500" />
+                )}
+                {showArchivedBadge && (
+                  <Badge variant="secondary" className="text-[10px]">Archived</Badge>
+                )}
+              </div>
             </div>
           </div>
         </ContextMenuTrigger>
         <ContextMenuContent>
+          <ContextMenuItem onSelect={() => void toggleTrackedProject(project.id, !isTracked)}>
+            {isTracked ? 'Stop tracking' : 'Track'}
+          </ContextMenuItem>
           <ContextMenuItem disabled={!canEdit} onSelect={() => openProjectSettings(project)}>
             Edit
           </ContextMenuItem>

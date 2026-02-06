@@ -5,6 +5,7 @@ import { Button } from '@/shared/ui/button';
 import { Input } from '@/shared/ui/input';
 import { Label } from '@/shared/ui/label';
 import { formatProjectLabel } from '@/shared/lib/projectLabels';
+import { sortProjectsByTracking } from '@/shared/lib/projectSorting';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/shared/ui/select';
 import { Milestone } from '@/features/planner/types/planner';
 import { format, parseISO } from 'date-fns';
@@ -24,12 +25,18 @@ export const MilestoneDialog: React.FC<MilestoneDialogProps> = ({
   milestone,
   canEdit,
 }) => {
-  const { projects, addMilestone, updateMilestone, deleteMilestone } = usePlannerStore();
+  const { projects, trackedProjectIds, addMilestone, updateMilestone, deleteMilestone } = usePlannerStore();
   const [title, setTitle] = useState('');
   const [projectId, setProjectId] = useState('');
 
   const mode = milestone ? 'edit' : 'create';
-  const activeProjects = useMemo(() => projects.filter((project) => !project.archived), [projects]);
+  const activeProjects = useMemo(
+    () => sortProjectsByTracking(
+      projects.filter((project) => !project.archived),
+      trackedProjectIds,
+    ),
+    [projects, trackedProjectIds],
+  );
   const currentProject = useMemo(
     () => projects.find((project) => project.id === milestone?.projectId),
     [projects, milestone?.projectId],

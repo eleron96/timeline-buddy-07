@@ -6,6 +6,7 @@ import { Checkbox } from '@/shared/ui/checkbox';
 import { ScrollArea } from '@/shared/ui/scroll-area';
 import { formatStatusLabel } from '@/shared/lib/statusLabels';
 import { formatProjectLabel } from '@/shared/lib/projectLabels';
+import { sortProjectsByTracking } from '@/shared/lib/projectSorting';
 import { 
   Filter, 
   ChevronDown, 
@@ -75,6 +76,7 @@ interface FilterPanelProps {
 export const FilterPanel: React.FC<FilterPanelProps> = ({ collapsed, onToggle }) => {
   const { 
     projects, 
+    trackedProjectIds,
     assignees, 
     memberGroups,
     statuses, 
@@ -86,7 +88,13 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({ collapsed, onToggle })
   } = usePlannerStore();
   
   const filteredAssignees = useFilteredAssignees(assignees);
-  const activeProjects = useMemo(() => projects.filter((project) => !project.archived), [projects]);
+  const activeProjects = useMemo(
+    () => sortProjectsByTracking(
+      projects.filter((project) => !project.archived),
+      trackedProjectIds,
+    ),
+    [projects, trackedProjectIds],
+  );
   const archivedProjectsCount = projects.length - activeProjects.length;
   
   const hasActiveFilters = 

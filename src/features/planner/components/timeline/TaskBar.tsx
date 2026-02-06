@@ -6,6 +6,7 @@ import { Task, TaskPriority } from '@/features/planner/types/planner';
 import { cn } from '@/shared/lib/classNames';
 import { formatStatusLabel, stripStatusEmoji } from '@/shared/lib/statusLabels';
 import { formatProjectLabel } from '@/shared/lib/projectLabels';
+import { sortProjectsByTracking } from '@/shared/lib/projectSorting';
 import { calculateNewDates, calculateResizedDates, formatDateRange, TASK_HEIGHT, TASK_GAP } from '@/features/planner/lib/dateUtils';
 import { Ban, RotateCw } from 'lucide-react';
 import {
@@ -102,6 +103,7 @@ export const TaskBar: React.FC<TaskBarProps> = ({
   const {
     tasks,
     projects,
+    trackedProjectIds,
     statuses,
     taskTypes,
     assignees,
@@ -129,7 +131,13 @@ export const TaskBar: React.FC<TaskBarProps> = ({
   const barRef = useRef<HTMLDivElement>(null);
   
   const project = projects.find(p => p.id === task.projectId);
-  const activeProjects = useMemo(() => projects.filter((item) => !item.archived), [projects]);
+  const activeProjects = useMemo(
+    () => sortProjectsByTracking(
+      projects.filter((item) => !item.archived),
+      trackedProjectIds,
+    ),
+    [projects, trackedProjectIds],
+  );
   const archivedProject = project?.archived ? project : null;
   const projectOptions = useMemo(() => {
     if (!archivedProject) return activeProjects;

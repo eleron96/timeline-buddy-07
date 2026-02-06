@@ -9,6 +9,7 @@ import { RichTextEditor } from '@/features/planner/components/RichTextEditor';
 import { Label } from '@/shared/ui/label';
 import { formatStatusLabel } from '@/shared/lib/statusLabels';
 import { formatProjectLabel } from '@/shared/lib/projectLabels';
+import { sortProjectsByTracking } from '@/shared/lib/projectSorting';
 import { cn } from '@/shared/lib/classNames';
 import { Popover, PopoverContent, PopoverTrigger } from '@/shared/ui/popover';
 import { ScrollArea } from '@/shared/ui/scroll-area';
@@ -59,6 +60,7 @@ export const TaskDetailPanel: React.FC = () => {
     setSelectedTaskId, 
     tasks, 
     projects, 
+    trackedProjectIds,
     customers,
     assignees, 
     statuses, 
@@ -74,7 +76,13 @@ export const TaskDetailPanel: React.FC = () => {
   const canEdit = currentWorkspaceRole === 'editor' || currentWorkspaceRole === 'admin';
   const isReadOnly = !canEdit;
   const filteredAssignees = useFilteredAssignees(assignees);
-  const activeProjects = useMemo(() => projects.filter((project) => !project.archived), [projects]);
+  const activeProjects = useMemo(
+    () => sortProjectsByTracking(
+      projects.filter((project) => !project.archived),
+      trackedProjectIds,
+    ),
+    [projects, trackedProjectIds],
+  );
   const customerById = useMemo(
     () => new Map(customers.map((customer) => [customer.id, customer])),
     [customers],
