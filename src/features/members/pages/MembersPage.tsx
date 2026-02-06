@@ -15,17 +15,20 @@ import { Checkbox } from '@/shared/ui/checkbox';
 import { ScrollArea } from '@/shared/ui/scroll-area';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/shared/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/shared/ui/select';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/shared/ui/dialog';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/shared/ui/dialog';
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from '@/shared/ui/context-menu';
 import { supabase } from '@/shared/lib/supabaseClient';
+import { t } from '@lingui/macro';
 import { formatStatusLabel } from '@/shared/lib/statusLabels';
 import { formatProjectLabel } from '@/shared/lib/projectLabels';
 import { cn } from '@/shared/lib/classNames';
 import { format, parseISO } from 'date-fns';
-import { Settings, User, RefreshCcw } from 'lucide-react';
+import { Settings, User, RefreshCcw, ArrowDownAZ, ArrowDownZA, Layers, Plus } from 'lucide-react';
 import { Task } from '@/features/planner/types/planner';
 import { WorkspaceMembersPanel } from '@/features/workspace/components/WorkspaceMembersPanel';
 import DOMPurify from 'dompurify';
+import { compareNames } from '@/shared/lib/nameSorting';
+import { Label } from '@/shared/ui/label';
 
 type TaskRow = {
   id: string;
@@ -125,6 +128,9 @@ const MembersPage = () => {
   const [tasksLoading, setTasksLoading] = useState(false);
   const [tasksError, setTasksError] = useState('');
   const [search, setSearch] = useState('');
+  const [memberSearch, setMemberSearch] = useState('');
+  const [memberSort, setMemberSort] = useState<'asc' | 'desc'>('asc');
+  const [memberGroupBy, setMemberGroupBy] = useState<'none' | 'group'>('none');
   const [statusFilterIds, setStatusFilterIds] = useState<string[]>([]);
   const [projectFilterIds, setProjectFilterIds] = useState<string[]>([]);
   const [taskScope, setTaskScope] = useState<'current' | 'past'>('current');
@@ -138,6 +144,8 @@ const MembersPage = () => {
   const [groups, setGroups] = useState<MemberGroup[]>([]);
   const [groupsLoading, setGroupsLoading] = useState(false);
   const [groupsError, setGroupsError] = useState('');
+  const [groupSort, setGroupSort] = useState<'asc' | 'desc'>('asc');
+  const [groupSearch, setGroupSearch] = useState('');
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const [groupMembers, setGroupMembers] = useState<GroupMember[]>([]);
   const [groupMembersLoading, setGroupMembersLoading] = useState(false);
@@ -151,6 +159,7 @@ const MembersPage = () => {
 
   const {
     assignees,
+    memberGroupAssignments,
     projects,
     statuses,
     taskTypes,
@@ -178,6 +187,13 @@ const MembersPage = () => {
   const canEdit = currentWorkspaceRole === 'editor' || currentWorkspaceRole === 'admin';
   const isAdmin = currentWorkspaceRole === 'admin';
   const userLabel = profileDisplayName || user?.email || user?.id || '';
+  const roleLabels: Record<WorkspaceRole, string> = {
+    admin: t`Admin`,
+    editor: t`Editor`,
+    viewer: t`Viewer`,
+  };
+  const memberSortLabel = memberSort === 'asc' ? t`A-Z` : t`Z-A`;
+  const groupSortLabel = groupSort === 'asc' ? t`A-Z` : t`Z-A`;
   const navigate = useNavigate();
   const modeToggle = (
     <div className="inline-flex items-center gap-2 rounded-lg bg-muted/60 p-1">
@@ -190,7 +206,7 @@ const MembersPage = () => {
           mode === 'tasks' && 'bg-foreground text-background shadow-sm'
         )}
       >
-        Tasks
+        {t`Tasks`}
       </Button>
       {isAdmin && (
         <Button
@@ -202,7 +218,7 @@ const MembersPage = () => {
             mode === 'access' && 'bg-foreground text-background shadow-sm'
           )}
         >
-          Access
+          {t`Access`}
         </Button>
       )}
       <Button
@@ -214,7 +230,7 @@ const MembersPage = () => {
           mode === 'groups' && 'bg-foreground text-background shadow-sm'
         )}
       >
-        Groups
+        {t`Groups`}
       </Button>
     </div>
   );
@@ -232,7 +248,7 @@ const MembersPage = () => {
           taskScope === 'current' && 'bg-foreground text-background shadow-sm'
         )}
       >
-        Current
+        {t`Current`}
       </Button>
       <Button
         variant="ghost"
@@ -246,7 +262,7 @@ const MembersPage = () => {
           taskScope === 'past' && 'bg-foreground text-background shadow-sm'
         )}
       >
-        Past
+        {t`Past`}
       </Button>
     </div>
   );
@@ -296,9 +312,62 @@ const MembersPage = () => {
     () => [...assignees].filter((assignee) => !assignee.isActive).sort((a, b) => a.name.localeCompare(b.name)),
     [assignees],
   );
+  const groupNameById = useMemo(
+    () => new Map(groups.map((group) => [group.id, group.name])),
+    [groups],
+  );
+  const groupIdByUserId = useMemo(
+    () => new Map(memberGroupAssignments.map((assignment) => [assignment.userId, assignment.groupId])),
+    [memberGroupAssignments],
+  );
+
+  const normalizedMemberSearch = memberSearch.trim().toLowerCase();
+  const buildMemberGroups = useMemo(() => {
+    return (list: typeof assignees) => {
+      const filtered = normalizedMemberSearch
+        ? list.filter((assignee) => assignee.name.toLowerCase().includes(normalizedMemberSearch))
+        : list;
+      const sorted = [...filtered].sort((a, b) => compareNames(a.name, b.name, memberSort));
+      if (memberGroupBy === 'none') {
+        return [{ id: 'all', name: null, members: sorted }];
+      }
+      const buckets = new Map<string, typeof assignees>();
+      sorted.forEach((assignee) => {
+        const groupId = assignee.userId ? groupIdByUserId.get(assignee.userId) ?? 'none' : 'none';
+        const key = groupId ?? 'none';
+        const groupList = buckets.get(key) ?? [];
+        groupList.push(assignee);
+        buckets.set(key, groupList);
+      });
+      const groupsList = Array.from(buckets.entries()).map(([id, members]) => ({
+        id,
+        name: id === 'none' ? t`No group` : groupNameById.get(id) ?? t`No group`,
+        members,
+      }));
+      groupsList.sort((left, right) => compareNames(left.name ?? '', right.name ?? '', 'asc'));
+      return groupsList;
+    };
+  }, [groupIdByUserId, groupNameById, memberGroupBy, memberSort, normalizedMemberSearch]);
+
+  const activeMemberGroups = useMemo(
+    () => buildMemberGroups(activeAssignees),
+    [activeAssignees, buildMemberGroups],
+  );
+  const disabledMemberGroups = useMemo(
+    () => buildMemberGroups(disabledAssignees),
+    [disabledAssignees, buildMemberGroups],
+  );
+  const activeVisibleAssignees = useMemo(
+    () => activeMemberGroups.flatMap((group) => group.members),
+    [activeMemberGroups],
+  );
+  const disabledVisibleAssignees = useMemo(
+    () => disabledMemberGroups.flatMap((group) => group.members),
+    [disabledMemberGroups],
+  );
 
   useEffect(() => {
-    const list = tab === 'active' ? activeAssignees : disabledAssignees;
+    const list = tab === 'active' ? activeVisibleAssignees : disabledVisibleAssignees;
     if (list.length === 0) {
       setSelectedAssigneeId(null);
       return;
@@ -306,7 +375,7 @@ const MembersPage = () => {
     if (!selectedAssigneeId || !list.some((assignee) => assignee.id === selectedAssigneeId)) {
       setSelectedAssigneeId(list[0].id);
     }
-  }, [activeAssignees, disabledAssignees, selectedAssigneeId, tab]);
+  }, [activeVisibleAssignees, disabledVisibleAssignees, selectedAssigneeId, tab]);
 
   const selectedAssignee = useMemo(
     () => assignees.find((assignee) => assignee.id === selectedAssigneeId) ?? null,
@@ -355,6 +424,13 @@ const MembersPage = () => {
     () => [...projects].sort((a, b) => a.name.localeCompare(b.name)),
     [projects],
   );
+  const normalizedGroupSearch = groupSearch.trim().toLowerCase();
+  const sortedGroups = useMemo(() => {
+    const filtered = normalizedGroupSearch
+      ? groups.filter((group) => group.name.toLowerCase().includes(normalizedGroupSearch))
+      : groups;
+    return [...filtered].sort((a, b) => compareNames(a.name, b.name, groupSort));
+  }, [groups, groupSort, normalizedGroupSearch]);
 
   const selectedGroup = useMemo(
     () => groups.find((group) => group.id === selectedGroupId) ?? null,
@@ -401,7 +477,7 @@ const MembersPage = () => {
     const members = rows.map((row) => ({
       userId: row.user_id,
       role: row.role,
-      email: row.profiles?.email ?? 'unknown',
+      email: row.profiles?.email ?? t`unknown`,
       displayName: row.profiles?.display_name ?? null,
     }));
     members.sort((a, b) => {
@@ -564,12 +640,12 @@ const MembersPage = () => {
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
 
   const statusFilterLabel = statusFilterIds.length === 0
-    ? 'All statuses'
-    : `${statusFilterIds.length} selected`;
+    ? t`All statuses`
+    : t`${statusFilterIds.length} selected`;
 
   const projectFilterLabel = projectFilterIds.length === 0
-    ? 'All projects'
-    : `${projectFilterIds.length} selected`;
+    ? t`All projects`
+    : t`${projectFilterIds.length} selected`;
 
   const handleOpenTaskInTimeline = useCallback(() => {
     if (!selectedTask) return;
@@ -776,6 +852,12 @@ const MembersPage = () => {
               {userLabel}
             </span>
           )}
+          {mode === 'groups' && isAdmin && (
+            <Button size="sm" className="gap-2" onClick={() => setCreatingGroup(true)}>
+              <Plus className="h-4 w-4" />
+              {t`New group`}
+            </Button>
+          )}
           <Button
             variant="outline"
             size="icon"
@@ -804,71 +886,128 @@ const MembersPage = () => {
 
           {mode === 'tasks' && (
             <Tabs value={tab} onValueChange={(value) => setTab(value as 'active' | 'disabled')} className="flex-1 flex flex-col">
-              <TabsList className="mx-4 mt-3 grid grid-cols-2">
-                <TabsTrigger value="active">Active</TabsTrigger>
-                <TabsTrigger value="disabled">Disabled</TabsTrigger>
+              <div className="px-4 py-3 border-b border-border">
+                <div className="grid grid-cols-[1fr_auto] items-center gap-2">
+                  <Input
+                    className="h-8"
+                    placeholder={t`Search members...`}
+                    value={memberSearch}
+                    onChange={(event) => setMemberSearch(event.target.value)}
+                  />
+                  <div className="flex items-center justify-end gap-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 gap-2 px-2"
+                      onClick={() => setMemberSort((current) => (current === 'asc' ? 'desc' : 'asc'))}
+                    >
+                      {memberSort === 'asc' ? (
+                        <ArrowDownAZ className="h-4 w-4" />
+                      ) : (
+                        <ArrowDownZA className="h-4 w-4" />
+                      )}
+                      <span className="text-xs text-muted-foreground">{memberSortLabel}</span>
+                    </Button>
+                    <Button
+                      variant={memberGroupBy === 'group' ? 'secondary' : 'ghost'}
+                      size="sm"
+                      className="h-8 px-2"
+                      onClick={() => setMemberGroupBy((current) => (current === 'group' ? 'none' : 'group'))}
+                      aria-pressed={memberGroupBy === 'group'}
+                      title={t`Group by group`}
+                    >
+                      <Layers className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              </div>
+              <TabsList className="mx-4 mt-2 grid grid-cols-2">
+                <TabsTrigger value="active">{t`Active`}</TabsTrigger>
+                <TabsTrigger value="disabled">{t`Disabled`}</TabsTrigger>
               </TabsList>
               <TabsContent value="active" className="flex-1 overflow-hidden">
                 <ScrollArea className="h-full px-4 py-3">
-                  {activeAssignees.length === 0 && (
-                    <div className="text-sm text-muted-foreground">No active members.</div>
+                  {activeVisibleAssignees.length === 0 && (
+                    <div className="text-sm text-muted-foreground">{t`No active members.`}</div>
                   )}
-                  <div className="space-y-2">
-                    {activeAssignees.map((assignee) => {
-                      const count = assigneeCountsDate ? (assigneeTaskCounts[assignee.id] ?? 0) : null;
-                      return (
-                        <button
-                          key={assignee.id}
-                          type="button"
-                          onClick={() => setSelectedAssigneeId(assignee.id)}
-                          className={`w-full rounded-lg border px-3 py-2 text-left transition-colors ${
-                            selectedAssigneeId === assignee.id ? 'border-foreground/60 bg-muted/60' : 'border-border hover:bg-muted/40'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-medium truncate">{assignee.name}</span>
-                            {count !== null && (
-                              <Badge variant="secondary" className="ml-auto text-[10px]">
-                                {count}
-                              </Badge>
-                            )}
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
+                  {activeVisibleAssignees.length > 0 && (
+                    <div className="space-y-3">
+                      {activeMemberGroups.map((group) => (
+                        <div key={group.id} className="space-y-2">
+                          {memberGroupBy === 'group' && (
+                            <div className="text-xs uppercase tracking-wide text-muted-foreground">
+                              {group.name}
+                            </div>
+                          )}
+                          {group.members.map((assignee) => {
+                            const count = assigneeCountsDate ? (assigneeTaskCounts[assignee.id] ?? 0) : null;
+                            return (
+                              <button
+                                key={assignee.id}
+                                type="button"
+                                onClick={() => setSelectedAssigneeId(assignee.id)}
+                                className={`w-full rounded-lg border px-3 py-2 text-left transition-colors ${
+                                  selectedAssigneeId === assignee.id ? 'border-foreground/60 bg-muted/60' : 'border-border hover:bg-muted/40'
+                                }`}
+                              >
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm font-medium truncate">{assignee.name}</span>
+                                  {count !== null && (
+                                    <Badge variant="secondary" className="ml-auto text-[10px]">
+                                      {count}
+                                    </Badge>
+                                  )}
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </ScrollArea>
               </TabsContent>
               <TabsContent value="disabled" className="flex-1 overflow-hidden">
                 <ScrollArea className="h-full px-4 py-3">
-                  {disabledAssignees.length === 0 && (
-                    <div className="text-sm text-muted-foreground">No disabled members.</div>
+                  {disabledVisibleAssignees.length === 0 && (
+                    <div className="text-sm text-muted-foreground">{t`No disabled members.`}</div>
                   )}
-                  <div className="space-y-2">
-                    {disabledAssignees.map((assignee) => {
-                      const count = assigneeCountsDate ? (assigneeTaskCounts[assignee.id] ?? 0) : null;
-                      return (
-                        <button
-                          key={assignee.id}
-                          type="button"
-                          onClick={() => setSelectedAssigneeId(assignee.id)}
-                          className={`w-full rounded-lg border px-3 py-2 text-left transition-colors ${
-                            selectedAssigneeId === assignee.id ? 'border-foreground/60 bg-muted/60' : 'border-border hover:bg-muted/40'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-medium truncate">{assignee.name}</span>
-                            <Badge variant="secondary" className="text-[10px]">Disabled</Badge>
-                            {count !== null && (
-                              <Badge variant="secondary" className="ml-auto text-[10px]">
-                                {count}
-                              </Badge>
-                            )}
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
+                  {disabledVisibleAssignees.length > 0 && (
+                    <div className="space-y-3">
+                      {disabledMemberGroups.map((group) => (
+                        <div key={group.id} className="space-y-2">
+                          {memberGroupBy === 'group' && (
+                            <div className="text-xs uppercase tracking-wide text-muted-foreground">
+                              {group.name}
+                            </div>
+                          )}
+                          {group.members.map((assignee) => {
+                            const count = assigneeCountsDate ? (assigneeTaskCounts[assignee.id] ?? 0) : null;
+                            return (
+                              <button
+                                key={assignee.id}
+                                type="button"
+                                onClick={() => setSelectedAssigneeId(assignee.id)}
+                                className={`w-full rounded-lg border px-3 py-2 text-left transition-colors ${
+                                  selectedAssigneeId === assignee.id ? 'border-foreground/60 bg-muted/60' : 'border-border hover:bg-muted/40'
+                                }`}
+                              >
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm font-medium truncate">{assignee.name}</span>
+                                  <Badge variant="secondary" className="text-[10px]">{t`Disabled`}</Badge>
+                                  {count !== null && (
+                                    <Badge variant="secondary" className="ml-auto text-[10px]">
+                                      {count}
+                                    </Badge>
+                                  )}
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </ScrollArea>
               </TabsContent>
             </Tabs>
@@ -877,61 +1016,43 @@ const MembersPage = () => {
           {mode === 'groups' && (
             <div className="flex flex-1 flex-col">
               <div className="px-4 py-3 border-b border-border space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-semibold">Groups</span>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => setCreatingGroup((value) => !value)}
-                    disabled={!isAdmin}
-                  >
-                    New group
-                  </Button>
-                </div>
-                {creatingGroup && (
-                  <div className="space-y-2">
-                    <Input
-                      placeholder="Group name"
-                      value={newGroupName}
-                      onChange={(event) => setNewGroupName(event.target.value)}
-                      disabled={!isAdmin || groupActionLoading}
-                    />
-                    <div className="flex items-center gap-2">
-                      <Button
-                        size="sm"
-                        onClick={handleCreateGroup}
-                        disabled={!isAdmin || groupActionLoading || !newGroupName.trim()}
-                      >
-                        Create
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => {
-                          setCreatingGroup(false);
-                          setNewGroupName('');
-                        }}
-                        disabled={groupActionLoading}
-                      >
-                        Cancel
-                      </Button>
-                    </div>
+                <div className="grid grid-cols-[1fr_auto] items-center gap-2">
+                  <Input
+                    className="h-8"
+                    placeholder={t`Search groups...`}
+                    value={groupSearch}
+                    onChange={(event) => setGroupSearch(event.target.value)}
+                  />
+                  <div className="flex items-center justify-end gap-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 gap-2 px-2"
+                      onClick={() => setGroupSort((current) => (current === 'asc' ? 'desc' : 'asc'))}
+                    >
+                      {groupSort === 'asc' ? (
+                        <ArrowDownAZ className="h-4 w-4" />
+                      ) : (
+                        <ArrowDownZA className="h-4 w-4" />
+                      )}
+                      <span className="text-xs text-muted-foreground">{groupSortLabel}</span>
+                    </Button>
                   </div>
-                )}
-                {groupsError && (
+                </div>
+                {groupsError && !creatingGroup && (
                   <div className="text-xs text-destructive">{groupsError}</div>
                 )}
               </div>
               <ScrollArea className="h-full px-4 py-3">
                 {groupsLoading && (
-                  <div className="text-sm text-muted-foreground">Loading groups...</div>
+                  <div className="text-sm text-muted-foreground">{t`Loading groups...`}</div>
                 )}
-                {!groupsLoading && groups.length === 0 && (
-                  <div className="text-sm text-muted-foreground">No groups yet.</div>
+                {!groupsLoading && sortedGroups.length === 0 && (
+                  <div className="text-sm text-muted-foreground">{t`No groups yet.`}</div>
                 )}
-                {!groupsLoading && groups.length > 0 && (
+                {!groupsLoading && sortedGroups.length > 0 && (
                   <div className="space-y-2">
-                    {groups.map((group) => (
+                    {sortedGroups.map((group) => (
                       <ContextMenu key={group.id}>
                         <ContextMenuTrigger asChild>
                           <button
@@ -953,14 +1074,14 @@ const MembersPage = () => {
                               handleStartEditGroup(group);
                             }}
                           >
-                            Rename
+                            {t`Rename`}
                           </ContextMenuItem>
                           <ContextMenuItem
                             disabled={!isAdmin}
                             onSelect={() => void handleDeleteGroup(group)}
                             className="text-destructive focus:text-destructive"
                           >
-                            Delete
+                            {t`Delete`}
                           </ContextMenuItem>
                         </ContextMenuContent>
                       </ContextMenu>
@@ -983,7 +1104,7 @@ const MembersPage = () => {
             <div className="flex-1 overflow-auto px-6 py-4">
               {!selectedGroup && (
                 <div className="text-sm text-muted-foreground">
-                  Select a group to see members.
+                  {t`Select a group to see members.`}
                 </div>
               )}
 
@@ -1003,7 +1124,7 @@ const MembersPage = () => {
                           onClick={handleSaveGroupName}
                           disabled={!isAdmin || groupActionLoading || !editingGroupName.trim()}
                         >
-                          Save
+                          {t`Save`}
                         </Button>
                         <Button
                           size="sm"
@@ -1014,7 +1135,7 @@ const MembersPage = () => {
                           }}
                           disabled={groupActionLoading}
                         >
-                          Cancel
+                          {t`Cancel`}
                         </Button>
                       </div>
                     ) : (
@@ -1023,7 +1144,7 @@ const MembersPage = () => {
                   </div>
 
                   {groupMembersLoading && (
-                    <div className="text-sm text-muted-foreground">Loading members...</div>
+                    <div className="text-sm text-muted-foreground">{t`Loading members...`}</div>
                   )}
                   {!groupMembersLoading && groupMembersError && (
                     <div className="text-sm text-destructive">{groupMembersError}</div>
@@ -1031,7 +1152,7 @@ const MembersPage = () => {
                   {!groupMembersLoading && !groupMembersError && (
                     <>
                       {groupMembers.length === 0 ? (
-                        <div className="text-sm text-muted-foreground">No members in this group.</div>
+                        <div className="text-sm text-muted-foreground">{t`No members in this group.`}</div>
                       ) : (
                         <div className="space-y-2">
                           {groupMembers.map((member) => {
@@ -1049,14 +1170,14 @@ const MembersPage = () => {
                                     {member.displayName || member.email}
                                   </span>
                                   {!isActive && (
-                                    <Badge variant="secondary" className="text-[10px]">Disabled</Badge>
+                                    <Badge variant="secondary" className="text-[10px]">{t`Disabled`}</Badge>
                                   )}
                                   <Badge variant="outline" className="text-[10px]">
-                                    {member.role}
+                                    {roleLabels[member.role] ?? member.role}
                                   </Badge>
                                 </div>
                                 <div className="text-xs text-muted-foreground truncate">
-                                  {member.displayName ? member.email : 'View tasks'}
+                                  {member.displayName ? member.email : t`View tasks`}
                                 </div>
                               </button>
                             );
@@ -1074,7 +1195,7 @@ const MembersPage = () => {
             <>
               {!selectedAssignee && (
                 <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
-                  Select a member to view details.
+                  {t`Select a member to view details.`}
                 </div>
               )}
 
@@ -1086,13 +1207,13 @@ const MembersPage = () => {
                     <div className="flex items-center gap-3">
                       <div className="text-lg font-semibold">{selectedAssignee.name}</div>
                       {!selectedAssignee.isActive && (
-                        <Badge variant="secondary">Disabled</Badge>
+                        <Badge variant="secondary">{t`Disabled`}</Badge>
                       )}
                     </div>
                     <div>{scopeToggle}</div>
                   </div>
                   <div className="text-xs text-muted-foreground">
-                    {assigneeCountsDate ? 'Tasks from today' : 'Tasks count loading...'}
+                    {assigneeCountsDate ? t`Tasks from today` : t`Tasks count loading...`}
                   </div>
                 </div>
               </div>
@@ -1101,7 +1222,7 @@ const MembersPage = () => {
                 <div className="flex flex-wrap items-center gap-3">
                   <Input
                     className="w-[220px]"
-                    placeholder="Search tasks..."
+                    placeholder={t`Search tasks...`}
                     value={search}
                     onChange={(event) => {
                       setSearch(event.target.value);
@@ -1114,9 +1235,9 @@ const MembersPage = () => {
                     </PopoverTrigger>
                     <PopoverContent className="w-56 p-2" align="start">
                       <div className="flex gap-2 pb-2">
-                        <Button size="sm" variant="ghost" onClick={() => setStatusPreset('all')}>All</Button>
-                        <Button size="sm" variant="ghost" onClick={() => setStatusPreset('open')}>Open</Button>
-                        <Button size="sm" variant="ghost" onClick={() => setStatusPreset('done')}>Done</Button>
+                        <Button size="sm" variant="ghost" onClick={() => setStatusPreset('all')}>{t`All`}</Button>
+                        <Button size="sm" variant="ghost" onClick={() => setStatusPreset('open')}>{t`Open`}</Button>
+                        <Button size="sm" variant="ghost" onClick={() => setStatusPreset('done')}>{t`Done`}</Button>
                       </div>
                       <ScrollArea className="max-h-48 pr-2">
                         <div className="space-y-1">
@@ -1143,7 +1264,7 @@ const MembersPage = () => {
                       <ScrollArea className="max-h-48 pr-2">
                         <div className="space-y-1">
                           {projectOptions.length === 0 && (
-                            <div className="text-xs text-muted-foreground">No projects for this member.</div>
+                            <div className="text-xs text-muted-foreground">{t`No projects for this member.`}</div>
                           )}
                           {projectOptions.map((project) => (
                             <label key={project.id} className="flex items-center gap-2 py-1 cursor-pointer">
@@ -1193,12 +1314,12 @@ const MembersPage = () => {
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="end_desc">End date ↓</SelectItem>
-                          <SelectItem value="end_asc">End date ↑</SelectItem>
-                          <SelectItem value="start_desc">Start date ↓</SelectItem>
-                          <SelectItem value="start_asc">Start date ↑</SelectItem>
-                          <SelectItem value="title_asc">Title A–Z</SelectItem>
-                          <SelectItem value="title_desc">Title Z–A</SelectItem>
+                          <SelectItem value="end_desc">{t`End date ↓`}</SelectItem>
+                          <SelectItem value="end_asc">{t`End date ↑`}</SelectItem>
+                          <SelectItem value="start_desc">{t`Start date ↓`}</SelectItem>
+                          <SelectItem value="start_asc">{t`Start date ↑`}</SelectItem>
+                          <SelectItem value="title_asc">{t`Title A–Z`}</SelectItem>
+                          <SelectItem value="title_desc">{t`Title Z–A`}</SelectItem>
                         </SelectContent>
                       </Select>
                     </>
@@ -1215,7 +1336,7 @@ const MembersPage = () => {
       setPageIndex(1);
     }}
   >
-    Clear filters
+    {t`Clear filters`}
   </Button>
 
                   <Button
@@ -1225,7 +1346,7 @@ const MembersPage = () => {
                     disabled={!selectedAssigneeId || tasksLoading}
                   >
                     <RefreshCcw className="mr-2 h-4 w-4" />
-                    Refresh
+                    {t`Refresh`}
                   </Button>
                   {selectedCount > 0 && (
                     <Button
@@ -1233,7 +1354,7 @@ const MembersPage = () => {
                       onClick={handleDeleteSelected}
                       disabled={tasksLoading}
                     >
-                      Delete selected ({selectedCount})
+                      {t`Delete selected (${selectedCount})`}
                     </Button>
                   )}
                 </div>
@@ -1241,7 +1362,7 @@ const MembersPage = () => {
 
               <div className="flex-1 overflow-auto px-6 py-4">
                 {tasksLoading && (
-                  <div className="text-sm text-muted-foreground">Loading tasks...</div>
+                  <div className="text-sm text-muted-foreground">{t`Loading tasks...`}</div>
                 )}
                 {!tasksLoading && tasksError && (
                   <div className="text-sm text-destructive">{tasksError}</div>
@@ -1249,7 +1370,7 @@ const MembersPage = () => {
                 {!tasksLoading && !tasksError && (
                   <>
                     {filteredTasks.length === 0 ? (
-                      <div className="text-sm text-muted-foreground">No tasks match the current filters.</div>
+                      <div className="text-sm text-muted-foreground">{t`No tasks match the current filters.`}</div>
                     ) : (
                       <Table>
                         <TableHeader>
@@ -1258,13 +1379,13 @@ const MembersPage = () => {
                               <Checkbox
                                 checked={allVisibleSelected ? true : someVisibleSelected ? 'indeterminate' : false}
                                 onCheckedChange={handleToggleAll}
-                                aria-label="Select all tasks"
+                                aria-label={t`Select all tasks`}
                               />
                             </TableHead>
-                            <TableHead>Task</TableHead>
-                            <TableHead>Status</TableHead>
-                            <TableHead>Project</TableHead>
-                            <TableHead>Dates</TableHead>
+                            <TableHead>{t`Task`}</TableHead>
+                            <TableHead>{t`Status`}</TableHead>
+                            <TableHead>{t`Project`}</TableHead>
+                            <TableHead>{t`Dates`}</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -1281,7 +1402,7 @@ const MembersPage = () => {
                                   <Checkbox
                                     checked={selectedTaskIds.has(task.id)}
                                     onCheckedChange={(value) => handleToggleTask(task.id, value)}
-                                    aria-label={`Select task ${task.title}`}
+                                    aria-label={t`Select task ${task.title}`}
                                   />
                                 </TableCell>
                                 <TableCell className="font-medium">{task.title}</TableCell>
@@ -1291,7 +1412,7 @@ const MembersPage = () => {
                                       className="inline-flex h-2 w-2 rounded-full"
                                       style={{ backgroundColor: status?.color ?? '#94a3b8' }}
                                     />
-                                    <span>{status ? formatStatusLabel(status.name, status.emoji) : 'Unknown'}</span>
+                                    <span>{status ? formatStatusLabel(status.name, status.emoji) : t`Unknown`}</span>
                                   </div>
                                 </TableCell>
                                 <TableCell>
@@ -1303,11 +1424,11 @@ const MembersPage = () => {
                                       />
                                       <span>{formatProjectLabel(project.name, project.code)}</span>
                                       {project.archived && (
-                                        <Badge variant="secondary" className="text-[10px]">Archived</Badge>
+                                        <Badge variant="secondary" className="text-[10px]">{t`Archived`}</Badge>
                                       )}
                                     </div>
                                   ) : (
-                                    <span className="text-xs text-muted-foreground">No project</span>
+                                    <span className="text-xs text-muted-foreground">{t`No project`}</span>
                                   )}
                                 </TableCell>
                                 <TableCell className="text-sm text-muted-foreground">
@@ -1323,7 +1444,7 @@ const MembersPage = () => {
                       <div className="mt-4 flex items-center justify-between text-xs text-muted-foreground">
                         <span>
                           {Math.min(totalCount, (pageIndex - 1) * pageSize + 1)}–
-                          {Math.min(totalCount, pageIndex * pageSize)} of {totalCount}
+                          {Math.min(totalCount, pageIndex * pageSize)} {t`of`} {totalCount}
                         </span>
                         <div className="flex items-center gap-2">
                           <Button
@@ -1332,10 +1453,10 @@ const MembersPage = () => {
                             onClick={() => setPageIndex((current) => Math.max(1, current - 1))}
                             disabled={pageIndex === 1}
                           >
-                            Prev
+                            {t`Prev`}
                           </Button>
                           <span>
-                            Page {pageIndex} / {totalPages}
+                            {t`Page ${pageIndex} / ${totalPages}`}
                           </span>
                           <Button
                             variant="outline"
@@ -1343,7 +1464,7 @@ const MembersPage = () => {
                             onClick={() => setPageIndex((current) => Math.min(totalPages, current + 1))}
                             disabled={pageIndex >= totalPages}
                           >
-                            Next
+                            {t`Next`}
                           </Button>
                         </div>
                       </div>
@@ -1358,27 +1479,79 @@ const MembersPage = () => {
         </section>
       </div>
 
+      <Dialog
+        open={creatingGroup}
+        onOpenChange={(open) => {
+          setCreatingGroup(open);
+          if (!open) {
+            setNewGroupName('');
+          }
+        }}
+      >
+        <DialogContent className="w-[95vw] max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t`New group`}</DialogTitle>
+          </DialogHeader>
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              void handleCreateGroup();
+            }}
+            className="space-y-4"
+          >
+            <div className="space-y-1">
+              <Label>{t`Group name`}</Label>
+              <Input
+                placeholder={t`Group name`}
+                value={newGroupName}
+                onChange={(event) => setNewGroupName(event.target.value)}
+                disabled={!isAdmin || groupActionLoading}
+              />
+            </div>
+            {groupsError && (
+              <div className="text-sm text-destructive">{groupsError}</div>
+            )}
+            <DialogFooter>
+              <Button
+                variant="outline"
+                type="button"
+                onClick={() => setCreatingGroup(false)}
+                disabled={groupActionLoading}
+              >
+                {t`Cancel`}
+              </Button>
+              <Button
+                type="submit"
+                disabled={!isAdmin || groupActionLoading || !newGroupName.trim()}
+              >
+                {t`Create`}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={Boolean(selectedTaskId)} onOpenChange={(open) => !open && setSelectedTaskId(null)}>
         <DialogContent className="w-[95vw] max-w-2xl">
           <DialogHeader>
-            <DialogTitle>{selectedTask?.title ?? 'Task details'}</DialogTitle>
+            <DialogTitle>{selectedTask?.title ?? t`Task details`}</DialogTitle>
           </DialogHeader>
           {!selectedTask && (
-            <div className="text-sm text-muted-foreground">Task not found.</div>
+            <div className="text-sm text-muted-foreground">{t`Task not found.`}</div>
           )}
           {selectedTask && (
             <div className="space-y-4">
               <div className="grid gap-3 sm:grid-cols-2">
                 <div>
-                  <div className="text-xs text-muted-foreground">Project</div>
+                  <div className="text-xs text-muted-foreground">{t`Project`}</div>
                   <div className="text-sm">
                     {selectedTaskProject
                       ? formatProjectLabel(selectedTaskProject.name, selectedTaskProject.code)
-                      : 'No project'}
+                      : t`No project`}
                   </div>
                 </div>
                 <div>
-                  <div className="text-xs text-muted-foreground">Status</div>
+                  <div className="text-xs text-muted-foreground">{t`Status`}</div>
                   <div className="flex items-center gap-2 text-sm">
                     <span
                       className="inline-flex h-2 w-2 rounded-full"
@@ -1389,15 +1562,15 @@ const MembersPage = () => {
                         statusById.get(selectedTask.statusId)!.name,
                         statusById.get(selectedTask.statusId)!.emoji,
                       )
-                      : 'Unknown'}
+                      : t`Unknown`}
                     </span>
                   </div>
                 </div>
                 <div>
-                  <div className="text-xs text-muted-foreground">Assignees</div>
+                  <div className="text-xs text-muted-foreground">{t`Assignees`}</div>
                   <div className="flex flex-wrap gap-1">
                     {selectedTask.assigneeIds.length === 0 && (
-                      <span className="text-xs text-muted-foreground">Unassigned</span>
+                      <span className="text-xs text-muted-foreground">{t`Unassigned`}</span>
                     )}
                     {selectedTask.assigneeIds.map((id) => {
                       const assignee = assigneeById.get(id);
@@ -1405,32 +1578,32 @@ const MembersPage = () => {
                       return (
                         <Badge key={assignee.id} variant="secondary" className="text-[10px]">
                           {assignee.name}
-                          {!assignee.isActive && ' (disabled)'}
+                          {!assignee.isActive && ` ${t`(disabled)`}`}
                         </Badge>
                       );
                     })}
                   </div>
                 </div>
                 <div>
-                  <div className="text-xs text-muted-foreground">Dates</div>
+                  <div className="text-xs text-muted-foreground">{t`Dates`}</div>
                   <div className="text-sm text-muted-foreground">
                     {format(parseISO(selectedTask.startDate), 'dd MMM yyyy')} – {format(parseISO(selectedTask.endDate), 'dd MMM yyyy')}
                   </div>
                 </div>
                 <div>
-                  <div className="text-xs text-muted-foreground">Type</div>
+                  <div className="text-xs text-muted-foreground">{t`Type`}</div>
                   <div className="text-sm">
-                    {taskTypeById.get(selectedTask.typeId)?.name ?? 'Unknown'}
+                    {taskTypeById.get(selectedTask.typeId)?.name ?? t`Unknown`}
                   </div>
                 </div>
                 <div>
-                  <div className="text-xs text-muted-foreground">Priority</div>
-                  <div className="text-sm">{selectedTask.priority ?? 'None'}</div>
+                  <div className="text-xs text-muted-foreground">{t`Priority`}</div>
+                  <div className="text-sm">{selectedTask.priority ?? t`None`}</div>
                 </div>
                 <div className="sm:col-span-2">
-                  <div className="text-xs text-muted-foreground">Tags</div>
+                  <div className="text-xs text-muted-foreground">{t`Tags`}</div>
                   {selectedTaskTags.length === 0 ? (
-                    <div className="text-xs text-muted-foreground">No tags</div>
+                    <div className="text-xs text-muted-foreground">{t`No tags`}</div>
                   ) : (
                     <div className="flex flex-wrap gap-1.5">
                       {selectedTaskTags.map((tag) => (
@@ -1448,9 +1621,9 @@ const MembersPage = () => {
                 </div>
               </div>
               <div>
-                <div className="text-xs text-muted-foreground">Description</div>
+                <div className="text-xs text-muted-foreground">{t`Description`}</div>
                 {!selectedTask.description && (
-                  <div className="text-sm text-muted-foreground">No description.</div>
+                  <div className="text-sm text-muted-foreground">{t`No description.`}</div>
                 )}
                 {selectedTask.description && hasRichTags(selectedTask.description) && (
                   <div
@@ -1464,10 +1637,10 @@ const MembersPage = () => {
               </div>
               <div className="flex justify-end gap-2">
                 <Button onClick={handleOpenTaskInTimeline}>
-                  Перейти к задаче
+                  {t`Go to task`}
                 </Button>
                 <Button variant="outline" onClick={() => setSelectedTaskId(null)}>
-                  Close
+                  {t`Close`}
                 </Button>
               </div>
             </div>

@@ -45,13 +45,14 @@ import {
   DashboardWidgetData,
 } from '@/features/dashboard/types/dashboard';
 import { getBarPalette, getPeriodRange } from '@/features/dashboard/lib/dashboardUtils';
+import { t } from '@lingui/macro';
 
 const filterLabels: Record<DashboardStatusFilter, string> = {
-  all: 'All statuses',
-  active: 'Active',
-  final: 'Closed',
-  cancelled: 'Cancelled',
-  custom: 'Custom',
+  all: t`All statuses`,
+  active: t`Active`,
+  final: t`Closed`,
+  cancelled: t`Cancelled`,
+  custom: t`Custom`,
 };
 
 interface DashboardWidgetCardProps {
@@ -255,7 +256,7 @@ export const DashboardWidgetCard: React.FC<DashboardWidgetCardProps> = ({
       <div className={cn('flex-1 min-h-0', contentPaddingClass)}>
         {loading && (
           <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-            Loading data...
+            {t`Loading data...`}
           </div>
         )}
         {!loading && error && (
@@ -276,7 +277,7 @@ export const DashboardWidgetCard: React.FC<DashboardWidgetCardProps> = ({
             )}
             {!isKpiSmall && showFilter && (
               <div className="text-xs text-muted-foreground">
-                Filter: {filterLabels[widget.statusFilter]}
+                {t`Filter: ${filterLabels[widget.statusFilter]}`}
               </div>
             )}
           </div>
@@ -285,7 +286,7 @@ export const DashboardWidgetCard: React.FC<DashboardWidgetCardProps> = ({
           <div className={cn('flex h-full min-h-0 flex-col', contentGapClass)}>
             {data?.series.length ? (
               <ChartContainer
-                config={{ value: { label: 'Tasks' } }}
+                config={{ value: { label: t`Tasks` } }}
                 className={cn('flex-1 min-h-0', barChartMinHeightClass)}
                 style={{ aspectRatio: 'auto' }}
               >
@@ -310,13 +311,13 @@ export const DashboardWidgetCard: React.FC<DashboardWidgetCardProps> = ({
               </ChartContainer>
             ) : (
               <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-                No data
+                {t`No data`}
               </div>
             )}
             {legendList}
             {showFilter && (
               <div className="text-xs text-muted-foreground">
-                Filter: {filterLabels[widget.statusFilter]}
+                {t`Filter: ${filterLabels[widget.statusFilter]}`}
               </div>
             )}
           </div>
@@ -349,13 +350,13 @@ export const DashboardWidgetCard: React.FC<DashboardWidgetCardProps> = ({
               </ChartContainer>
             ) : (
               <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-                No data
+                {t`No data`}
               </div>
             )}
             {legendList}
             {showFilter && (
               <div className="text-xs text-muted-foreground">
-                Filter: {filterLabels[widget.statusFilter]}
+                {t`Filter: ${filterLabels[widget.statusFilter]}`}
               </div>
             )}
           </div>
@@ -388,13 +389,13 @@ export const DashboardWidgetCard: React.FC<DashboardWidgetCardProps> = ({
               </ChartContainer>
             ) : (
               <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-                No data
+                {t`No data`}
               </div>
             )}
             {legendList}
             {showFilter && (
               <div className="text-xs text-muted-foreground">
-                Filter: {filterLabels[widget.statusFilter]}
+                {t`Filter: ${filterLabels[widget.statusFilter]}`}
               </div>
             )}
           </div>
@@ -403,7 +404,7 @@ export const DashboardWidgetCard: React.FC<DashboardWidgetCardProps> = ({
           <div className={cn('flex h-full min-h-0 flex-col', contentGapClass)}>
             {data?.series.length ? (
               <ChartContainer
-                config={{ value: { label: 'Tasks' } }}
+                config={{ value: { label: t`Tasks` } }}
                 className={cn('flex-1 min-h-0', pieMinHeightClass)}
                 style={{ aspectRatio: 'auto' }}
               >
@@ -425,14 +426,14 @@ export const DashboardWidgetCard: React.FC<DashboardWidgetCardProps> = ({
               </ChartContainer>
             ) : (
               <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-                No data
+                {t`No data`}
               </div>
             )}
             {legendList}
             {showPeriod && <div className="text-xs text-muted-foreground">{periodLabel}</div>}
             {showFilter && (
               <div className="text-xs text-muted-foreground">
-                Filter: {filterLabels[widget.statusFilter]}
+                {t`Filter: ${filterLabels[widget.statusFilter]}`}
               </div>
             )}
           </div>
@@ -450,7 +451,7 @@ export const DashboardWidgetCard: React.FC<DashboardWidgetCardProps> = ({
                           {milestone.title}
                         </div>
                         <div className="truncate text-xs text-muted-foreground">
-                          {projectName ?? 'No project'}
+                          {projectName ?? t`No project`}
                         </div>
                       </div>
                       <div className="text-xs text-muted-foreground">
@@ -467,7 +468,7 @@ export const DashboardWidgetCard: React.FC<DashboardWidgetCardProps> = ({
                           type="button"
                           className="text-xs text-muted-foreground underline-offset-4 hover:underline"
                         >
-                          +{hiddenMilestones.length} more milestones
+                          {t`+${hiddenMilestones.length} more milestones`}
                         </button>
                       </TooltipTrigger>
                       <TooltipContent side="top" className="max-w-xs p-2 text-xs">
@@ -488,7 +489,7 @@ export const DashboardWidgetCard: React.FC<DashboardWidgetCardProps> = ({
               </div>
             ) : (
               <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-                No milestones
+                {t`No milestones`}
               </div>
             )}
             {showPeriod && <div className="text-xs text-muted-foreground">{periodLabel}</div>}
@@ -499,7 +500,7 @@ export const DashboardWidgetCard: React.FC<DashboardWidgetCardProps> = ({
             <div className={cn('flex h-full min-h-0 flex-col', calendarGapClass)}>
               <div className={cn('flex items-center justify-between text-muted-foreground', isSmall ? 'text-[10px]' : 'text-xs')}>
                 <span className={cn('truncate', isSmall && 'max-w-[120px]')}>{calendarLabel}</span>
-                {!isSmall && <span>{milestonesInCalendar.length} milestones</span>}
+                {!isSmall && <span>{t`${milestonesInCalendar.length} milestones`}</span>}
               </div>
               <div className={cn('grid grid-cols-7', isSmall ? 'text-[9px]' : 'text-[10px]')}>
                 {weekdayLabels.map((label, index) => (
@@ -563,10 +564,10 @@ export const DashboardWidgetCard: React.FC<DashboardWidgetCardProps> = ({
                       <TooltipTrigger asChild>
                         {dayCell}
                       </TooltipTrigger>
-                      <TooltipContent side="top" align="start" className="max-w-xs p-2 text-xs">
-                        <div className="grid gap-1">
-                          {dayMilestones.map((milestone) => {
-                            const projectName = projectNameById.get(milestone.projectId) ?? 'No project';
+                        <TooltipContent side="top" align="start" className="max-w-xs p-2 text-xs">
+                          <div className="grid gap-1">
+                            {dayMilestones.map((milestone) => {
+                            const projectName = projectNameById.get(milestone.projectId) ?? t`No project`;
                             const projectColor = projectColorById.get(milestone.projectId) ?? '#94A3B8';
                             return (
                               <div key={milestone.id} className="flex items-start gap-2">

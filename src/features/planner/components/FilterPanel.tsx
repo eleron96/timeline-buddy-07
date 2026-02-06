@@ -7,6 +7,7 @@ import { ScrollArea } from '@/shared/ui/scroll-area';
 import { formatStatusLabel } from '@/shared/lib/statusLabels';
 import { formatProjectLabel } from '@/shared/lib/projectLabels';
 import { sortProjectsByTracking } from '@/shared/lib/projectSorting';
+import { t } from '@lingui/macro';
 import { 
   Filter, 
   ChevronDown, 
@@ -121,7 +122,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({ collapsed, onToggle })
       <button
         type="button"
         onClick={onToggle}
-        aria-label="Expand filters"
+        aria-label={t`Expand filters`}
         className="w-12 border-r border-border bg-card flex flex-col h-full transition-all duration-200 cursor-pointer"
       >
         <div className="flex flex-col items-center py-3 border-b border-border">
@@ -169,7 +170,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({ collapsed, onToggle })
       <div className="flex items-center justify-between px-4 py-3 border-b border-border">
         <div className="flex items-center gap-2">
           <Filter className="w-4 h-4" />
-          <span className="font-semibold text-sm">Filters</span>
+          <span className="font-semibold text-sm">{t`Filters`}</span>
         </div>
         <div className="flex items-center gap-1">
           {hasActiveFilters && (
@@ -179,7 +180,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({ collapsed, onToggle })
               onClick={clearFilterCriteria}
               className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
             >
-              Clear
+              {t`Clear`}
             </Button>
           )}
           <Button
@@ -195,11 +196,11 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({ collapsed, onToggle })
       
       <ScrollArea className="flex-1">
         <FilterSection 
-          title="Projects" 
+          title={t`Projects`} 
           icon={<FolderKanban className="w-4 h-4 text-muted-foreground" />}
         >
           {activeProjects.length === 0 && (
-            <div className="text-xs text-muted-foreground">No active projects.</div>
+            <div className="text-xs text-muted-foreground">{t`No active projects.`}</div>
           )}
           {activeProjects.map(project => (
             <label
@@ -219,13 +220,13 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({ collapsed, onToggle })
           ))}
           {archivedProjectsCount > 0 && (
             <div className="pt-1 text-[11px] text-muted-foreground">
-              Archived projects are hidden from filters.
+              {t`Archived projects are hidden from filters.`}
             </div>
           )}
         </FilterSection>
         
         <FilterSection 
-          title="People" 
+          title={t`People`} 
           icon={<Users className="w-4 h-4 text-muted-foreground" />}
         >
           {filteredAssignees.map(assignee => (
@@ -240,7 +241,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({ collapsed, onToggle })
               <span className="text-sm truncate">
                 {assignee.name}
                 {!assignee.isActive && (
-                  <span className="ml-1 text-[10px] text-muted-foreground">(disabled)</span>
+                  <span className="ml-1 text-[10px] text-muted-foreground">{t`(disabled)`}</span>
                 )}
               </span>
             </label>
@@ -248,11 +249,11 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({ collapsed, onToggle })
         </FilterSection>
 
         <FilterSection 
-          title="Groups" 
+          title={t`Groups`} 
           icon={<UsersRound className="w-4 h-4 text-muted-foreground" />}
         >
           {memberGroups.length === 0 && (
-            <div className="text-xs text-muted-foreground">No groups yet.</div>
+            <div className="text-xs text-muted-foreground">{t`No groups yet.`}</div>
           )}
           {memberGroups.map((group) => (
             <label
@@ -269,7 +270,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({ collapsed, onToggle })
         </FilterSection>
         
         <FilterSection 
-          title="Status" 
+          title={t`Status`} 
           icon={<CircleDot className="w-4 h-4 text-muted-foreground" />}
         >
           {statuses.map(status => (
@@ -291,7 +292,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({ collapsed, onToggle })
         </FilterSection>
         
         <FilterSection 
-          title="Type" 
+          title={t`Type`} 
           icon={<Layers className="w-4 h-4 text-muted-foreground" />}
           defaultOpen={false}
         >
@@ -310,7 +311,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({ collapsed, onToggle })
         </FilterSection>
         
         <FilterSection 
-          title="Tags" 
+          title={t`Tags`} 
           icon={<Tag className="w-4 h-4 text-muted-foreground" />}
           defaultOpen={false}
         >

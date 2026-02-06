@@ -16,6 +16,7 @@ import { WorkspaceNav } from '@/features/workspace/components/WorkspaceNav';
 import { Filters } from '@/features/planner/types/planner';
 import { format } from 'date-fns';
 import { Navigate } from 'react-router-dom';
+import { t } from '@lingui/macro';
 
 const normalizeFilterIds = (value: unknown) => (
   Array.isArray(value)
@@ -191,7 +192,7 @@ const PlannerPage = () => {
             disabled={!canEdit}
           >
             <Plus className="h-4 w-4" />
-            Add Task
+            {t`Add task`}
           </Button>
           <Button
             variant="outline"
@@ -215,14 +216,14 @@ const PlannerPage = () => {
 
       {hasActiveFilters && (
         <div className="flex items-center justify-between px-4 py-2 border-b-2 border-sky-500 bg-sky-50 text-sm text-sky-700">
-          <span className="font-medium">Применен фильтр</span>
+          <span className="font-medium">{t`Filter applied`}</span>
           <Button
             variant="ghost"
             size="sm"
             onClick={clearFilterCriteria}
             className="h-7 px-2 text-sky-700 hover:text-sky-900"
           >
-            Сбросить
+            {t`Reset`}
           </Button>
         </div>
       )}
@@ -245,7 +246,7 @@ const PlannerPage = () => {
             }
             {showLoadingOverlay && (
               <div className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground bg-background/60">
-                Loading workspace...
+                {t`Loading workspace...`}
               </div>
             )}
             {!plannerLoading && plannerError && (

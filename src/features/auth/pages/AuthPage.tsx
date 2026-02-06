@@ -7,6 +7,10 @@ import { Input } from '@/shared/ui/input';
 import { Label } from '@/shared/ui/label';
 import { Button } from '@/shared/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/shared/ui/alert';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/shared/ui/select';
+import { useLocaleStore } from '@/shared/store/localeStore';
+import { localeLabels, type Locale } from '@/shared/lib/locale';
+import { t } from '@lingui/macro';
 
 const AuthPage: React.FC = () => {
   const navigate = useNavigate();
@@ -23,10 +27,20 @@ const AuthPage: React.FC = () => {
   const [message, setMessage] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [recoveryMode, setRecoveryMode] = useState(false);
+  const locale = useLocaleStore((state) => state.locale);
+  const setLocale = useLocaleStore((state) => state.setLocale);
+  const languageOptions: Array<{ value: Locale; label: string }> = [
+    { value: 'en', label: localeLabels.en },
+    { value: 'ru', label: localeLabels.ru },
+  ];
 
   const resetMessages = () => {
     setError('');
     setMessage('');
+  };
+
+  const handleLocaleChange = (value: string) => {
+    setLocale(value as Locale);
   };
   
   useEffect(() => {
@@ -58,7 +72,7 @@ const AuthPage: React.FC = () => {
     event.preventDefault();
     resetMessages();
     if (password !== confirmPassword) {
-      setError('Passwords do not match.');
+      setError(t`Passwords do not match.`);
       return;
     }
     setSubmitting(true);
@@ -66,7 +80,7 @@ const AuthPage: React.FC = () => {
     if (signUpError) {
       setError(signUpError);
     } else {
-      setMessage('Check your email to confirm your account.');
+      setMessage(t`Check your email to confirm your account.`);
     }
     setSubmitting(false);
   };
@@ -75,7 +89,7 @@ const AuthPage: React.FC = () => {
     event.preventDefault();
     resetMessages();
     if (!email.trim()) {
-      setError('Email is required.');
+      setError(t`Email is required.`);
       return;
     }
     setSubmitting(true);
@@ -83,7 +97,7 @@ const AuthPage: React.FC = () => {
     if (resetError) {
       setError(resetError);
     } else {
-      setMessage('We sent a password reset link to your email.');
+      setMessage(t`We sent a password reset link to your email.`);
     }
     setSubmitting(false);
   };
@@ -92,11 +106,11 @@ const AuthPage: React.FC = () => {
     event.preventDefault();
     resetMessages();
     if (!newPassword.trim()) {
-      setError('Password is required.');
+      setError(t`Password is required.`);
       return;
     }
     if (newPassword !== confirmNewPassword) {
-      setError('Passwords do not match.');
+      setError(t`Passwords do not match.`);
       return;
     }
     setSubmitting(true);
@@ -111,7 +125,7 @@ const AuthPage: React.FC = () => {
     setNewPassword('');
     setConfirmNewPassword('');
     setTab('login');
-    setMessage('Password updated. Please sign in again.');
+    setMessage(t`Password updated. Please sign in again.`);
     navigate('/auth', { replace: true });
     setSubmitting(false);
   };
@@ -120,34 +134,34 @@ const AuthPage: React.FC = () => {
     <div className="flex min-h-screen items-center justify-center bg-background px-4 py-10">
       <Card className="w-full max-w-md">
         <CardHeader>
-          <CardTitle>Welcome</CardTitle>
-          <CardDescription>Sign in or create an account to continue.</CardDescription>
+          <CardTitle>{t`Welcome`}</CardTitle>
+          <CardDescription>{t`Sign in or create an account to continue.`}</CardDescription>
         </CardHeader>
         <CardContent>
           {error && (
             <Alert variant="destructive" className="mb-4">
-              <AlertTitle>Authentication error</AlertTitle>
+              <AlertTitle>{t`Authentication error`}</AlertTitle>
               <AlertDescription>{error}</AlertDescription>
             </Alert>
           )}
           {message && (
             <Alert className="mb-4">
-              <AlertTitle>Check your inbox</AlertTitle>
+              <AlertTitle>{t`Check your inbox`}</AlertTitle>
               <AlertDescription>{message}</AlertDescription>
             </Alert>
           )}
           <Tabs value={tab} onValueChange={(value) => { resetMessages(); setTab(value as typeof tab); }}>
             {tab !== 'update' && (
               <TabsList className="grid w-full grid-cols-3">
-                <TabsTrigger value="login">Login</TabsTrigger>
-                <TabsTrigger value="register">Register</TabsTrigger>
-                <TabsTrigger value="reset">Reset</TabsTrigger>
+                <TabsTrigger value="login">{t`Login`}</TabsTrigger>
+                <TabsTrigger value="register">{t`Register`}</TabsTrigger>
+                <TabsTrigger value="reset">{t`Reset`}</TabsTrigger>
               </TabsList>
             )}
             <TabsContent value="login">
               <form onSubmit={handleLogin} className="space-y-4 mt-4">
                 <div className="space-y-2">
-                  <Label htmlFor="login-email">Email</Label>
+                  <Label htmlFor="login-email">{t`Email`}</Label>
                   <Input
                     id="login-email"
                     type="email"
@@ -158,7 +172,7 @@ const AuthPage: React.FC = () => {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="login-password">Password</Label>
+                  <Label htmlFor="login-password">{t`Password`}</Label>
                   <Input
                     id="login-password"
                     type="password"
@@ -169,7 +183,7 @@ const AuthPage: React.FC = () => {
                   />
                 </div>
                 <Button type="submit" className="w-full" disabled={loading || submitting}>
-                  Sign in
+                  {t`Sign in`}
                 </Button>
                 <Button
                   type="button"
@@ -177,14 +191,14 @@ const AuthPage: React.FC = () => {
                   className="w-full text-sm"
                   onClick={() => setTab('reset')}
                 >
-                  Forgot password?
+                  {t`Forgot password?`}
                 </Button>
               </form>
             </TabsContent>
             <TabsContent value="register">
               <form onSubmit={handleRegister} className="space-y-4 mt-4">
                 <div className="space-y-2">
-                  <Label htmlFor="register-email">Email</Label>
+                  <Label htmlFor="register-email">{t`Email`}</Label>
                   <Input
                     id="register-email"
                     type="email"
@@ -195,7 +209,7 @@ const AuthPage: React.FC = () => {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="register-password">Password</Label>
+                  <Label htmlFor="register-password">{t`Password`}</Label>
                   <Input
                     id="register-password"
                     type="password"
@@ -206,7 +220,7 @@ const AuthPage: React.FC = () => {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="register-confirm">Confirm password</Label>
+                  <Label htmlFor="register-confirm">{t`Confirm password`}</Label>
                   <Input
                     id="register-confirm"
                     type="password"
@@ -217,14 +231,14 @@ const AuthPage: React.FC = () => {
                   />
                 </div>
                 <Button type="submit" className="w-full" disabled={loading || submitting}>
-                  Create account
+                  {t`Create account`}
                 </Button>
               </form>
             </TabsContent>
             <TabsContent value="reset">
               <form onSubmit={handleResetPassword} className="space-y-4 mt-4">
                 <div className="space-y-2">
-                  <Label htmlFor="reset-email">Email</Label>
+                  <Label htmlFor="reset-email">{t`Email`}</Label>
                   <Input
                     id="reset-email"
                     type="email"
@@ -235,14 +249,14 @@ const AuthPage: React.FC = () => {
                   />
                 </div>
                 <Button type="submit" className="w-full" disabled={loading || submitting}>
-                  Send reset link
+                  {t`Send reset link`}
                 </Button>
               </form>
             </TabsContent>
             <TabsContent value="update">
               <form onSubmit={handleUpdatePassword} className="space-y-4 mt-4">
                 <div className="space-y-2">
-                  <Label htmlFor="new-password">New password</Label>
+                  <Label htmlFor="new-password">{t`New password`}</Label>
                   <Input
                     id="new-password"
                     type="password"
@@ -253,7 +267,7 @@ const AuthPage: React.FC = () => {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="confirm-new-password">Confirm new password</Label>
+                  <Label htmlFor="confirm-new-password">{t`Confirm new password`}</Label>
                   <Input
                     id="confirm-new-password"
                     type="password"
@@ -264,11 +278,26 @@ const AuthPage: React.FC = () => {
                   />
                 </div>
                 <Button type="submit" className="w-full" disabled={loading || submitting}>
-                  Update password
+                  {t`Update password`}
                 </Button>
               </form>
             </TabsContent>
           </Tabs>
+          <div className="mt-6 space-y-2">
+            <Label htmlFor="auth-language">{t`Language`}</Label>
+            <Select value={locale} onValueChange={handleLocaleChange}>
+              <SelectTrigger id="auth-language">
+                <SelectValue placeholder={t`Select language`} />
+              </SelectTrigger>
+              <SelectContent>
+                {languageOptions.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </CardContent>
       </Card>
     </div>

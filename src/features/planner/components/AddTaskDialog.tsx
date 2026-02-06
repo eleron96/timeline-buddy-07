@@ -30,6 +30,7 @@ import { cn } from '@/shared/lib/classNames';
 import { TaskPriority } from '@/features/planner/types/planner';
 import { endOfMonth, isSameMonth, isSameYear, parseISO } from 'date-fns';
 import { sortProjectsByTracking } from '@/shared/lib/projectSorting';
+import { t } from '@lingui/macro';
 
 interface AddTaskDialogProps {
   open: boolean;
@@ -191,11 +192,11 @@ export const AddTaskDialog: React.FC<AddTaskDialogProps> = ({
     setRepeatError('');
     if (repeatFrequency !== 'none') {
       if (repeatEnds === 'after' && (!repeatCount || repeatCount < 1)) {
-        setRepeatError('Enter how many repeats to create.');
+        setRepeatError(t`Enter how many repeats to create.`);
         return;
       }
       if (repeatEnds === 'on' && !repeatUntil) {
-        setRepeatError('Select an end date.');
+        setRepeatError(t`Select an end date.`);
         return;
       }
     }
@@ -216,7 +217,7 @@ export const AddTaskDialog: React.FC<AddTaskDialogProps> = ({
     });
 
     if (!createdTask) {
-      setRepeatError('Failed to create task.');
+      setRepeatError(t`Failed to create task.`);
       setRepeatCreating(false);
       return;
     }
@@ -316,24 +317,24 @@ export const AddTaskDialog: React.FC<AddTaskDialogProps> = ({
   }, [taskTypes, typeId]);
 
   const assigneeLabel = useMemo(() => {
-    if (assigneeIds.length === 0) return 'Unassigned';
+    if (assigneeIds.length === 0) return t`Unassigned`;
     const selected = selectableAssignees
       .filter((assignee) => assigneeIds.includes(assignee.id))
       .map((assignee) => assignee.name);
     if (selected.length === 1 && assigneeIds.length === 1) return selected[0];
-    return `${assigneeIds.length} assignees`;
+    return t`${assigneeIds.length} assignees`;
   }, [assigneeIds, selectableAssignees]);
   
   return (
     <Dialog open={open} onOpenChange={handleDialogOpenChange}>
       <DialogContent className="sm:max-w-[520px] max-h-[85vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Create New Task</DialogTitle>
+          <DialogTitle>{t`Create new task`}</DialogTitle>
         </DialogHeader>
         
         <form onSubmit={handleSubmit} className="space-y-3 mt-3">
           <div className="space-y-1.5">
-            <Label htmlFor="new-title">Title *</Label>
+            <Label htmlFor="new-title">{t`Title`} *</Label>
             <Input
               id="new-title"
               value={title}
@@ -341,14 +342,14 @@ export const AddTaskDialog: React.FC<AddTaskDialogProps> = ({
                 markChanged();
                 setTitle(e.target.value);
               }}
-              placeholder="Enter task title..."
+              placeholder={t`Enter task title...`}
               autoFocus
             />
           </div>
           
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label>Project</Label>
+              <Label>{t`Project`}</Label>
               <Select
                 value={projectId}
                 onValueChange={(value) => {
@@ -357,10 +358,10 @@ export const AddTaskDialog: React.FC<AddTaskDialogProps> = ({
                 }}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Select project" />
+                  <SelectValue placeholder={t`Select project`} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="none">No Project</SelectItem>
+                  <SelectItem value="none">{t`No project`}</SelectItem>
                   {activeProjects.map(p => (
                     <SelectItem key={p.id} value={p.id}>
                       <div className="flex items-center gap-2">
@@ -377,7 +378,7 @@ export const AddTaskDialog: React.FC<AddTaskDialogProps> = ({
             </div>
             
             <div className="space-y-1.5">
-              <Label>Assignees</Label>
+              <Label>{t`Assignees`}</Label>
               <Popover>
                 <PopoverTrigger asChild>
                   <Button variant="outline" className="w-full justify-between">
@@ -387,7 +388,7 @@ export const AddTaskDialog: React.FC<AddTaskDialogProps> = ({
                 </PopoverTrigger>
                 <PopoverContent className="w-64 p-2" align="start">
                   {selectableAssignees.length === 0 ? (
-                    <div className="text-xs text-muted-foreground">No assignees yet.</div>
+                    <div className="text-xs text-muted-foreground">{t`No assignees yet.`}</div>
                   ) : (
                     <ScrollArea className="max-h-48 pr-2">
                       <div className="space-y-1">
@@ -410,7 +411,7 @@ export const AddTaskDialog: React.FC<AddTaskDialogProps> = ({
           
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label>Status</Label>
+              <Label>{t`Status`}</Label>
               <Select
                 value={statusId}
                 onValueChange={(value) => {
@@ -419,7 +420,7 @@ export const AddTaskDialog: React.FC<AddTaskDialogProps> = ({
                 }}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Select status" />
+                  <SelectValue placeholder={t`Select status`} />
                 </SelectTrigger>
                 <SelectContent>
                   {statuses.map(s => (
@@ -438,7 +439,7 @@ export const AddTaskDialog: React.FC<AddTaskDialogProps> = ({
             </div>
             
             <div className="space-y-1.5">
-              <Label>Type</Label>
+              <Label>{t`Type`}</Label>
               <Select
                 value={typeId}
                 onValueChange={(value) => {
@@ -447,7 +448,7 @@ export const AddTaskDialog: React.FC<AddTaskDialogProps> = ({
                 }}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Select type" />
+                  <SelectValue placeholder={t`Select type`} />
                 </SelectTrigger>
                 <SelectContent>
                   {taskTypes.map(t => (
@@ -459,7 +460,7 @@ export const AddTaskDialog: React.FC<AddTaskDialogProps> = ({
           </div>
 
           <div className="space-y-1.5">
-            <Label>Priority</Label>
+            <Label>{t`Priority`}</Label>
             <Select
               value={priority}
               onValueChange={(value) => {
@@ -468,20 +469,20 @@ export const AddTaskDialog: React.FC<AddTaskDialogProps> = ({
               }}
             >
               <SelectTrigger>
-                <SelectValue placeholder="Select priority" />
+                <SelectValue placeholder={t`Select priority`} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="none">No priority</SelectItem>
-                <SelectItem value="low">Low</SelectItem>
-                <SelectItem value="medium">Medium</SelectItem>
-                <SelectItem value="high">High</SelectItem>
+                <SelectItem value="none">{t`No priority`}</SelectItem>
+                <SelectItem value="low">{t`Low`}</SelectItem>
+                <SelectItem value="medium">{t`Medium`}</SelectItem>
+                <SelectItem value="high">{t`High`}</SelectItem>
               </SelectContent>
             </Select>
           </div>
           
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label htmlFor="new-start">Start Date</Label>
+              <Label htmlFor="new-start">{t`Start date`}</Label>
               <Input
                 id="new-start"
                 type="date"
@@ -490,7 +491,7 @@ export const AddTaskDialog: React.FC<AddTaskDialogProps> = ({
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="new-end">End Date</Label>
+              <Label htmlFor="new-end">{t`End date`}</Label>
               <Input
                 id="new-end"
                 type="date"
@@ -505,10 +506,10 @@ export const AddTaskDialog: React.FC<AddTaskDialogProps> = ({
 
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <Label>Repeat</Label>
+              <Label>{t`Repeat`}</Label>
               <div className="flex items-center gap-2">
                 <span className="text-xs text-muted-foreground">
-                  {repeatOpen ? 'On' : 'Off'}
+                  {repeatOpen ? t`On` : t`Off`}
                 </span>
                 <Switch checked={repeatOpen} onCheckedChange={handleRepeatToggle} />
               </div>
@@ -521,14 +522,14 @@ export const AddTaskDialog: React.FC<AddTaskDialogProps> = ({
                     onValueChange={(value) => handleRepeatFrequencyChange(value as typeof repeatFrequency)}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="Repeat" />
+                      <SelectValue placeholder={t`Repeat`} />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="none">Does not repeat</SelectItem>
-                      <SelectItem value="daily">Daily</SelectItem>
-                      <SelectItem value="weekly">Weekly</SelectItem>
-                      <SelectItem value="monthly">Monthly</SelectItem>
-                      <SelectItem value="yearly">Yearly</SelectItem>
+                      <SelectItem value="none">{t`Does not repeat`}</SelectItem>
+                      <SelectItem value="daily">{t`Daily`}</SelectItem>
+                      <SelectItem value="weekly">{t`Weekly`}</SelectItem>
+                      <SelectItem value="monthly">{t`Monthly`}</SelectItem>
+                      <SelectItem value="yearly">{t`Yearly`}</SelectItem>
                     </SelectContent>
                   </Select>
                   <Select
@@ -537,18 +538,18 @@ export const AddTaskDialog: React.FC<AddTaskDialogProps> = ({
                     disabled={repeatFrequency === 'none'}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="Ends" />
+                      <SelectValue placeholder={t`Ends`} />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="never">Never</SelectItem>
-                      <SelectItem value="on">On date</SelectItem>
-                      <SelectItem value="after">After count</SelectItem>
+                      <SelectItem value="never">{t`Never`}</SelectItem>
+                      <SelectItem value="on">{t`On date`}</SelectItem>
+                      <SelectItem value="after">{t`After count`}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                 {repeatFrequency !== 'none' && repeatEnds === 'on' && (
                   <div className="space-y-1.5">
-                    <Label htmlFor="new-repeat-until" className="text-xs text-muted-foreground">End date</Label>
+                    <Label htmlFor="new-repeat-until" className="text-xs text-muted-foreground">{t`End date`}</Label>
                     <Input
                       id="new-repeat-until"
                       type="date"
@@ -563,7 +564,7 @@ export const AddTaskDialog: React.FC<AddTaskDialogProps> = ({
                 )}
                 {repeatFrequency !== 'none' && repeatEnds === 'after' && (
                   <div className="space-y-1.5">
-                    <Label htmlFor="new-repeat-count" className="text-xs text-muted-foreground">Occurrences</Label>
+                    <Label htmlFor="new-repeat-count" className="text-xs text-muted-foreground">{t`Occurrences`}</Label>
                     <Input
                       id="new-repeat-count"
                       type="number"
@@ -584,7 +585,7 @@ export const AddTaskDialog: React.FC<AddTaskDialogProps> = ({
           </div>
           
           <div className="space-y-2">
-            <Label htmlFor="new-description">Description</Label>
+            <Label htmlFor="new-description">{t`Description`}</Label>
             <RichTextEditor
               id="new-description"
               value={description}
@@ -592,14 +593,14 @@ export const AddTaskDialog: React.FC<AddTaskDialogProps> = ({
                 markChanged();
                 setDescription(value);
               }}
-              placeholder="Add a description..."
+              placeholder={t`Add a description...`}
             />
           </div>
 
           <div className="space-y-2">
-            <Label>Tags</Label>
+            <Label>{t`Tags`}</Label>
             {tags.length === 0 ? (
-              <p className="text-xs text-muted-foreground">No tags available yet.</p>
+              <p className="text-xs text-muted-foreground">{t`No tags available yet.`}</p>
             ) : (
               <div className="flex flex-wrap gap-1.5">
                 {tags.map(tag => {
@@ -631,24 +632,24 @@ export const AddTaskDialog: React.FC<AddTaskDialogProps> = ({
           
           <DialogFooter>
             <Button type="button" variant="outline" onClick={requestClose}>
-              Cancel
+              {t`Cancel`}
             </Button>
             <Button type="submit" disabled={!title.trim() || !statusId || !typeId || repeatCreating}>
               <Plus className="w-4 h-4 mr-2" />
-              Create Task
+              {t`Create task`}
             </Button>
           </DialogFooter>
         </form>
         <AlertDialog open={confirmCloseOpen} onOpenChange={setConfirmCloseOpen}>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Discard task?</AlertDialogTitle>
+              <AlertDialogTitle>{t`Discard task?`}</AlertDialogTitle>
               <AlertDialogDescription>
-                You have unsaved changes. Close without creating the task?
+                {t`You have unsaved changes. Close without creating the task?`}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel>Keep editing</AlertDialogCancel>
+              <AlertDialogCancel>{t`Keep editing`}</AlertDialogCancel>
               <AlertDialogAction
                 className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                 onClick={() => {
@@ -657,7 +658,7 @@ export const AddTaskDialog: React.FC<AddTaskDialogProps> = ({
                   onOpenChange(false);
                 }}
               >
-                Discard
+                {t`Discard`}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>

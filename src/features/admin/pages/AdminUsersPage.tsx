@@ -23,12 +23,16 @@ import {
 } from '@/shared/ui/alert-dialog';
 import { Alert, AlertDescription, AlertTitle } from '@/shared/ui/alert';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/shared/ui/tabs';
+import { t } from '@lingui/macro';
+import { useLocaleStore } from '@/shared/store/localeStore';
+import type { Locale } from '@/shared/lib/locale';
 
-const formatDate = (value?: string | null) => {
+const formatDate = (value: string | null | undefined, locale: Locale) => {
   if (!value) return '—';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '—';
-  return date.toLocaleString('ru-RU');
+  const language = locale === 'ru' ? 'ru-RU' : 'en-US';
+  return date.toLocaleString(language);
 };
 
 const generatePassword = () => {
@@ -93,6 +97,7 @@ const AdminUsersPage: React.FC = () => {
     restoreBackup,
     signOut,
   } = useAuthStore();
+  const locale = useLocaleStore((state) => state.locale);
 
   const [tab, setTab] = useState<'users' | 'workspaces' | 'superAdmins' | 'backups'>('users');
   const [userSearch, setUserSearch] = useState('');
@@ -274,7 +279,7 @@ const AdminUsersPage: React.FC = () => {
       return;
     }
     setLastResetPasswords((prev) => ({ ...prev, [resetTarget.id]: newPassword }));
-    setResetSuccess('Пароль обновлен. Сообщи его пользователю.');
+    setResetSuccess(t`Password updated. Share it with the user.`);
     setResetSubmitting(false);
   };
 
@@ -446,10 +451,10 @@ const AdminUsersPage: React.FC = () => {
       <div className="flex min-h-screen items-center justify-center bg-background px-4 py-10">
         <Card className="w-full max-w-md">
           <CardHeader>
-            <CardTitle>Нет доступа</CardTitle>
+            <CardTitle>{t`Access denied`}</CardTitle>
           </CardHeader>
           <CardContent className="text-sm text-muted-foreground">
-            Доступ к админке есть только у супер-администратора.
+            {t`Only super admins can access this page.`}
           </CardContent>
         </Card>
       </div>
@@ -464,7 +469,7 @@ const AdminUsersPage: React.FC = () => {
             <CardTitle>Super admin console</CardTitle>
             <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center sm:justify-end">
               <Button type="button" variant="outline" onClick={() => signOut()}>
-                Выйти
+                {t`Sign out`}
               </Button>
             </div>
           </CardHeader>
@@ -494,13 +499,13 @@ const AdminUsersPage: React.FC = () => {
 
                 {adminUsersError && (
                   <Alert variant="destructive">
-                    <AlertTitle>Ошибка</AlertTitle>
+                    <AlertTitle>{t`Error`}</AlertTitle>
                     <AlertDescription>{adminUsersError}</AlertDescription>
                   </Alert>
                 )}
 
                 {adminUsersLoading ? (
-                  <div className="py-6 text-sm text-muted-foreground">Загрузка пользователей...</div>
+                  <div className="py-6 text-sm text-muted-foreground">{t`Loading users...`}</div>
                 ) : (
                   <div className="rounded-md border">
                     <Table>
@@ -543,12 +548,12 @@ const AdminUsersPage: React.FC = () => {
                                       className="h-auto p-0 text-xs"
                                       onClick={() => openWorkspacesDialog(item)}
                                     >
-                                      Подробнее
+                                      {t`Details`}
                                     </Button>
                                   )}
                                 </TableCell>
-                                <TableCell className="text-xs">{formatDate(item.createdAt)}</TableCell>
-                                <TableCell className="text-xs">{formatDate(item.lastSignInAt)}</TableCell>
+                                <TableCell className="text-xs">{formatDate(item.createdAt, locale)}</TableCell>
+                                <TableCell className="text-xs">{formatDate(item.lastSignInAt, locale)}</TableCell>
                                 <TableCell className="text-right">
                                   <div className="flex flex-wrap justify-end gap-2">
                                     <Button
@@ -600,13 +605,13 @@ const AdminUsersPage: React.FC = () => {
 
                 {adminWorkspacesError && (
                   <Alert variant="destructive">
-                    <AlertTitle>Ошибка</AlertTitle>
+                    <AlertTitle>{t`Error`}</AlertTitle>
                     <AlertDescription>{adminWorkspacesError}</AlertDescription>
                   </Alert>
                 )}
 
                 {adminWorkspacesLoading ? (
-                  <div className="py-6 text-sm text-muted-foreground">Загрузка воркспейсов...</div>
+                  <div className="py-6 text-sm text-muted-foreground">{t`Loading workspaces...`}</div>
                 ) : (
                   <div className="rounded-md border">
                     <Table>
@@ -639,7 +644,7 @@ const AdminUsersPage: React.FC = () => {
                               </TableCell>
                               <TableCell className="text-sm">{workspace.membersCount}</TableCell>
                               <TableCell className="text-sm">{workspace.tasksCount}</TableCell>
-                              <TableCell className="text-xs">{formatDate(workspace.createdAt)}</TableCell>
+                              <TableCell className="text-xs">{formatDate(workspace.createdAt, locale)}</TableCell>
                               <TableCell className="text-right">
                                 <div className="flex flex-wrap justify-end gap-2">
                                   <Button
@@ -679,13 +684,13 @@ const AdminUsersPage: React.FC = () => {
 
                 {superAdminsError && (
                   <Alert variant="destructive">
-                    <AlertTitle>Ошибка</AlertTitle>
+                    <AlertTitle>{t`Error`}</AlertTitle>
                     <AlertDescription>{superAdminsError}</AlertDescription>
                   </Alert>
                 )}
 
                 {superAdminsLoading ? (
-                  <div className="py-6 text-sm text-muted-foreground">Загрузка супер-админов...</div>
+                  <div className="py-6 text-sm text-muted-foreground">{t`Loading super admins...`}</div>
                 ) : (
                   <div className="rounded-md border">
                     <Table>
@@ -713,7 +718,7 @@ const AdminUsersPage: React.FC = () => {
                               <TableCell className="text-sm text-muted-foreground">
                                 {item.displayName ?? '—'}
                               </TableCell>
-                              <TableCell className="text-xs">{formatDate(item.createdAt)}</TableCell>
+                              <TableCell className="text-xs">{formatDate(item.createdAt, locale)}</TableCell>
                               <TableCell className="text-right">
                                 <Button
                                   size="sm"
@@ -749,20 +754,20 @@ const AdminUsersPage: React.FC = () => {
 
                 {backupCreateError && (
                   <Alert variant="destructive">
-                    <AlertTitle>Ошибка</AlertTitle>
+                    <AlertTitle>{t`Error`}</AlertTitle>
                     <AlertDescription>{backupCreateError}</AlertDescription>
                   </Alert>
                 )}
 
                 {backupsError && (
                   <Alert variant="destructive">
-                    <AlertTitle>Ошибка</AlertTitle>
+                    <AlertTitle>{t`Error`}</AlertTitle>
                     <AlertDescription>{backupsError}</AlertDescription>
                   </Alert>
                 )}
 
                 {backupsLoading ? (
-                  <div className="py-6 text-sm text-muted-foreground">Загрузка бэкапов...</div>
+                  <div className="py-6 text-sm text-muted-foreground">{t`Loading backups...`}</div>
                 ) : (
                   <div className="rounded-md border">
                     <Table>
@@ -792,7 +797,7 @@ const AdminUsersPage: React.FC = () => {
                               <TableCell className="text-sm text-muted-foreground">
                                 {formatBytes(item.size)}
                               </TableCell>
-                              <TableCell className="text-xs">{formatDate(item.createdAt)}</TableCell>
+                              <TableCell className="text-xs">{formatDate(item.createdAt, locale)}</TableCell>
                               <TableCell className="text-right">
                                 <Button
                                   size="sm"
@@ -867,14 +872,14 @@ const AdminUsersPage: React.FC = () => {
       >
         <DialogContent className="sm:max-w-[640px]">
           <DialogHeader>
-            <DialogTitle>Workspaces пользователя</DialogTitle>
+            <DialogTitle>{t`User workspaces`}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
             <div className="text-sm text-muted-foreground">
               {workspacesTarget?.email ?? workspacesTarget?.id ?? '—'}
             </div>
             {workspaceDetails.length === 0 ? (
-              <div className="text-sm text-muted-foreground">Нет воркспейсов.</div>
+              <div className="text-sm text-muted-foreground">{t`No workspaces.`}</div>
             ) : (
               <div className="rounded-md border">
                 <Table>
@@ -913,16 +918,16 @@ const AdminUsersPage: React.FC = () => {
           </DialogHeader>
           <div className="space-y-3">
             <div className="text-sm text-muted-foreground">
-              Новый пароль для <span className="font-medium text-foreground">{resetTarget?.email ?? '—'}</span>
+              {t`New password for`} <span className="font-medium text-foreground">{resetTarget?.email ?? '—'}</span>
             </div>
             <Input
               type="password"
               value={newPassword}
               onChange={(event) => setNewPassword(event.target.value)}
-              placeholder="Новый пароль"
+              placeholder={t`New password`}
             />
             <Button type="button" variant="outline" onClick={() => setNewPassword(generatePassword())}>
-              Сгенерировать
+              {t`Generate`}
             </Button>
             {resetError && (
               <div className="text-sm text-destructive">{resetError}</div>
@@ -951,7 +956,7 @@ const AdminUsersPage: React.FC = () => {
           <AlertDialogHeader>
             <AlertDialogTitle>Delete user?</AlertDialogTitle>
             <AlertDialogDescription>
-              Пользователь будет удален навсегда. Это действие нельзя отменить.
+              {t`The user will be deleted permanently. This action cannot be undone.`}
             </AlertDialogDescription>
           </AlertDialogHeader>
           {deleteError && (
@@ -1003,7 +1008,7 @@ const AdminUsersPage: React.FC = () => {
           <AlertDialogHeader>
             <AlertDialogTitle>Delete workspace?</AlertDialogTitle>
             <AlertDialogDescription>
-              Воркспейс и все его данные будут удалены без возможности восстановления.
+              {t`The workspace and all its data will be deleted permanently.`}
             </AlertDialogDescription>
           </AlertDialogHeader>
           {workspaceDeleteError && (
@@ -1066,7 +1071,7 @@ const AdminUsersPage: React.FC = () => {
           <AlertDialogHeader>
             <AlertDialogTitle>Remove super admin?</AlertDialogTitle>
             <AlertDialogDescription>
-              Супер-админ потеряет доступ к админке. Аккаунт останется в системе.
+              {t`The super admin will lose access to the admin panel. The account will remain.`}
             </AlertDialogDescription>
           </AlertDialogHeader>
           {superAdminDeleteError && (
@@ -1092,8 +1097,12 @@ const AdminUsersPage: React.FC = () => {
           <AlertDialogHeader>
             <AlertDialogTitle>Restore backup?</AlertDialogTitle>
             <AlertDialogDescription>
-              База данных будет заменена содержимым бэкапа {backupRestoreTarget?.name ?? '—'}.
-              Все текущие данные будут потеряны.
+              {t({
+                message: 'The database will be replaced with backup {name}.',
+                values: { name: backupRestoreTarget?.name ?? '—' },
+              })}
+              {' '}
+              {t`All current data will be lost.`}
             </AlertDialogDescription>
           </AlertDialogHeader>
           {backupRestoreError && (

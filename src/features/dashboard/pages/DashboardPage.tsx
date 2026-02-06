@@ -52,6 +52,7 @@ import { WidgetEditorDialog } from '@/features/dashboard/components/WidgetEditor
 import { DashboardLayouts, DashboardWidget } from '@/features/dashboard/types/dashboard';
 import { Navigate } from 'react-router-dom';
 import { usePlannerStore } from '@/features/planner/store/plannerStore';
+import { t } from '@lingui/macro';
 
 const DashboardPage = () => {
   const [showSettings, setShowSettings] = useState(false);
@@ -325,7 +326,7 @@ const DashboardPage = () => {
     setCreateDashboardError('');
     if (!currentWorkspaceId) return;
     if (!canCreateDashboard) {
-      setCreateDashboardError('Dashboard limit reached (10).');
+      setCreateDashboardError(t`Dashboard limit reached (10).`);
       return;
     }
     if (!newDashboardName.trim()) return;
@@ -416,7 +417,7 @@ const DashboardPage = () => {
         </ContextMenuTrigger>
         <ContextMenuContent>
           <ContextMenuItem onSelect={() => handleEditWidget(widget)} disabled={!canEdit}>
-            Filter settings
+            {t`Filter settings`}
           </ContextMenuItem>
           <ContextMenuSeparator />
           <ContextMenuItem
@@ -424,7 +425,7 @@ const DashboardPage = () => {
             disabled={!canEdit}
             className="text-destructive focus:text-destructive"
           >
-            Remove widget
+            {t`Remove widget`}
           </ContextMenuItem>
         </ContextMenuContent>
       </ContextMenu>
@@ -448,7 +449,7 @@ const DashboardPage = () => {
           {canEdit && (
             <Button size="sm" className="gap-2" onClick={handleAddWidget} disabled={!canAddWidget}>
               <Plus className="h-4 w-4" />
-              Widget
+              {t`Widget`}
             </Button>
           )}
           <Button
@@ -472,9 +473,9 @@ const DashboardPage = () => {
 
       <div className="flex items-center justify-between px-4 py-2 border-b border-border text-xs text-muted-foreground">
         <div>
-          {saving && 'Saving...'}
-          {!saving && dirty && canEdit && 'Unsaved changes'}
-          {!saving && !dirty && canEdit && 'All changes saved'}
+          {saving && t`Saving...`}
+          {!saving && dirty && canEdit && t`Unsaved changes`}
+          {!saving && !dirty && canEdit && t`All changes saved`}
         </div>
         {error && <div className="text-destructive">{error}</div>}
       </div>
@@ -487,13 +488,13 @@ const DashboardPage = () => {
                 <DropdownMenuTrigger asChild>
                   <Button variant="outline" className="gap-2">
                     <span className="max-w-[220px] truncate">
-                      {currentDashboard?.name ?? 'Select dashboard'}
+                      {currentDashboard?.name ?? t`Select dashboard`}
                     </span>
                     <ChevronDown className="h-4 w-4" />
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start" className="w-56">
-                  <DropdownMenuLabel>Dashboards</DropdownMenuLabel>
+                  <DropdownMenuLabel>{t`Dashboards`}</DropdownMenuLabel>
                   <DropdownMenuRadioGroup
                     value={currentDashboardId ?? ''}
                     onValueChange={(value) => setCurrentDashboardId(value)}
@@ -517,7 +518,7 @@ const DashboardPage = () => {
                     disabled={!canEdit || !canCreateDashboard}
                   >
                     <Plus className="mr-2 h-4 w-4" />
-                    New dashboard
+                    {t`New dashboard`}
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -527,8 +528,8 @@ const DashboardPage = () => {
                     variant="ghost"
                     size="icon"
                     className="h-9 w-9"
-                    title="Dashboard settings"
-                    aria-label="Dashboard settings"
+                    title={t`Dashboard settings`}
+                    aria-label={t`Dashboard settings`}
                   >
                     <Settings className="h-4 w-4" />
                   </Button>
@@ -543,7 +544,7 @@ const DashboardPage = () => {
                   }}
                   disabled={!canEdit || !currentDashboardId}
                 >
-                  Rename dashboard
+                  {t`Rename dashboard`}
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onSelect={(event) => {
@@ -553,23 +554,23 @@ const DashboardPage = () => {
                     disabled={!canEdit || !canDeleteDashboard}
                     className="text-destructive focus:text-destructive"
                   >
-                    Delete dashboard
+                    {t`Delete dashboard`}
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
             {loading && (
               <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-                Loading dashboard...
+                {t`Loading dashboard...`}
               </div>
             )}
             {!loading && widgets.length === 0 && (
               <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
                 {!currentDashboardId
-                  ? 'Create or select a dashboard to get started.'
+                  ? t`Create or select a dashboard to get started.`
                   : canEdit
-                    ? 'Right-click to add your first widget.'
-                    : 'No widgets yet.'}
+                    ? t`Right-click to add your first widget.`
+                    : t`No widgets yet.`}
               </div>
             )}
             {!loading && widgets.length > 0 && (
@@ -601,7 +602,7 @@ const DashboardPage = () => {
         </ContextMenuTrigger>
         <ContextMenuContent>
           <ContextMenuItem onSelect={handleAddWidget} disabled={!canAddWidget}>
-            Add widget
+            {t`Add widget`}
           </ContextMenuItem>
         </ContextMenuContent>
       </ContextMenu>
@@ -619,13 +620,13 @@ const DashboardPage = () => {
       <Dialog open={createDashboardOpen} onOpenChange={setCreateDashboardOpen}>
         <DialogContent className="w-[95vw] max-w-md">
           <DialogHeader>
-            <DialogTitle>New dashboard</DialogTitle>
+            <DialogTitle>{t`New dashboard`}</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleCreateDashboard} className="space-y-4">
             <div className="space-y-1">
-              <Label>Dashboard name</Label>
+              <Label>{t`Dashboard name`}</Label>
               <Input
-                placeholder="Enter dashboard name..."
+                placeholder={t`Enter dashboard name...`}
                 value={newDashboardName}
                 onChange={(event) => setNewDashboardName(event.target.value)}
               />
@@ -635,10 +636,10 @@ const DashboardPage = () => {
             )}
             <DialogFooter>
               <Button variant="outline" type="button" onClick={() => setCreateDashboardOpen(false)}>
-                Cancel
+                {t`Cancel`}
               </Button>
               <Button type="submit" disabled={!canEdit || !newDashboardName.trim() || !canCreateDashboard}>
-                Create
+                {t`Create`}
               </Button>
             </DialogFooter>
           </form>
@@ -647,13 +648,13 @@ const DashboardPage = () => {
       <Dialog open={renameDashboardOpen} onOpenChange={setRenameDashboardOpen}>
         <DialogContent className="w-[95vw] max-w-md">
           <DialogHeader>
-            <DialogTitle>Rename dashboard</DialogTitle>
+            <DialogTitle>{t`Rename dashboard`}</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleRenameDashboard} className="space-y-4">
             <div className="space-y-1">
-              <Label>Dashboard name</Label>
+              <Label>{t`Dashboard name`}</Label>
               <Input
-                placeholder="Enter dashboard name..."
+                placeholder={t`Enter dashboard name...`}
                 value={renameDashboardName}
                 onChange={(event) => setRenameDashboardName(event.target.value)}
               />
@@ -663,7 +664,7 @@ const DashboardPage = () => {
             )}
             <DialogFooter>
               <Button variant="outline" type="button" onClick={() => setRenameDashboardOpen(false)}>
-                Cancel
+                {t`Cancel`}
               </Button>
               <Button
                 type="submit"
@@ -674,7 +675,7 @@ const DashboardPage = () => {
                   || renameDashboardName.trim() === (currentDashboard?.name ?? '').trim()
                 }
               >
-                Save
+                {t`Save`}
               </Button>
             </DialogFooter>
           </form>
@@ -691,15 +692,15 @@ const DashboardPage = () => {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete dashboard?</AlertDialogTitle>
+            <AlertDialogTitle>{t`Delete dashboard?`}</AlertDialogTitle>
             <AlertDialogDescription>
-              This will remove "{currentDashboard?.name ?? 'this dashboard'}". Widgets and layouts will be lost.
+              {t`This will remove "${currentDashboard?.name ?? t`this dashboard`}". Widgets and layouts will be lost.`}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={dashboardDeleting}>Cancel</AlertDialogCancel>
+            <AlertDialogCancel disabled={dashboardDeleting}>{t`Cancel`}</AlertDialogCancel>
             <AlertDialogAction onClick={handleDeleteDashboard} disabled={dashboardDeleting || !canDeleteDashboard}>
-              Delete
+              {t`Delete`}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

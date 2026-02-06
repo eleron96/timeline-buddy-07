@@ -1,6 +1,7 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
 import { cn } from '@/shared/lib/classNames';
+import { t } from '@lingui/macro';
 
 export const WorkspaceNav: React.FC = () => (
   <nav className="flex items-center gap-1 rounded-lg bg-muted/40 p-1">
@@ -12,7 +13,7 @@ export const WorkspaceNav: React.FC = () => (
         isActive ? 'bg-foreground text-background' : 'text-muted-foreground hover:text-foreground',
       )}
     >
-      Timeline
+      {t`Timeline`}
     </NavLink>
     <NavLink
       to="/dashboard"
@@ -21,7 +22,7 @@ export const WorkspaceNav: React.FC = () => (
         isActive ? 'bg-foreground text-background' : 'text-muted-foreground hover:text-foreground',
       )}
     >
-      Dashboard
+      {t`Dashboard`}
     </NavLink>
     <NavLink
       to="/projects"
@@ -30,7 +31,7 @@ export const WorkspaceNav: React.FC = () => (
         isActive ? 'bg-foreground text-background' : 'text-muted-foreground hover:text-foreground',
       )}
     >
-      Projects
+      {t`Projects`}
     </NavLink>
     <NavLink
       to="/members"
@@ -39,7 +40,7 @@ export const WorkspaceNav: React.FC = () => (
         isActive ? 'bg-foreground text-background' : 'text-muted-foreground hover:text-foreground',
       )}
     >
-      Members
+      {t`Members`}
     </NavLink>
   </nav>
 );

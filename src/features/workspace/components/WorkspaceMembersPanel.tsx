@@ -12,6 +12,7 @@ import { cn } from '@/shared/lib/classNames';
 import { Popover, PopoverContent, PopoverTrigger } from '@/shared/ui/popover';
 import { supabase } from '@/shared/lib/supabaseClient';
 import { ChevronDown, ChevronUp, ChevronsUpDown } from 'lucide-react';
+import { t } from '@lingui/macro';
 
 interface WorkspaceMembersPanelProps {
   active?: boolean;
@@ -129,11 +130,11 @@ export const WorkspaceMembersPanel: React.FC<WorkspaceMembersPanelProps> = ({
         case 'role':
           return member.role ?? '';
         case 'group':
-          return groupNameById.get(member.groupId ?? '') ?? 'No group';
+          return groupNameById.get(member.groupId ?? '') ?? t`No group`;
         case 'status': {
           const assignee = assigneeByUserId.get(member.userId);
-          if (!assignee) return 'Unknown';
-          return assignee.isActive ? 'Active' : 'Disabled';
+          if (!assignee) return t`Unknown`;
+          return assignee.isActive ? t`Active` : t`Disabled`;
         }
         case 'member':
         default:
@@ -210,7 +211,7 @@ export const WorkspaceMembersPanel: React.FC<WorkspaceMembersPanelProps> = ({
   const handleRemove = async (userId: string) => {
     if (!isAdmin) return;
     if (currentUserId && userId === currentUserId) {
-      setError('You cannot remove yourself.');
+      setError(t`You cannot remove yourself.`);
       return;
     }
     const result = await removeMember(userId);
@@ -223,70 +224,70 @@ export const WorkspaceMembersPanel: React.FC<WorkspaceMembersPanelProps> = ({
     <div className={cn('space-y-4', className)}>
       {showTitle && (
         <div>
-          <h2 className="text-base font-semibold">Workspace members</h2>
+          <h2 className="text-base font-semibold">{t`Workspace members`}</h2>
           <p className="text-xs text-muted-foreground">
-            Manage invites, roles, and access.
+            {t`Manage invites, roles, and access.`}
           </p>
         </div>
       )}
 
       {!isAdmin && (
         <Alert>
-          <AlertTitle>Read-only</AlertTitle>
-          <AlertDescription>You have view access and cannot manage members.</AlertDescription>
+          <AlertTitle>{t`Read-only`}</AlertTitle>
+          <AlertDescription>{t`You have view access and cannot manage members.`}</AlertDescription>
         </Alert>
       )}
 
       <div className="rounded-lg border bg-background p-4 space-y-3">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <div className="text-sm font-semibold">Invites</div>
+            <div className="text-sm font-semibold">{t`Invites`}</div>
             <div className="text-xs text-muted-foreground">
-              Invite people and share access.
+              {t`Invite people and share access.`}
             </div>
           </div>
           <Popover open={inviteOpen} onOpenChange={setInviteOpen}>
             <PopoverTrigger asChild>
               <Button variant="secondary" disabled={!isAdmin}>
-                Add member
+                {t`Add member`}
               </Button>
             </PopoverTrigger>
             <PopoverContent className="w-80 p-4" align="end">
               <form onSubmit={handleInvite} className="space-y-3">
-                <Label htmlFor="invite-email">Email</Label>
+                <Label htmlFor="invite-email">{t`Email`}</Label>
                 <Input
                   id="invite-email"
                   type="email"
-                  placeholder="name@example.com"
+                  placeholder={t`name@example.com`}
                   value={email}
                   onChange={(event) => setEmail(event.target.value)}
                   disabled={!isAdmin}
                 />
                 <div className="space-y-1">
-                  <Label>Role</Label>
+                  <Label>{t`Role`}</Label>
                   <Select value={role} onValueChange={(value) => setRole(value as WorkspaceRole)} disabled={!isAdmin}>
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="viewer">Viewer</SelectItem>
-                      <SelectItem value="editor">Editor</SelectItem>
-                      <SelectItem value="admin">Admin</SelectItem>
+                      <SelectItem value="viewer">{t`Viewer`}</SelectItem>
+                      <SelectItem value="editor">{t`Editor`}</SelectItem>
+                      <SelectItem value="admin">{t`Admin`}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-1">
-                  <Label>Group</Label>
+                  <Label>{t`Group`}</Label>
                   <Select
                     value={inviteGroupId}
                     onValueChange={setInviteGroupId}
                     disabled={!isAdmin}
                   >
                     <SelectTrigger className="w-[220px] max-w-[220px] [&>span]:truncate">
-                      <SelectValue placeholder={groupsLoading ? 'Loading groups...' : 'No group'} />
+                      <SelectValue placeholder={groupsLoading ? t`Loading groups...` : t`No group`} />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="none">No group</SelectItem>
+                      <SelectItem value="none">{t`No group`}</SelectItem>
                       {groups.map((group) => (
                         <SelectItem key={group.id} value={group.id}>
                           {group.name}
@@ -298,11 +299,11 @@ export const WorkspaceMembersPanel: React.FC<WorkspaceMembersPanelProps> = ({
                     <div className="text-xs text-destructive">{groupsError}</div>
                   )}
                   {!groupsError && groups.length === 0 && (
-                    <div className="text-xs text-muted-foreground">No groups created yet.</div>
+                    <div className="text-xs text-muted-foreground">{t`No groups created yet.`}</div>
                   )}
                 </div>
                 <Button type="submit" disabled={!isAdmin || submitting || !email.trim()}>
-                  Send invite
+                  {t`Send invite`}
                 </Button>
               </form>
             </PopoverContent>
@@ -313,23 +314,23 @@ export const WorkspaceMembersPanel: React.FC<WorkspaceMembersPanelProps> = ({
           <div className="space-y-2">
             {error && (
               <Alert variant="destructive">
-                <AlertTitle>Action failed</AlertTitle>
+                <AlertTitle>{t`Action failed`}</AlertTitle>
                 <AlertDescription>{error}</AlertDescription>
               </Alert>
             )}
 
             {warning && (
               <Alert>
-                <AlertTitle>Invite created</AlertTitle>
+                <AlertTitle>{t`Invite created`}</AlertTitle>
                 <AlertDescription>{warning}</AlertDescription>
               </Alert>
             )}
 
             {actionLink && (
               <Alert>
-                <AlertTitle>Invite link created</AlertTitle>
+                <AlertTitle>{t`Invite link created`}</AlertTitle>
                 <AlertDescription>
-                  Copy this link if the email did not send: {actionLink}
+                  {t`Copy this link if the email did not send:`} {actionLink}
                 </AlertDescription>
               </Alert>
             )}
@@ -339,9 +340,9 @@ export const WorkspaceMembersPanel: React.FC<WorkspaceMembersPanelProps> = ({
 
       <div className="rounded-lg border bg-background p-4 space-y-3">
         <div>
-          <div className="text-sm font-semibold">Members & roles</div>
+          <div className="text-sm font-semibold">{t`Members & roles`}</div>
           <div className="text-xs text-muted-foreground">
-            Manage roles, groups, and status.
+            {t`Manage roles, groups, and status.`}
           </div>
         </div>
 
@@ -351,7 +352,7 @@ export const WorkspaceMembersPanel: React.FC<WorkspaceMembersPanelProps> = ({
             onClick={() => handleMemberSortChange('member')}
             className="inline-flex items-center gap-1 text-left hover:text-foreground"
           >
-            <span>Member</span>
+            <span>{t`Member`}</span>
             {renderSortIcon('member')}
           </button>
           <button
@@ -359,7 +360,7 @@ export const WorkspaceMembersPanel: React.FC<WorkspaceMembersPanelProps> = ({
             onClick={() => handleMemberSortChange('role')}
             className="inline-flex items-center gap-1 text-left hover:text-foreground"
           >
-            <span>Role</span>
+            <span>{t`Role`}</span>
             {renderSortIcon('role')}
           </button>
           <button
@@ -367,7 +368,7 @@ export const WorkspaceMembersPanel: React.FC<WorkspaceMembersPanelProps> = ({
             onClick={() => handleMemberSortChange('group')}
             className="inline-flex items-center gap-1 text-left hover:text-foreground"
           >
-            <span>Group</span>
+            <span>{t`Group`}</span>
             {renderSortIcon('group')}
           </button>
           <button
@@ -375,17 +376,17 @@ export const WorkspaceMembersPanel: React.FC<WorkspaceMembersPanelProps> = ({
             onClick={() => handleMemberSortChange('status')}
             className="inline-flex items-center gap-1 text-left hover:text-foreground"
           >
-            <span>Status</span>
+            <span>{t`Status`}</span>
             {renderSortIcon('status')}
           </button>
-          <span className="text-right">Actions</span>
+          <span className="text-right">{t`Actions`}</span>
         </div>
 
         {membersLoading && (
-          <div className="text-sm text-muted-foreground">Loading members...</div>
+          <div className="text-sm text-muted-foreground">{t`Loading members...`}</div>
         )}
         {!membersLoading && members.length === 0 && (
-          <div className="text-sm text-muted-foreground">No members found.</div>
+          <div className="text-sm text-muted-foreground">{t`No members found.`}</div>
         )}
         {sortedMembers.map((member) => {
           const isSelf = Boolean(currentUserId && member.userId === currentUserId);
@@ -396,13 +397,13 @@ export const WorkspaceMembersPanel: React.FC<WorkspaceMembersPanelProps> = ({
               <div className="min-w-0">
                 <div className="text-sm font-medium truncate">
                   {member.email}
-                  {isSelf ? ' (you)' : ''}
+                  {isSelf ? ` ${t`(you)`}` : ''}
                 </div>
                 {member.displayName && (
                   <div className="text-xs text-muted-foreground truncate">{member.displayName}</div>
                 )}
                 {!isActive && (
-                  <Badge variant="secondary" className="mt-1 text-[10px]">Disabled</Badge>
+                  <Badge variant="secondary" className="mt-1 text-[10px]">{t`Disabled`}</Badge>
                 )}
               </div>
               <Select
@@ -414,9 +415,9 @@ export const WorkspaceMembersPanel: React.FC<WorkspaceMembersPanelProps> = ({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="viewer">Viewer</SelectItem>
-                  <SelectItem value="editor">Editor</SelectItem>
-                  <SelectItem value="admin">Admin</SelectItem>
+                  <SelectItem value="viewer">{t`Viewer`}</SelectItem>
+                  <SelectItem value="editor">{t`Editor`}</SelectItem>
+                  <SelectItem value="admin">{t`Admin`}</SelectItem>
                 </SelectContent>
               </Select>
               <Select
@@ -425,10 +426,10 @@ export const WorkspaceMembersPanel: React.FC<WorkspaceMembersPanelProps> = ({
                 disabled={!isAdmin}
               >
                 <SelectTrigger className="w-[180px] max-w-[180px] [&>span]:truncate">
-                  <SelectValue placeholder={groupsLoading ? 'Loading groups...' : 'No group'} />
+                  <SelectValue placeholder={groupsLoading ? t`Loading groups...` : t`No group`} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="none">No group</SelectItem>
+                  <SelectItem value="none">{t`No group`}</SelectItem>
                   {groups.map((group) => (
                     <SelectItem key={group.id} value={group.id}>
                       {group.name}
@@ -443,10 +444,10 @@ export const WorkspaceMembersPanel: React.FC<WorkspaceMembersPanelProps> = ({
                       checked={isActive}
                       onCheckedChange={(value) => updateAssignee(assignee.id, { isActive: value })}
                       disabled={!isAdmin || isSelf}
-                      aria-label={isActive ? 'Disable member' : 'Enable member'}
+                      aria-label={isActive ? t`Disable member` : t`Enable member`}
                     />
                     <span className="text-[10px] text-muted-foreground">
-                      {isActive ? 'Active' : 'Disabled'}
+                      {isActive ? t`Active` : t`Disabled`}
                     </span>
                   </>
                 ) : (
@@ -460,7 +461,7 @@ export const WorkspaceMembersPanel: React.FC<WorkspaceMembersPanelProps> = ({
                   onClick={() => handleRemove(member.userId)}
                   disabled={!isAdmin || isSelf}
                 >
-                  Remove
+                  {t`Remove`}
                 </Button>
               </div>
             </div>

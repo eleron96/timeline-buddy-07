@@ -25,6 +25,7 @@ import { EmojiPicker } from '@/shared/ui/emoji-picker';
 import { splitStatusLabel, stripStatusEmoji } from '@/shared/lib/statusLabels';
 import { Textarea } from '@/shared/ui/textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/shared/ui/tooltip';
+import { t } from '@lingui/macro';
 
 interface SettingsPanelProps {
   open: boolean;
@@ -151,7 +152,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ open, onOpenChange
 
   const handleSaveWorkspaceName = async () => {
     if (!currentWorkspaceId) {
-      setWorkspaceError('Workspace not selected.');
+      setWorkspaceError(t`Workspace not selected.`);
       return;
     }
     setWorkspaceError('');
@@ -167,7 +168,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ open, onOpenChange
 
   const handleDeleteWorkspace = async () => {
     if (!currentWorkspaceId) {
-      setWorkspaceError('Workspace not selected.');
+      setWorkspaceError(t`Workspace not selected.`);
       return;
     }
     setWorkspaceError('');
@@ -181,11 +182,11 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ open, onOpenChange
 
   const handleApplyTemplate = async () => {
     if (!user) {
-      setTemplateApplyError('You are not signed in.');
+      setTemplateApplyError(t`You are not signed in.`);
       return;
     }
     if (!workspaceId) {
-      setTemplateApplyError('Workspace not selected.');
+      setTemplateApplyError(t`Workspace not selected.`);
       return;
     }
 
@@ -201,7 +202,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ open, onOpenChange
 
     if (error) {
       if ((error as { code?: string }).code === 'PGRST116') {
-        setTemplateApplyError('No template saved yet.');
+        setTemplateApplyError(t`No template saved yet.`);
       } else {
         setTemplateApplyError(error.message);
       }
@@ -288,7 +289,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ open, onOpenChange
       await loadWorkspaceData(workspaceId);
       setTemplateApplied(true);
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to apply template.';
+      const message = error instanceof Error ? error.message : t`Failed to apply template.`;
       setTemplateApplyError(message);
     } finally {
       setTemplateApplying(false);
@@ -302,14 +303,14 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ open, onOpenChange
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Settings2 className="w-5 h-5" />
-              Workspace settings
+              {t`Workspace settings`}
             </DialogTitle>
           </DialogHeader>
 
           <Tabs defaultValue="general" className="flex-1 flex flex-col mt-4">
             <TabsList className="flex flex-wrap w-full h-auto items-start justify-start gap-2 mb-4">
-              <TabsTrigger value="general" className="whitespace-nowrap">General</TabsTrigger>
-              <TabsTrigger value="workflow" className="whitespace-nowrap">Workflow</TabsTrigger>
+              <TabsTrigger value="general" className="whitespace-nowrap">{t`General`}</TabsTrigger>
+              <TabsTrigger value="workflow" className="whitespace-nowrap">{t`Workflow`}</TabsTrigger>
             </TabsList>
 
             <div className="flex-1 space-y-4">
@@ -320,11 +321,11 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ open, onOpenChange
                     <AccordionItem value="access" className="border-0">
                       <SectionCard>
                         <AccordionTrigger className="py-0 hover:no-underline">
-                          <span className="text-sm font-semibold">Access</span>
+                          <span className="text-sm font-semibold">{t`Access`}</span>
                         </AccordionTrigger>
                         <AccordionContent className="pt-1">
                           <p className="text-sm text-muted-foreground">
-                            You have view access and cannot edit this workspace.
+                            {t`You have view access and cannot edit this workspace.`}
                           </p>
                         </AccordionContent>
                       </SectionCard>
@@ -334,11 +335,11 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ open, onOpenChange
                   <AccordionItem value="name" className="border-0">
                     <SectionCard>
                       <AccordionTrigger className="py-0 hover:no-underline">
-                        <span className="text-sm font-semibold">Workspace name</span>
+                        <span className="text-sm font-semibold">{t`Workspace name`}</span>
                       </AccordionTrigger>
                       <AccordionContent className="pt-1">
                         <div className="space-y-2">
-                          <Label htmlFor="workspace-name">Workspace name</Label>
+                          <Label htmlFor="workspace-name">{t`Workspace name`}</Label>
                           <Input
                             id="workspace-name"
                             value={workspaceName}
@@ -352,7 +353,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ open, onOpenChange
                             onClick={handleSaveWorkspaceName}
                             disabled={!isAdmin || !currentWorkspaceId || workspaceSaving || !workspaceName.trim()}
                           >
-                            Save
+                            {t`Save`}
                           </Button>
                         </div>
                       </AccordionContent>
@@ -362,25 +363,25 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ open, onOpenChange
                   <AccordionItem value="template" className="border-0">
                     <SectionCard>
                       <AccordionTrigger className="py-0 hover:no-underline">
-                        <span className="text-sm font-semibold">Template</span>
+                        <span className="text-sm font-semibold">{t`Template`}</span>
                       </AccordionTrigger>
                       <AccordionContent className="pt-1">
                         <div className="space-y-2">
                           <p className="text-xs text-muted-foreground">
-                            Apply your saved template to this workspace (adds missing items by name).
+                            {t`Apply your saved template to this workspace (adds missing items by name).`}
                           </p>
                           {templateApplyError && (
                             <div className="text-sm text-destructive">{templateApplyError}</div>
                           )}
                           {templateApplied && (
-                            <div className="text-sm text-emerald-600">Template applied.</div>
+                            <div className="text-sm text-emerald-600">{t`Template applied.`}</div>
                           )}
                           <Button
                             variant="secondary"
                             onClick={handleApplyTemplate}
                             disabled={!user || !currentWorkspaceId || templateApplying}
                           >
-                            Apply template
+                            {t`Apply template`}
                           </Button>
                         </div>
                       </AccordionContent>
@@ -390,18 +391,18 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ open, onOpenChange
                   <AccordionItem value="danger" className="border-0">
                     <SectionCard>
                       <AccordionTrigger className="py-0 text-destructive hover:no-underline">
-                        <span className="text-sm font-semibold">Danger zone</span>
+                        <span className="text-sm font-semibold">{t`Danger zone`}</span>
                       </AccordionTrigger>
                       <AccordionContent className="pt-1">
                         <div className="space-y-3">
                           <p className="text-xs text-muted-foreground">
-                            Deleting a workspace is permanent. Type the workspace name to enable deletion.
+                            {t`Deleting a workspace is permanent. Type the workspace name to enable deletion.`}
                           </p>
                           <div className="space-y-2">
-                            <Label htmlFor="delete-workspace-confirm">Workspace name</Label>
+                            <Label htmlFor="delete-workspace-confirm">{t`Workspace name`}</Label>
                             <Input
                               id="delete-workspace-confirm"
-                              placeholder={deleteConfirmName || 'Workspace name'}
+                              placeholder={deleteConfirmName || t`Workspace name`}
                               value={deleteConfirmValue}
                               onChange={(event) => setDeleteConfirmValue(event.target.value)}
                               disabled={!isAdmin || !currentWorkspaceId}
@@ -412,7 +413,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ open, onOpenChange
                             onClick={() => setDeleteOpen(true)}
                             disabled={!canDeleteWorkspace}
                           >
-                            Delete workspace
+                            {t`Delete workspace`}
                           </Button>
                         </div>
                       </AccordionContent>
@@ -427,7 +428,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ open, onOpenChange
                   <AccordionItem value="statuses" className="border-0">
                     <SectionCard>
                       <AccordionTrigger className="py-0 hover:no-underline">
-                        <span className="text-sm font-semibold">Statuses</span>
+                        <span className="text-sm font-semibold">{t`Statuses`}</span>
                       </AccordionTrigger>
                       <AccordionContent className="pt-1">
                         <div className="space-y-3">
@@ -439,7 +440,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ open, onOpenChange
                               onKeyDown={(e) => e.key === 'Enter' && handleAddStatus()}
                             />
                             <Input
-                              placeholder="New status name..."
+                              placeholder={t`New status name...`}
                               value={newStatusName}
                               onChange={(e) => setNewStatusName(e.target.value)}
                               onKeyDown={(e) => e.key === 'Enter' && handleAddStatus()}
@@ -451,9 +452,9 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ open, onOpenChange
                           </div>
 
                           <div className="flex items-center gap-2 px-2 text-xs text-muted-foreground">
-                            <span className="w-16">Emoji</span>
-                            <span className="flex-1">Status</span>
-                            <span className="w-10 text-right">Color</span>
+                            <span className="w-16">{t`Emoji`}</span>
+                            <span className="flex-1">{t`Status`}</span>
+                            <span className="w-10 text-right">{t`Color`}</span>
                             <div className="flex w-10 justify-end">
                               <Tooltip>
                                 <TooltipTrigger asChild>
@@ -461,7 +462,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ open, onOpenChange
                                     <CheckCircle2 className="h-4 w-4" />
                                   </span>
                                 </TooltipTrigger>
-                                <TooltipContent>Final</TooltipContent>
+                                <TooltipContent>{t`Final`}</TooltipContent>
                               </Tooltip>
                             </div>
                             <div className="flex w-10 justify-end">
@@ -471,7 +472,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ open, onOpenChange
                                     <Ban className="h-4 w-4" />
                                   </span>
                                 </TooltipTrigger>
-                                <TooltipContent>Cancelled</TooltipContent>
+                                <TooltipContent>{t`Cancelled`}</TooltipContent>
                               </Tooltip>
                             </div>
                             <span className="w-8" aria-hidden="true" />
@@ -507,10 +508,10 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ open, onOpenChange
                                               : { isFinal: false },
                                           );
                                         }}
-                                        aria-label="Final status"
+                                        aria-label={t`Final status`}
                                       />
                                     </TooltipTrigger>
-                                    <TooltipContent>Final</TooltipContent>
+                                    <TooltipContent>{t`Final`}</TooltipContent>
                                   </Tooltip>
                                 </label>
                                 <label className="flex w-10 items-center justify-end">
@@ -527,10 +528,10 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ open, onOpenChange
                                               : { isCancelled: false },
                                           );
                                         }}
-                                        aria-label="Cancelled status"
+                                        aria-label={t`Cancelled status`}
                                       />
                                     </TooltipTrigger>
-                                    <TooltipContent>Cancelled</TooltipContent>
+                                    <TooltipContent>{t`Cancelled`}</TooltipContent>
                                   </Tooltip>
                                 </label>
                                 <Button
@@ -552,13 +553,13 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ open, onOpenChange
                   <AccordionItem value="types" className="border-0">
                     <SectionCard>
                       <AccordionTrigger className="py-0 hover:no-underline">
-                        <span className="text-sm font-semibold">Task types</span>
+                        <span className="text-sm font-semibold">{t`Task types`}</span>
                       </AccordionTrigger>
                       <AccordionContent className="pt-1">
                         <div className="space-y-3">
                           <div className="flex gap-2">
                             <Input
-                              placeholder="New type name..."
+                              placeholder={t`New type name...`}
                               value={newTypeName}
                               onChange={(e) => setNewTypeName(e.target.value)}
                               onKeyDown={(e) => e.key === 'Enter' && handleAddType()}
@@ -595,13 +596,13 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ open, onOpenChange
                   <AccordionItem value="tags" className="border-0">
                     <SectionCard>
                       <AccordionTrigger className="py-0 hover:no-underline">
-                        <span className="text-sm font-semibold">Tags</span>
+                        <span className="text-sm font-semibold">{t`Tags`}</span>
                       </AccordionTrigger>
                       <AccordionContent className="pt-1">
                         <div className="space-y-3">
                           <div className="flex gap-2">
                             <Input
-                              placeholder="New tag name..."
+                              placeholder={t`New tag name...`}
                               value={newTagName}
                               onChange={(e) => setNewTagName(e.target.value)}
                               onKeyDown={(e) => e.key === 'Enter' && handleAddTag()}
@@ -648,14 +649,14 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ open, onOpenChange
       <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete workspace?</AlertDialogTitle>
+            <AlertDialogTitle>{t`Delete workspace?`}</AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently delete "{currentWorkspace?.name ?? 'this workspace'}" and all its data.
+              {t`This will permanently delete "${currentWorkspace?.name ?? t`this workspace`}" and all its data.`}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDeleteWorkspace}>Delete</AlertDialogAction>
+            <AlertDialogCancel>{t`Cancel`}</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDeleteWorkspace}>{t`Delete`}</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

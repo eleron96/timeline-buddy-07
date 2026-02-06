@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { usePlannerStore } from '@/features/planner/store/plannerStore';
 import { useAuthStore } from '@/features/auth/store/authStore';
@@ -14,6 +14,7 @@ import { Badge } from '@/shared/ui/badge';
 import { Popover, PopoverContent, PopoverTrigger } from '@/shared/ui/popover';
 import { Checkbox } from '@/shared/ui/checkbox';
 import { ScrollArea } from '@/shared/ui/scroll-area';
+import { t } from '@lingui/macro';
 import {
   Command,
   CommandEmpty,
@@ -23,12 +24,13 @@ import {
   CommandList,
 } from '@/shared/ui/command';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/shared/ui/table';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/shared/ui/dialog';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/shared/ui/dialog';
 import { ColorPicker } from '@/shared/ui/color-picker';
 import { supabase } from '@/shared/lib/supabaseClient';
 import { formatStatusLabel } from '@/shared/lib/statusLabels';
 import { formatProjectLabel } from '@/shared/lib/projectLabels';
 import { sortProjectsByTracking } from '@/shared/lib/projectSorting';
+import { compareNames } from '@/shared/lib/nameSorting';
 import { format, parseISO } from 'date-fns';
 import {
   ArrowDownAZ,
@@ -143,7 +145,7 @@ const CustomerCombobox: React.FC<{
   onChange,
   onCreateCustomer,
   disabled,
-  placeholder = 'No customer',
+  placeholder = t`No customer`,
   className,
 }) => {
   const [open, setOpen] = useState(false);
@@ -205,7 +207,7 @@ const CustomerCombobox: React.FC<{
       <PopoverContent className="w-[260px] p-0" align="start">
         <Command shouldFilter={false}>
           <CommandInput
-            placeholder="Find or add customer..."
+            placeholder={t`Find or add customer...`}
             value={query}
             onValueChange={setQuery}
             onKeyDown={(event) => {
@@ -218,14 +220,14 @@ const CustomerCombobox: React.FC<{
             }}
           />
           <CommandList>
-            <CommandEmpty>No customers found.</CommandEmpty>
+            <CommandEmpty>{t`No customers found.`}</CommandEmpty>
             <CommandGroup>
               <CommandItem onSelect={() => handleSelect(null)}>
-                No customer
+                {t`No customer`}
               </CommandItem>
               {normalizedQuery && !exactMatch && (
                 <CommandItem onSelect={() => void handleCreate()}>
-                  Create "{normalizedQuery}"
+                  {t`Create "${normalizedQuery}"`}
                 </CommandItem>
               )}
               {filteredCustomers.map((customer) => (
@@ -252,11 +254,12 @@ const ProjectsPage = () => {
   const [tasksError, setTasksError] = useState('');
   const [search, setSearch] = useState('');
   const [projectSearch, setProjectSearch] = useState('');
+  const [customerSearch, setCustomerSearch] = useState('');
   const [statusFilterIds, setStatusFilterIds] = useState<string[]>([]);
   const [assigneeFilterIds, setAssigneeFilterIds] = useState<string[]>([]);
   const [groupFilterIds, setGroupFilterIds] = useState<string[]>([]);
   const [customerFilterIds, setCustomerFilterIds] = useState<string[]>([]);
-  const [customerSort, setCustomerSort] = useState<'asc' | 'desc'>('asc');
+  const [nameSort, setNameSort] = useState<'asc' | 'desc'>('asc');
   const [groupByCustomer, setGroupByCustomer] = useState(false);
   const [mode, setMode] = useState<'projects' | 'customers'>('projects');
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
@@ -272,13 +275,16 @@ const ProjectsPage = () => {
   const [projectSettingsColor, setProjectSettingsColor] = useState('#3b82f6');
   const [projectSettingsCustomerId, setProjectSettingsCustomerId] = useState<string | null>(null);
   const [newCustomerName, setNewCustomerName] = useState('');
+  const [createCustomerOpen, setCreateCustomerOpen] = useState(false);
   const [editingCustomerId, setEditingCustomerId] = useState<string | null>(null);
   const [editingCustomerName, setEditingCustomerName] = useState('');
+  const [editingCustomerOriginalName, setEditingCustomerOriginalName] = useState('');
+  const [renameCustomerOpen, setRenameCustomerOpen] = useState(false);
+  const [renameCustomerConfirmOpen, setRenameCustomerConfirmOpen] = useState(false);
   const [deleteProjectTarget, setDeleteProjectTarget] = useState<Project | null>(null);
   const [deleteProjectOpen, setDeleteProjectOpen] = useState(false);
   const [deleteCustomerTarget, setDeleteCustomerTarget] = useState<Customer | null>(null);
   const [deleteCustomerOpen, setDeleteCustomerOpen] = useState(false);
-  const editCustomerInputRef = useRef<HTMLInputElement | null>(null);
 
   const {
     projects,
@@ -326,26 +332,30 @@ const ProjectsPage = () => {
     () => sortProjectsByTracking(
       projects.filter((project) => !project.archived),
       trackedProjectIds,
+      nameSort,
     ),
-    [projects, trackedProjectIds],
+    [projects, trackedProjectIds, nameSort],
   );
   const archivedProjects = useMemo(
     () => sortProjectsByTracking(
       projects.filter((project) => project.archived),
       trackedProjectIds,
+      nameSort,
     ),
-    [projects, trackedProjectIds],
+    [projects, trackedProjectIds, nameSort],
   );
   const customerById = useMemo(
     () => new Map(customers.map((customer) => [customer.id, customer])),
     [customers],
   );
   const sortedCustomers = useMemo(() => {
-    const list = [...customers].sort((a, b) => (
-      a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
-    ));
-    return customerSort === 'asc' ? list : list.reverse();
-  }, [customers, customerSort]);
+    return [...customers].sort((a, b) => compareNames(a.name, b.name, nameSort));
+  }, [customers, nameSort]);
+  const normalizedCustomerSearch = customerSearch.trim().toLowerCase();
+  const filteredCustomers = useMemo(() => {
+    if (!normalizedCustomerSearch) return sortedCustomers;
+    return sortedCustomers.filter((customer) => customer.name.toLowerCase().includes(normalizedCustomerSearch));
+  }, [normalizedCustomerSearch, sortedCustomers]);
 
   const selectedProject = useMemo(
     () => projects.find((project) => project.id === selectedProjectId) ?? null,
@@ -555,22 +565,22 @@ const ProjectsPage = () => {
   ), [assigneeFilterIds, projectTasks, search, statusFilterIds, groupFilterIds, assigneeGroupMap]);
 
   const statusFilterLabel = statusFilterIds.length === 0
-    ? 'All statuses'
-    : `${statusFilterIds.length} selected`;
+    ? t`All statuses`
+    : t`${statusFilterIds.length} selected`;
 
   const assigneeFilterLabel = assigneeFilterIds.length === 0
-    ? 'All assignees'
-    : `${assigneeFilterIds.length} selected`;
+    ? t`All assignees`
+    : t`${assigneeFilterIds.length} selected`;
 
   const groupFilterLabel = groupFilterIds.length === 0
-    ? 'All groups'
-    : `${groupFilterIds.length} selected`;
+    ? t`All groups`
+    : t`${groupFilterIds.length} selected`;
 
   const customerFilterLabel = customerFilterIds.length === 0
-    ? 'All'
-    : `${customerFilterIds.length} selected`;
+    ? t`All`
+    : t`${customerFilterIds.length} selected`;
 
-  const customerSortLabel = customerSort === 'asc' ? 'A-Z' : 'Я-А';
+  const nameSortLabel = nameSort === 'asc' ? t`A-Z` : t`Z-A`;
 
   const modeToggle = (
     <div className="inline-flex items-center gap-2 rounded-lg bg-muted/60 p-1">
@@ -580,7 +590,7 @@ const ProjectsPage = () => {
         onClick={() => setMode('projects')}
         className={`h-7 px-3 text-xs rounded-md ${mode === 'projects' ? 'bg-foreground text-background shadow-sm' : ''}`}
       >
-        Projects
+        {t`Projects`}
       </Button>
       <Button
         variant="ghost"
@@ -588,7 +598,7 @@ const ProjectsPage = () => {
         onClick={() => setMode('customers')}
         className={`h-7 px-3 text-xs rounded-md ${mode === 'customers' ? 'bg-foreground text-background shadow-sm' : ''}`}
       >
-        Customers
+        {t`Customers`}
       </Button>
     </div>
   );
@@ -684,12 +694,15 @@ const ProjectsPage = () => {
       setSelectedCustomerId(created.id);
     }
     setNewCustomerName('');
+    setCreateCustomerOpen(false);
   }, [createCustomerByName, newCustomerName]);
 
   const startCustomerEdit = useCallback((customerId: string, customerName: string) => {
     if (!canEdit) return;
     setEditingCustomerId(customerId);
     setEditingCustomerName(customerName);
+    setEditingCustomerOriginalName(customerName);
+    setRenameCustomerOpen(true);
   }, [canEdit]);
 
   const commitCustomerEdit = useCallback(async (customerId: string) => {
@@ -698,17 +711,37 @@ const ProjectsPage = () => {
     if (!nextName) {
       setEditingCustomerId(null);
       setEditingCustomerName('');
+      setEditingCustomerOriginalName('');
       return;
     }
     await updateCustomer(customerId, { name: nextName });
     setEditingCustomerId(null);
     setEditingCustomerName('');
+    setEditingCustomerOriginalName('');
   }, [canEdit, editingCustomerName, updateCustomer]);
 
   const cancelCustomerEdit = useCallback(() => {
     setEditingCustomerId(null);
     setEditingCustomerName('');
+    setEditingCustomerOriginalName('');
   }, []);
+  const handleRenameCustomer = useCallback(async () => {
+    if (!editingCustomerId) return;
+    await commitCustomerEdit(editingCustomerId);
+    setRenameCustomerOpen(false);
+  }, [commitCustomerEdit, editingCustomerId]);
+  const requestCloseRenameCustomer = useCallback(() => {
+    if (
+      editingCustomerId
+      && editingCustomerName.trim()
+      && editingCustomerName.trim() !== editingCustomerOriginalName.trim()
+    ) {
+      setRenameCustomerConfirmOpen(true);
+      return;
+    }
+    setRenameCustomerOpen(false);
+    cancelCustomerEdit();
+  }, [cancelCustomerEdit, editingCustomerId, editingCustomerName, editingCustomerOriginalName]);
 
   const openProjectSettings = useCallback((project: Project) => {
     if (!canEdit) return;
@@ -777,13 +810,6 @@ const ProjectsPage = () => {
   }, [deleteCustomer, deleteCustomerTarget, selectedCustomerId]);
 
   useEffect(() => {
-    if (editingCustomerId && editCustomerInputRef.current) {
-      editCustomerInputRef.current.focus();
-      editCustomerInputRef.current.select();
-    }
-  }, [editingCustomerId]);
-
-  useEffect(() => {
     if (!createProjectOpen) {
       resetCreateProjectForm();
     }
@@ -795,21 +821,26 @@ const ProjectsPage = () => {
     }
   }, [projectSettingsOpen]);
 
+  const deleteProjectLabel = deleteProjectTarget
+    ? formatProjectLabel(deleteProjectTarget.name, deleteProjectTarget.code)
+    : t`this project`;
+  const deleteCustomerLabel = deleteCustomerTarget?.name ?? t`this customer`;
+
   useEffect(() => {
     if (mode !== 'customers') return;
-    if (sortedCustomers.length === 0) {
+    if (filteredCustomers.length === 0) {
       setSelectedCustomerId(null);
       return;
     }
-    if (!selectedCustomerId || !sortedCustomers.some((customer) => customer.id === selectedCustomerId)) {
-      setSelectedCustomerId(sortedCustomers[0].id);
+    if (!selectedCustomerId || !filteredCustomers.some((customer) => customer.id === selectedCustomerId)) {
+      setSelectedCustomerId(filteredCustomers[0].id);
     }
-  }, [mode, selectedCustomerId, sortedCustomers]);
+  }, [filteredCustomers, mode, selectedCustomerId]);
 
   const groupedProjects = useCallback((list: Project[]) => {
     if (!groupByCustomer) {
       return [
-        { id: 'all', name: 'All projects', projects: list },
+        { id: 'all', name: t`All projects`, projects: list },
       ];
     }
 
@@ -831,7 +862,7 @@ const ProjectsPage = () => {
 
     const noCustomer = grouped.get('none');
     if (noCustomer && noCustomer.length > 0) {
-      result.push({ id: 'none', name: 'No customer', projects: sortProjectsByTracking(noCustomer, trackedProjectIds) });
+      result.push({ id: 'none', name: t`No customer`, projects: sortProjectsByTracking(noCustomer, trackedProjectIds) });
     }
 
     return result;
@@ -874,7 +905,7 @@ const ProjectsPage = () => {
                   {formatProjectLabel(project.name, project.code)}
                 </div>
                 <div className="text-xs text-muted-foreground truncate">
-                  {customerName ?? 'No customer'}
+                  {customerName ?? t`No customer`}
                 </div>
               </div>
               <div className="flex items-center gap-2">
@@ -882,7 +913,7 @@ const ProjectsPage = () => {
                   <Star className="h-4 w-4 text-amber-500 fill-amber-500" />
                 )}
                 {showArchivedBadge && (
-                  <Badge variant="secondary" className="text-[10px]">Archived</Badge>
+                  <Badge variant="secondary" className="text-[10px]">{t`Archived`}</Badge>
                 )}
               </div>
             </div>
@@ -890,23 +921,23 @@ const ProjectsPage = () => {
         </ContextMenuTrigger>
         <ContextMenuContent>
           <ContextMenuItem onSelect={() => void toggleTrackedProject(project.id, !isTracked)}>
-            {isTracked ? 'Stop tracking' : 'Track'}
+            {isTracked ? t`Stop tracking` : t`Track`}
           </ContextMenuItem>
           <ContextMenuItem disabled={!canEdit} onSelect={() => openProjectSettings(project)}>
-            Edit
+            {t`Edit`}
           </ContextMenuItem>
           <ContextMenuItem
             disabled={!canEdit}
             onSelect={() => updateProject(project.id, { archived: !project.archived })}
           >
-            {project.archived ? 'Restore' : 'Archive'}
+            {project.archived ? t`Restore` : t`Archive`}
           </ContextMenuItem>
           <ContextMenuItem
             disabled={!canEdit}
             onSelect={() => requestDeleteProject(project)}
             className="text-destructive focus:text-destructive"
           >
-            Delete
+            {t`Delete`}
           </ContextMenuItem>
         </ContextMenuContent>
       </ContextMenu>
@@ -917,7 +948,7 @@ const ProjectsPage = () => {
     if (list.length === 0) {
       return (
         <div className="text-sm text-muted-foreground">
-          No projects match the current filters.
+          {t`No projects match the current filters.`}
         </div>
       );
     }
@@ -960,15 +991,27 @@ const ProjectsPage = () => {
               {userLabel}
             </span>
           )}
-          <Button
-            onClick={() => setCreateProjectOpen(true)}
-            size="sm"
-            className="gap-2"
-            disabled={!canEdit}
-          >
-            <Plus className="h-4 w-4" />
-            New project
-          </Button>
+          {mode === 'customers' ? (
+            <Button
+              onClick={() => setCreateCustomerOpen(true)}
+              size="sm"
+              className="gap-2"
+              disabled={!canEdit}
+            >
+              <Plus className="h-4 w-4" />
+              {t`New customer`}
+            </Button>
+          ) : (
+            <Button
+              onClick={() => setCreateProjectOpen(true)}
+              size="sm"
+              className="gap-2"
+              disabled={!canEdit}
+            >
+              <Plus className="h-4 w-4" />
+              {t`New project`}
+            </Button>
+          )}
           <Button
             variant="outline"
             size="icon"
@@ -996,56 +1039,42 @@ const ProjectsPage = () => {
           </div>
           {mode === 'customers' && (
             <>
-              <div className="p-4 space-y-3 border-b border-border">
-                <div className="flex items-center gap-2">
+              <div className="px-4 py-3 border-b border-border">
+                <div className="grid grid-cols-[1fr_auto] items-center gap-2">
                   <Input
-                    className="h-9 flex-1"
-                    placeholder="New customer name..."
-                    value={newCustomerName}
-                    onChange={(event) => setNewCustomerName(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter') {
-                        event.preventDefault();
-                        handleAddCustomerFromTab();
-                      }
-                    }}
-                    disabled={!canEdit}
+                    className="h-8"
+                    placeholder={t`Search customers...`}
+                    value={customerSearch}
+                    onChange={(event) => setCustomerSearch(event.target.value)}
                   />
-                  <Button
-                    size="sm"
-                    onClick={handleAddCustomerFromTab}
-                    disabled={!canEdit || !newCustomerName.trim()}
-                  >
-                    Add
-                  </Button>
-                </div>
-              </div>
-              <div className="mx-4 mt-3 flex items-center justify-end">
-                <div className="flex items-center gap-1">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-8 gap-2 px-2"
-                    onClick={() => setCustomerSort((current) => (current === 'asc' ? 'desc' : 'asc'))}
-                  >
-                    {customerSort === 'asc' ? (
-                      <ArrowDownAZ className="h-4 w-4" />
-                    ) : (
-                      <ArrowDownZA className="h-4 w-4" />
-                    )}
-                    <span className="text-xs text-muted-foreground">{customerSortLabel}</span>
-                  </Button>
+                  <div className="flex items-center justify-end gap-1">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 gap-2 px-2"
+                      onClick={() => setNameSort((current) => (current === 'asc' ? 'desc' : 'asc'))}
+                    >
+                      {nameSort === 'asc' ? (
+                        <ArrowDownAZ className="h-4 w-4" />
+                      ) : (
+                        <ArrowDownZA className="h-4 w-4" />
+                      )}
+                      <span className="text-xs text-muted-foreground">{nameSortLabel}</span>
+                    </Button>
+                  </div>
                 </div>
               </div>
               <div className="flex-1 overflow-hidden">
                 <ScrollArea className="h-full px-4 py-3">
                   {sortedCustomers.length === 0 && (
-                    <div className="text-sm text-muted-foreground">No customers yet.</div>
+                    <div className="text-sm text-muted-foreground">{t`No customers yet.`}</div>
                   )}
-                  {sortedCustomers.length > 0 && (
+                  {sortedCustomers.length > 0 && filteredCustomers.length === 0 && (
+                    <div className="text-sm text-muted-foreground">{t`No customers found.`}</div>
+                  )}
+                  {filteredCustomers.length > 0 && (
                     <div className="space-y-2">
-                      {sortedCustomers.map((customer) => {
-                        const isEditing = editingCustomerId === customer.id;
+                      {filteredCustomers.map((customer) => {
                         const projectCount = customerProjectCounts.get(customer.id) ?? 0;
                         const isSelected = selectedCustomerId === customer.id;
                         return (
@@ -1066,34 +1095,12 @@ const ProjectsPage = () => {
                                   isSelected ? 'border-foreground/60 bg-muted/60' : 'border-border hover:bg-muted/40'
                                 }`}
                               >
-                                {isEditing ? (
-                                  <Input
-                                    ref={editCustomerInputRef}
-                                    value={editingCustomerName}
-                                    onClick={(event) => event.stopPropagation()}
-                                    onChange={(event) => setEditingCustomerName(event.target.value)}
-                                    onKeyDown={(event) => {
-                                      if (event.key === 'Enter') {
-                                        event.preventDefault();
-                                        commitCustomerEdit(customer.id);
-                                      }
-                                      if (event.key === 'Escape') {
-                                        event.preventDefault();
-                                        cancelCustomerEdit();
-                                      }
-                                    }}
-                                    onBlur={() => commitCustomerEdit(customer.id)}
-                                    className="h-8 flex-1"
-                                    disabled={!canEdit}
-                                  />
-                                ) : (
-                                  <div className="min-w-0 flex-1">
-                                    <div className="text-sm font-medium truncate">{customer.name}</div>
-                                    <div className="text-xs text-muted-foreground">
-                                      {projectCount} projects
-                                    </div>
+                                <div className="min-w-0 flex-1">
+                                  <div className="text-sm font-medium truncate">{customer.name}</div>
+                                  <div className="text-xs text-muted-foreground">
+                                    {t`${projectCount} projects`}
                                   </div>
-                                )}
+                                </div>
                               </div>
                             </ContextMenuTrigger>
                             <ContextMenuContent>
@@ -1101,14 +1108,14 @@ const ProjectsPage = () => {
                                 disabled={!canEdit}
                                 onSelect={() => startCustomerEdit(customer.id, customer.name)}
                               >
-                                Edit
+                                {t`Edit`}
                               </ContextMenuItem>
                               <ContextMenuItem
                                 disabled={!canEdit}
                                 onSelect={() => requestDeleteCustomer(customer)}
                                 className="text-destructive focus:text-destructive"
                               >
-                                Delete
+                                {t`Delete`}
                               </ContextMenuItem>
                             </ContextMenuContent>
                           </ContextMenu>
@@ -1123,92 +1130,92 @@ const ProjectsPage = () => {
 
           {mode === 'projects' && (
             <Tabs value={tab} onValueChange={(value) => setTab(value as 'active' | 'archived')} className="flex-1 flex flex-col">
-              <div className="mx-4 mt-3 flex items-center justify-end">
-                <div className="flex items-center gap-1">
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button variant="ghost" size="sm" className="h-8 gap-2 px-2">
-                        <Filter className="h-4 w-4" />
-                        <span className="text-xs text-muted-foreground">{customerFilterLabel}</span>
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-60 p-3" align="start">
-                      <div className="flex items-center justify-between pb-2">
-                        <span className="text-xs text-muted-foreground">Filter customers</span>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => setCustomerFilterIds([])}
-                        >
-                          Clear
+              <div className="px-4 py-3 border-b border-border">
+                <div className="grid grid-cols-[1fr_auto] items-center gap-2">
+                  <Input
+                    className="h-8"
+                    placeholder={t`Search projects...`}
+                    value={projectSearch}
+                    onChange={(event) => setProjectSearch(event.target.value)}
+                  />
+                  <div className="flex items-center justify-end gap-1">
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button variant="ghost" size="sm" className="h-8 gap-2 px-2">
+                          <Filter className="h-4 w-4" />
+                          <span className="text-xs text-muted-foreground">{customerFilterLabel}</span>
                         </Button>
-                      </div>
-                      <ScrollArea className="max-h-56 pr-2">
-                        <div className="space-y-1">
-                          <label className="flex items-center gap-2 py-1 cursor-pointer">
-                            <Checkbox
-                              checked={customerFilterIds.includes('none')}
-                              onCheckedChange={() => handleToggleCustomer('none')}
-                            />
-                            <span className="text-sm">No customer</span>
-                          </label>
-                          {sortedCustomers.length === 0 && (
-                            <div className="text-xs text-muted-foreground">No customers yet.</div>
-                          )}
-                          {sortedCustomers.map((customer) => (
-                            <label key={customer.id} className="flex items-center gap-2 py-1 cursor-pointer">
-                              <Checkbox
-                                checked={customerFilterIds.includes(customer.id)}
-                                onCheckedChange={() => handleToggleCustomer(customer.id)}
-                              />
-                              <span className="text-sm truncate">{customer.name}</span>
-                            </label>
-                          ))}
+                      </PopoverTrigger>
+                      <PopoverContent className="w-60 p-3" align="start">
+                        <div className="flex items-center justify-between pb-2">
+                          <span className="text-xs text-muted-foreground">{t`Filter customers`}</span>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => setCustomerFilterIds([])}
+                          >
+                            {t`Clear`}
+                          </Button>
                         </div>
-                      </ScrollArea>
-                    </PopoverContent>
-                  </Popover>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-8 gap-2 px-2"
-                    onClick={() => setCustomerSort((current) => (current === 'asc' ? 'desc' : 'asc'))}
-                  >
-                    {customerSort === 'asc' ? (
-                      <ArrowDownAZ className="h-4 w-4" />
-                    ) : (
-                      <ArrowDownZA className="h-4 w-4" />
-                    )}
-                    <span className="text-xs text-muted-foreground">{customerSortLabel}</span>
-                  </Button>
-                  <Button
-                    variant={groupByCustomer ? 'secondary' : 'ghost'}
-                    size="sm"
-                    className="h-8 px-2"
-                    onClick={() => setGroupByCustomer((current) => !current)}
-                    aria-pressed={groupByCustomer}
-                    title="Group by customer"
-                  >
-                    <Layers className="h-4 w-4" />
-                  </Button>
+                        <ScrollArea className="max-h-56 pr-2">
+                          <div className="space-y-1">
+                            <label className="flex items-center gap-2 py-1 cursor-pointer">
+                              <Checkbox
+                                checked={customerFilterIds.includes('none')}
+                                onCheckedChange={() => handleToggleCustomer('none')}
+                              />
+                              <span className="text-sm">{t`No customer`}</span>
+                            </label>
+                            {sortedCustomers.length === 0 && (
+                              <div className="text-xs text-muted-foreground">{t`No customers yet.`}</div>
+                            )}
+                            {sortedCustomers.map((customer) => (
+                              <label key={customer.id} className="flex items-center gap-2 py-1 cursor-pointer">
+                                <Checkbox
+                                  checked={customerFilterIds.includes(customer.id)}
+                                  onCheckedChange={() => handleToggleCustomer(customer.id)}
+                                />
+                                <span className="text-sm truncate">{customer.name}</span>
+                              </label>
+                            ))}
+                          </div>
+                        </ScrollArea>
+                      </PopoverContent>
+                    </Popover>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 gap-2 px-2"
+                      onClick={() => setNameSort((current) => (current === 'asc' ? 'desc' : 'asc'))}
+                    >
+                      {nameSort === 'asc' ? (
+                        <ArrowDownAZ className="h-4 w-4" />
+                      ) : (
+                        <ArrowDownZA className="h-4 w-4" />
+                      )}
+                      <span className="text-xs text-muted-foreground">{nameSortLabel}</span>
+                    </Button>
+                    <Button
+                      variant={groupByCustomer ? 'secondary' : 'ghost'}
+                      size="sm"
+                      className="h-8 px-2"
+                      onClick={() => setGroupByCustomer((current) => !current)}
+                      aria-pressed={groupByCustomer}
+                      title={t`Group by customer`}
+                    >
+                      <Layers className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </div>
               </div>
-              <div className="mx-4 mt-2">
-                <Input
-                  className="h-9"
-                  placeholder="Search projects..."
-                  value={projectSearch}
-                  onChange={(event) => setProjectSearch(event.target.value)}
-                />
-              </div>
               <TabsList className="mx-4 mt-2 grid grid-cols-2">
-                <TabsTrigger value="active">Active</TabsTrigger>
-                <TabsTrigger value="archived">Archived</TabsTrigger>
+                <TabsTrigger value="active">{t`Active`}</TabsTrigger>
+                <TabsTrigger value="archived">{t`Archived`}</TabsTrigger>
               </TabsList>
               <TabsContent value="active" className="flex-1 overflow-hidden">
                 <ScrollArea className="h-full px-4 py-3">
                   {activeProjects.length === 0 && (
-                    <div className="text-sm text-muted-foreground">No active projects.</div>
+                    <div className="text-sm text-muted-foreground">{t`No active projects.`}</div>
                   )}
                   {activeProjects.length > 0 && renderProjectGroups(filteredActiveProjects, false)}
                 </ScrollArea>
@@ -1216,7 +1223,7 @@ const ProjectsPage = () => {
               <TabsContent value="archived" className="flex-1 overflow-hidden">
                 <ScrollArea className="h-full px-4 py-3">
                   {archivedProjects.length === 0 && (
-                    <div className="text-sm text-muted-foreground">No archived projects.</div>
+                    <div className="text-sm text-muted-foreground">{t`No archived projects.`}</div>
                   )}
                   {archivedProjects.length > 0 && renderProjectGroups(filteredArchivedProjects, true)}
                 </ScrollArea>
@@ -1230,7 +1237,7 @@ const ProjectsPage = () => {
             <>
               {!selectedProject && (
                 <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
-                  Select a project to view details.
+                  {t`Select a project to view details.`}
                 </div>
               )}
 
@@ -1244,11 +1251,11 @@ const ProjectsPage = () => {
                             {formatProjectLabel(selectedProject.name, selectedProject.code)}
                           </div>
                           <div className="text-xs text-muted-foreground">
-                            {customerById.get(selectedProject.customerId ?? '')?.name ?? 'No customer'}
+                            {customerById.get(selectedProject.customerId ?? '')?.name ?? t`No customer`}
                           </div>
                         </div>
                         {selectedProject.archived && (
-                          <Badge variant="secondary">Archived</Badge>
+                          <Badge variant="secondary">{t`Archived`}</Badge>
                         )}
                       </div>
                       
@@ -1259,7 +1266,7 @@ const ProjectsPage = () => {
                     <div className="flex flex-wrap items-center gap-3">
                       <Input
                         className="w-[220px]"
-                        placeholder="Search tasks..."
+                        placeholder={t`Search tasks...`}
                         value={search}
                         onChange={(event) => setSearch(event.target.value)}
                       />
@@ -1269,9 +1276,9 @@ const ProjectsPage = () => {
                         </PopoverTrigger>
                         <PopoverContent className="w-56 p-2" align="start">
                           <div className="flex gap-2 pb-2">
-                            <Button size="sm" variant="ghost" onClick={() => setStatusPreset('all')}>All</Button>
-                            <Button size="sm" variant="ghost" onClick={() => setStatusPreset('open')}>Open</Button>
-                            <Button size="sm" variant="ghost" onClick={() => setStatusPreset('done')}>Done</Button>
+                            <Button size="sm" variant="ghost" onClick={() => setStatusPreset('all')}>{t`All`}</Button>
+                            <Button size="sm" variant="ghost" onClick={() => setStatusPreset('open')}>{t`Open`}</Button>
+                            <Button size="sm" variant="ghost" onClick={() => setStatusPreset('done')}>{t`Done`}</Button>
                           </div>
                           <ScrollArea className="max-h-48 pr-2">
                             <div className="space-y-1">
@@ -1298,7 +1305,7 @@ const ProjectsPage = () => {
                           <ScrollArea className="max-h-48 pr-2">
                             <div className="space-y-1">
                               {assigneeOptions.length === 0 && (
-                                <div className="text-xs text-muted-foreground">No assignees on this project.</div>
+                                <div className="text-xs text-muted-foreground">{t`No assignees on this project.`}</div>
                               )}
                               {assigneeOptions.map((assignee) => (
                                 <label key={assignee.id} className="flex items-center gap-2 py-1 cursor-pointer">
@@ -1309,7 +1316,7 @@ const ProjectsPage = () => {
                                   <span className="text-sm truncate">
                                     {assignee.name}
                                     {!assignee.isActive && (
-                                      <span className="ml-1 text-[10px] text-muted-foreground">(disabled)</span>
+                                      <span className="ml-1 text-[10px] text-muted-foreground">{t`(disabled)`}</span>
                                     )}
                                   </span>
                                 </label>
@@ -1327,7 +1334,7 @@ const ProjectsPage = () => {
                           <ScrollArea className="max-h-48 pr-2">
                             <div className="space-y-1">
                               {memberGroups.length === 0 && (
-                                <div className="text-xs text-muted-foreground">No groups created yet.</div>
+                                <div className="text-xs text-muted-foreground">{t`No groups created yet.`}</div>
                               )}
                               {memberGroups.map((group) => (
                                 <label key={group.id} className="flex items-center gap-2 py-1 cursor-pointer">
@@ -1352,7 +1359,7 @@ const ProjectsPage = () => {
                           setGroupFilterIds([]);
                         }}
                       >
-                        Clear filters
+                        {t`Clear filters`}
                       </Button>
 
                       <Button
@@ -1362,14 +1369,14 @@ const ProjectsPage = () => {
                         disabled={!selectedProjectId || tasksLoading}
                       >
                         <RefreshCcw className="mr-2 h-4 w-4" />
-                        Refresh
+                        {t`Refresh`}
                       </Button>
                     </div>
                   </div>
 
                   <div className="flex-1 overflow-auto px-6 py-4">
                     {tasksLoading && (
-                      <div className="text-sm text-muted-foreground">Loading tasks...</div>
+                      <div className="text-sm text-muted-foreground">{t`Loading tasks...`}</div>
                     )}
                     {!tasksLoading && tasksError && (
                       <div className="text-sm text-destructive">{tasksError}</div>
@@ -1377,15 +1384,15 @@ const ProjectsPage = () => {
                     {!tasksLoading && !tasksError && (
                       <>
                         {filteredTasks.length === 0 ? (
-                          <div className="text-sm text-muted-foreground">No tasks match the current filters.</div>
+                          <div className="text-sm text-muted-foreground">{t`No tasks match the current filters.`}</div>
                         ) : (
                           <Table>
                             <TableHeader>
                               <TableRow>
-                                <TableHead>Task</TableHead>
-                                <TableHead>Status</TableHead>
-                                <TableHead>Assignees</TableHead>
-                                <TableHead>Dates</TableHead>
+                                <TableHead>{t`Task`}</TableHead>
+                                <TableHead>{t`Status`}</TableHead>
+                                <TableHead>{t`Assignees`}</TableHead>
+                                <TableHead>{t`Dates`}</TableHead>
                               </TableRow>
                             </TableHeader>
                             <TableBody>
@@ -1415,12 +1422,12 @@ const ProjectsPage = () => {
                                           className="inline-flex h-2 w-2 rounded-full"
                                           style={{ backgroundColor: status?.color ?? '#94a3b8' }}
                                         />
-                                        <span>{status ? formatStatusLabel(status.name, status.emoji) : 'Unknown'}</span>
+                                        <span>{status ? formatStatusLabel(status.name, status.emoji) : t`Unknown`}</span>
                                       </div>
                                     </TableCell>
                                     <TableCell>
                                       {assigneesList.length === 0 ? (
-                                        <span className="text-xs text-muted-foreground">Unassigned</span>
+                                        <span className="text-xs text-muted-foreground">{t`Unassigned`}</span>
                                       ) : (
                                         <div className="flex flex-wrap gap-1">
                                           {assigneesList.map((assignee) => (
@@ -1430,7 +1437,7 @@ const ProjectsPage = () => {
                                               className="text-[10px]"
                                             >
                                               {assignee.name}
-                                              {!assignee.isActive && ' (disabled)'}
+                                              {!assignee.isActive && ` ${t`(disabled)`}`}
                                             </Badge>
                                           ))}
                                         </div>
@@ -1457,22 +1464,22 @@ const ProjectsPage = () => {
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
                     <div className="text-lg font-semibold">
-                      {selectedCustomer?.name ?? 'Select a customer'}
+                      {selectedCustomer?.name ?? t`Select a customer`}
                     </div>
                     <div className="text-xs text-muted-foreground">
                       {selectedCustomer
-                        ? `${selectedCustomerProjects.length} projects`
-                        : `${customers.length} customers`}
+                        ? t`${selectedCustomerProjects.length} projects`
+                        : t`${customers.length} customers`}
                     </div>
                   </div>
                 </div>
               </div>
               <div className="flex-1 overflow-auto px-6 py-4">
                 {!selectedCustomer && (
-                  <div className="text-sm text-muted-foreground">Choose a customer to see their projects.</div>
+                  <div className="text-sm text-muted-foreground">{t`Choose a customer to see their projects.`}</div>
                 )}
                 {selectedCustomer && selectedCustomerProjects.length === 0 && (
-                  <div className="text-sm text-muted-foreground">No projects assigned to this customer.</div>
+                  <div className="text-sm text-muted-foreground">{t`No projects assigned to this customer.`}</div>
                 )}
                 {selectedCustomer && selectedCustomerProjects.length > 0 && (
                   <div className="space-y-2">
@@ -1486,13 +1493,13 @@ const ProjectsPage = () => {
                         <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: project.color }} />
                         <div className="min-w-0 flex-1">
                           <div className="text-sm font-medium truncate">
-                            {formatProjectLabel(project.name, project.code)}
-                          </div>
-                          {project.archived && (
-                            <div className="text-[10px] text-muted-foreground">Archived</div>
-                          )}
+                          {formatProjectLabel(project.name, project.code)}
                         </div>
-                      </button>
+                        {project.archived && (
+                          <div className="text-[10px] text-muted-foreground">{t`Archived`}</div>
+                        )}
+                      </div>
+                    </button>
                     ))}
                   </div>
                 )}
@@ -1504,17 +1511,129 @@ const ProjectsPage = () => {
 
       <SettingsPanel open={showSettings} onOpenChange={setShowSettings} />
       <AccountSettingsDialog open={showAccountSettings} onOpenChange={setShowAccountSettings} />
+      <Dialog
+        open={createCustomerOpen}
+        onOpenChange={(open) => {
+          setCreateCustomerOpen(open);
+          if (!open) {
+            setNewCustomerName('');
+          }
+        }}
+      >
+        <DialogContent className="w-[95vw] max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t`New customer`}</DialogTitle>
+          </DialogHeader>
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              void handleAddCustomerFromTab();
+            }}
+            className="space-y-4"
+          >
+            <div className="space-y-1">
+              <Label>{t`Customer name`}</Label>
+              <Input
+                placeholder={t`Enter customer name...`}
+                value={newCustomerName}
+                onChange={(event) => setNewCustomerName(event.target.value)}
+                disabled={!canEdit}
+              />
+            </div>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                type="button"
+                onClick={() => setCreateCustomerOpen(false)}
+              >
+                {t`Cancel`}
+              </Button>
+              <Button type="submit" disabled={!canEdit || !newCustomerName.trim()}>
+                {t`Create`}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+      <Dialog
+        open={renameCustomerOpen}
+        onOpenChange={(open) => {
+          if (open) {
+            setRenameCustomerOpen(true);
+            return;
+          }
+          requestCloseRenameCustomer();
+        }}
+      >
+        <DialogContent className="w-[95vw] max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t`Rename customer`}</DialogTitle>
+          </DialogHeader>
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              void handleRenameCustomer();
+            }}
+            className="space-y-4"
+          >
+            <div className="space-y-1">
+              <Label>{t`Customer name`}</Label>
+              <Input
+                placeholder={t`Enter customer name...`}
+                value={editingCustomerName}
+                onChange={(event) => setEditingCustomerName(event.target.value)}
+                disabled={!canEdit}
+              />
+            </div>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                type="button"
+                onClick={requestCloseRenameCustomer}
+              >
+                {t`Cancel`}
+              </Button>
+              <Button type="submit" disabled={!canEdit || !editingCustomerName.trim()}>
+                {t`Save`}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+      <AlertDialog open={renameCustomerConfirmOpen} onOpenChange={setRenameCustomerConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t`Unsaved changes`}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t`You have unsaved changes. Close without saving?`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t`Keep editing`}</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                setRenameCustomerConfirmOpen(false);
+                setRenameCustomerOpen(false);
+                cancelCustomerEdit();
+              }}
+            >
+              {t`Discard`}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <Dialog open={createProjectOpen} onOpenChange={setCreateProjectOpen}>
         <DialogContent className="w-[95vw] max-w-xl">
           <DialogHeader>
-            <DialogTitle>New project</DialogTitle>
+            <DialogTitle>{t`New project`}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div className="grid gap-3 sm:grid-cols-[1fr_160px_auto]">
               <div className="space-y-1">
-                <Label>Project name</Label>
+                <Label>{t`Project name`}</Label>
                 <Input
-                  placeholder="Enter project name..."
+                  placeholder={t`Enter project name...`}
                   value={newProjectName}
                   onChange={(event) => setNewProjectName(event.target.value)}
                   onKeyDown={(event) => event.key === 'Enter' && handleCreateProject()}
@@ -1522,9 +1641,9 @@ const ProjectsPage = () => {
                 />
               </div>
               <div className="space-y-1">
-                <Label>Code</Label>
+                <Label>{t`Code`}</Label>
                 <Input
-                  placeholder="Code"
+                  placeholder={t`Code`}
                   value={newProjectCode}
                   onChange={(event) => setNewProjectCode(event.target.value)}
                   onKeyDown={(event) => event.key === 'Enter' && handleCreateProject()}
@@ -1532,14 +1651,14 @@ const ProjectsPage = () => {
                 />
               </div>
               <div className="space-y-1">
-                <Label>Color</Label>
+                <Label>{t`Color`}</Label>
                 <div className="flex items-center">
                   <ColorPicker value={newProjectColor} onChange={setNewProjectColor} disabled={!canEdit} />
                 </div>
               </div>
             </div>
             <div className="space-y-1">
-              <Label>Customer</Label>
+              <Label>{t`Customer`}</Label>
               <CustomerCombobox
                 value={newProjectCustomerId}
                 customers={customers}
@@ -1550,10 +1669,10 @@ const ProjectsPage = () => {
             </div>
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => setCreateProjectOpen(false)}>
-                Cancel
+                {t`Cancel`}
               </Button>
               <Button onClick={handleCreateProject} disabled={!canEdit || !newProjectName.trim()}>
-                Create project
+                {t`Create project`}
               </Button>
             </div>
           </div>
@@ -1562,18 +1681,18 @@ const ProjectsPage = () => {
       <Dialog open={projectSettingsOpen} onOpenChange={setProjectSettingsOpen}>
         <DialogContent className="w-[95vw] max-w-xl">
           <DialogHeader>
-            <DialogTitle>Edit project</DialogTitle>
+            <DialogTitle>{t`Edit project`}</DialogTitle>
           </DialogHeader>
           {!projectSettingsTarget && (
-            <div className="text-sm text-muted-foreground">Project not found.</div>
+            <div className="text-sm text-muted-foreground">{t`Project not found.`}</div>
           )}
           {projectSettingsTarget && (
             <div className="space-y-4">
               <div className="grid gap-3 sm:grid-cols-[1fr_160px_auto]">
                 <div className="space-y-1">
-                  <Label>Project name</Label>
+                  <Label>{t`Project name`}</Label>
                   <Input
-                    placeholder="Enter project name..."
+                    placeholder={t`Enter project name...`}
                     value={projectSettingsName}
                     onChange={(event) => setProjectSettingsName(event.target.value)}
                     onKeyDown={(event) => {
@@ -1586,9 +1705,9 @@ const ProjectsPage = () => {
                   />
                 </div>
                 <div className="space-y-1">
-                  <Label>Code</Label>
+                  <Label>{t`Code`}</Label>
                   <Input
-                    placeholder="Code"
+                    placeholder={t`Code`}
                     value={projectSettingsCode}
                     onChange={(event) => setProjectSettingsCode(event.target.value)}
                     onKeyDown={(event) => {
@@ -1601,14 +1720,14 @@ const ProjectsPage = () => {
                   />
                 </div>
                 <div className="space-y-1">
-                  <Label>Color</Label>
+                  <Label>{t`Color`}</Label>
                   <div className="flex items-center">
                     <ColorPicker value={projectSettingsColor} onChange={setProjectSettingsColor} disabled={!canEdit} />
                   </div>
                 </div>
               </div>
               <div className="space-y-1">
-                <Label>Customer</Label>
+                <Label>{t`Customer`}</Label>
                 <CustomerCombobox
                   value={projectSettingsCustomerId}
                   customers={customers}
@@ -1619,13 +1738,13 @@ const ProjectsPage = () => {
               </div>
               <div className="flex justify-end gap-2">
                 <Button variant="outline" onClick={() => setProjectSettingsOpen(false)}>
-                  Cancel
+                  {t`Cancel`}
                 </Button>
                 <Button
                   onClick={handleSaveProjectSettings}
                   disabled={!canEdit || !projectSettingsName.trim()}
                 >
-                  Save
+                  {t`Save`}
                 </Button>
               </div>
             </div>
@@ -1635,29 +1754,29 @@ const ProjectsPage = () => {
       <Dialog open={Boolean(selectedTaskId)} onOpenChange={(open) => !open && setSelectedTaskId(null)}>
         <DialogContent className="w-[95vw] max-w-2xl">
           <DialogHeader>
-            <DialogTitle>{selectedTask?.title ?? 'Task details'}</DialogTitle>
+            <DialogTitle>{selectedTask?.title ?? t`Task details`}</DialogTitle>
           </DialogHeader>
           {!selectedTask && (
-            <div className="text-sm text-muted-foreground">Task not found.</div>
+            <div className="text-sm text-muted-foreground">{t`Task not found.`}</div>
           )}
           {selectedTask && (
             <div className="space-y-4">
               <div className="grid gap-3 sm:grid-cols-2">
                 <div>
-                  <div className="text-xs text-muted-foreground">Project</div>
+                  <div className="text-xs text-muted-foreground">{t`Project`}</div>
                   <div className="text-sm">
                     {selectedTaskProject
                       ? formatProjectLabel(selectedTaskProject.name, selectedTaskProject.code)
-                      : 'No project'}
+                      : t`No project`}
                   </div>
                   {selectedTaskProject && (
                     <div className="mt-1 text-xs text-muted-foreground">
-                      Customer: {selectedTaskCustomer?.name ?? 'No customer'}
+                      {t`Customer:`} {selectedTaskCustomer?.name ?? t`No customer`}
                     </div>
                   )}
                 </div>
                 <div>
-                  <div className="text-xs text-muted-foreground">Status</div>
+                  <div className="text-xs text-muted-foreground">{t`Status`}</div>
                   <div className="flex items-center gap-2 text-sm">
                     <span
                       className="inline-flex h-2 w-2 rounded-full"
@@ -1668,15 +1787,15 @@ const ProjectsPage = () => {
                         statusById.get(selectedTask.statusId)!.name,
                         statusById.get(selectedTask.statusId)!.emoji,
                       )
-                      : 'Unknown'}
+                      : t`Unknown`}
                     </span>
                   </div>
                 </div>
                 <div>
-                  <div className="text-xs text-muted-foreground">Assignees</div>
+                  <div className="text-xs text-muted-foreground">{t`Assignees`}</div>
                   <div className="flex flex-wrap gap-1">
                     {selectedTask.assigneeIds.length === 0 && (
-                      <span className="text-xs text-muted-foreground">Unassigned</span>
+                      <span className="text-xs text-muted-foreground">{t`Unassigned`}</span>
                     )}
                     {selectedTask.assigneeIds.map((id) => {
                       const assignee = assigneeById.get(id);
@@ -1684,32 +1803,32 @@ const ProjectsPage = () => {
                       return (
                         <Badge key={assignee.id} variant="secondary" className="text-[10px]">
                           {assignee.name}
-                          {!assignee.isActive && ' (disabled)'}
+                          {!assignee.isActive && ` ${t`(disabled)`}`}
                         </Badge>
                       );
                     })}
                   </div>
                 </div>
                 <div>
-                  <div className="text-xs text-muted-foreground">Dates</div>
+                  <div className="text-xs text-muted-foreground">{t`Dates`}</div>
                   <div className="text-sm text-muted-foreground">
                     {format(parseISO(selectedTask.startDate), 'dd MMM yyyy')} – {format(parseISO(selectedTask.endDate), 'dd MMM yyyy')}
                   </div>
                 </div>
                 <div>
-                  <div className="text-xs text-muted-foreground">Type</div>
+                  <div className="text-xs text-muted-foreground">{t`Type`}</div>
                   <div className="text-sm">
-                    {taskTypeById.get(selectedTask.typeId)?.name ?? 'Unknown'}
+                    {taskTypeById.get(selectedTask.typeId)?.name ?? t`Unknown`}
                   </div>
                 </div>
                 <div>
-                  <div className="text-xs text-muted-foreground">Priority</div>
-                  <div className="text-sm">{selectedTask.priority ?? 'None'}</div>
+                  <div className="text-xs text-muted-foreground">{t`Priority`}</div>
+                  <div className="text-sm">{selectedTask.priority ?? t`None`}</div>
                 </div>
                 <div className="sm:col-span-2">
-                  <div className="text-xs text-muted-foreground">Tags</div>
+                  <div className="text-xs text-muted-foreground">{t`Tags`}</div>
                   {selectedTaskTags.length === 0 ? (
-                    <div className="text-xs text-muted-foreground">No tags</div>
+                    <div className="text-xs text-muted-foreground">{t`No tags`}</div>
                   ) : (
                     <div className="flex flex-wrap gap-1.5">
                       {selectedTaskTags.map((tag) => (
@@ -1727,9 +1846,9 @@ const ProjectsPage = () => {
                 </div>
               </div>
               <div>
-                <div className="text-xs text-muted-foreground">Description</div>
+                <div className="text-xs text-muted-foreground">{t`Description`}</div>
                 {!selectedTask.description && (
-                  <div className="text-sm text-muted-foreground">No description.</div>
+                  <div className="text-sm text-muted-foreground">{t`No description.`}</div>
                 )}
                 {selectedTask.description && hasRichTags(selectedTask.description) && (
                   <div
@@ -1743,10 +1862,10 @@ const ProjectsPage = () => {
               </div>
               <div className="flex justify-end gap-2">
                 <Button onClick={handleOpenTaskInTimeline}>
-                  Перейти к задаче
+                  {t`Go to task`}
                 </Button>
                 <Button variant="outline" onClick={() => setSelectedTaskId(null)}>
-                  Close
+                  {t`Close`}
                 </Button>
               </div>
             </div>
@@ -1764,17 +1883,14 @@ const ProjectsPage = () => {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete project?</AlertDialogTitle>
+            <AlertDialogTitle>{t`Delete project?`}</AlertDialogTitle>
           <AlertDialogDescription>
-              This will remove "{deleteProjectTarget
-                ? formatProjectLabel(deleteProjectTarget.name, deleteProjectTarget.code)
-                : 'this project'}". Tasks will remain, but the project
-              will be cleared from them.
+              {t`This will remove "${deleteProjectLabel}". Tasks will remain, but the project will be cleared from them.`}
           </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setDeleteProjectTarget(null)}>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleConfirmDeleteProject}>Delete</AlertDialogAction>
+            <AlertDialogCancel onClick={() => setDeleteProjectTarget(null)}>{t`Cancel`}</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmDeleteProject}>{t`Delete`}</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -1789,15 +1905,14 @@ const ProjectsPage = () => {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete customer?</AlertDialogTitle>
+            <AlertDialogTitle>{t`Delete customer?`}</AlertDialogTitle>
             <AlertDialogDescription>
-              This will remove "{deleteCustomerTarget?.name ?? 'this customer'}". Projects will remain, but the
-              customer will be cleared from them.
+              {t`This will remove "${deleteCustomerLabel}". Projects will remain, but the customer will be cleared from them.`}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setDeleteCustomerTarget(null)}>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleConfirmDeleteCustomer}>Delete</AlertDialogAction>
+            <AlertDialogCancel onClick={() => setDeleteCustomerTarget(null)}>{t`Cancel`}</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmDeleteCustomer}>{t`Delete`}</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

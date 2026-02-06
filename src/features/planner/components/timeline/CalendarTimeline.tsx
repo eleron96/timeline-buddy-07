@@ -9,6 +9,7 @@ import { formatProjectLabel } from '@/shared/lib/projectLabels';
 import { hexToRgba } from '@/features/planner/lib/colorUtils';
 import { Milestone } from '@/features/planner/types/planner';
 import { ArrowDown, ArrowUp } from 'lucide-react';
+import { t } from '@lingui/macro';
 import {
   addMonths,
   addYears,
@@ -28,7 +29,6 @@ import {
   isSameMonth,
 } from 'date-fns';
 
-const WEEKDAY_LABELS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
 const HOLIDAY_COUNTRY_CODE = 'RU';
 
 export const CalendarTimeline: React.FC = () => {
@@ -60,6 +60,15 @@ export const CalendarTimeline: React.FC = () => {
   const [hasUserScrolled, setHasUserScrolled] = useState(false);
   const initialScrollTopRef = useRef(0);
   const scrollReadyRef = useRef(false);
+  const weekdayLabels = [
+    t`Mon`,
+    t`Tue`,
+    t`Wed`,
+    t`Thu`,
+    t`Fri`,
+    t`Sat`,
+    t`Sun`,
+  ];
 
   const assigneeGroupMap = useMemo(() => {
     const groupByUserId = new Map(memberGroupAssignments.map((assignment) => [assignment.userId, assignment.groupId]));
@@ -348,7 +357,7 @@ export const CalendarTimeline: React.FC = () => {
                           {format(month, 'LLLL yyyy')}
                         </div>
                         <div className="grid grid-cols-7 text-[11px] text-muted-foreground uppercase tracking-wide">
-                          {WEEKDAY_LABELS.map((label) => (
+                          {weekdayLabels.map((label) => (
                             <div key={label} className="flex items-center justify-center py-1">
                               {label}
                             </div>
@@ -444,7 +453,7 @@ export const CalendarTimeline: React.FC = () => {
                                         {milestonesForDay.length > 0 && (
                                           <div className="border-b border-border/60 pb-1">
                                             <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                                              Вехи
+                                              {t`Milestones`}
                                             </div>
                                             <div className="mt-1 space-y-1">
                                               {milestonesForDay.map((milestone) => {
@@ -462,7 +471,7 @@ export const CalendarTimeline: React.FC = () => {
                                                       <div className="text-[10px] text-muted-foreground truncate">
                                                         {project
                                                           ? formatProjectLabel(project.name, project.code)
-                                                          : 'Проект'}
+                                                          : t`Project`}
                                                       </div>
                                                     </div>
                                                   </div>
@@ -472,16 +481,16 @@ export const CalendarTimeline: React.FC = () => {
                                           </div>
                                         )}
                                         <div className="flex items-center justify-between">
-                                          <span className="text-muted-foreground">Всего</span>
+                                          <span className="text-muted-foreground">{t`Total`}</span>
                                           <span className="font-semibold">{counts.total}</span>
                                         </div>
                                         <div className="flex items-center justify-between">
-                                          <span className="text-muted-foreground">Мои</span>
+                                          <span className="text-muted-foreground">{t`Mine`}</span>
                                           <span className="font-semibold">{counts.mine}</span>
                                         </div>
                                         {holidayNames.length > 0 && (
                                           <div className="border-t border-border/60 pt-1 text-[11px] text-muted-foreground">
-                                            <span className="text-foreground">Праздник:</span>{' '}
+                                            <span className="text-foreground">{t`Holiday:`}</span>{' '}
                                             {holidayNames.join(', ')}
                                           </div>
                                         )}
@@ -522,7 +531,7 @@ export const CalendarTimeline: React.FC = () => {
               target.scrollIntoView({ behavior: 'smooth', block: 'start' });
             }
           }}
-          aria-label="Вернуться к текущей дате"
+          aria-label={t`Back to today`}
         >
           {scrollDirection === 'down' ? (
             <ArrowUp className="h-4 w-4" />

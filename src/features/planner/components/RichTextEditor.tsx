@@ -4,6 +4,7 @@ import DOMPurify from 'dompurify';
 import { Button } from '@/shared/ui/button';
 import { toast } from '@/shared/ui/sonner';
 import { cn } from '@/shared/lib/classNames';
+import { t } from '@lingui/macro';
 
 interface RichTextEditorProps {
   id?: string;
@@ -212,8 +213,8 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
   const handleImageFile = useCallback((file: File) => {
     if (!file.type.startsWith('image/')) return;
     if (file.size > MAX_IMAGE_SIZE) {
-      toast('Слишком большой файл', {
-        description: 'Максимальный размер изображения — 5 МБ.',
+      toast(t`File is too large`, {
+        description: t`Maximum image size is 5 MB.`,
       });
       return;
     }
@@ -223,7 +224,7 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
       insertImage(reader.result, file.name || 'Image');
     };
     reader.onerror = () => {
-      toast('Не удалось загрузить изображение');
+      toast(t`Failed to upload image`);
     };
     reader.readAsDataURL(file);
   }, [insertImage]);
@@ -612,14 +613,14 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
             className="w-full rounded-sm px-2 py-1 text-left hover:bg-muted"
             onClick={handleOpenImage}
           >
-            Открыть во весь экран
+            {t`Open fullscreen`}
           </button>
           <button
             type="button"
             className="w-full rounded-sm px-2 py-1 text-left hover:bg-muted"
             onClick={handleRemoveImage}
           >
-            Удалить изображение
+            {t`Remove image`}
           </button>
         </div>
       )}

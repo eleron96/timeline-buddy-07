@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useAuthStore } from '@/features/auth/store/authStore';
+import { t } from '@lingui/macro';
 
 const InvitePage: React.FC = () => {
   const { workspaceId } = useParams();
@@ -41,14 +42,14 @@ const InvitePage: React.FC = () => {
   if (noAccess) {
     return (
       <div className="flex h-screen items-center justify-center text-sm text-destructive">
-        You do not have access to this workspace.
+        {t`You do not have access to this workspace.`}
       </div>
     );
   }
 
   return (
     <div className="flex h-screen items-center justify-center text-sm text-muted-foreground">
-      Checking invite...
+      {t`Checking invite...`}
     </div>
   );
 };

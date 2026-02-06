@@ -30,6 +30,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/shared/ui/tooltip';
 import { Task, TaskPriority } from '@/features/planner/types/planner';
 import { useAuthStore } from '@/features/auth/store/authStore';
 import { addDays, endOfMonth, format, isSameMonth, isSameYear, parseISO } from 'date-fns';
+import { t } from '@lingui/macro';
 
 const areArraysEqual = (left: string[], right: string[]) => {
   if (left.length !== right.length) return false;
@@ -374,18 +375,18 @@ export const TaskDetailPanel: React.FC = () => {
                 </Select>
                 {currentProject && (
                   <div className="text-xs text-muted-foreground">
-                    Customer: {currentProjectCustomer?.name ?? 'No customer'}
+                    {t`Customer`}: {currentProjectCustomer?.name ?? t`No customer`}
                   </div>
                 )}
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="description">Description</Label>
+                <Label htmlFor="description">{t`Description`}</Label>
                 <RichTextEditor
                   id="description"
                   value={task.description || ''}
                   onChange={(value) => handleUpdate('description', value || null)}
-                  placeholder="Add a description..."
+                  placeholder={t`Add a description...`}
                   disabled={isReadOnly}
                   className="max-h-[45vh] overflow-y-auto pr-2"
                 />
@@ -401,10 +402,10 @@ export const TaskDetailPanel: React.FC = () => {
                         <User className="h-4 w-4 text-muted-foreground" />
                       </span>
                     </TooltipTrigger>
-                    <TooltipContent>Исполнители</TooltipContent>
+                    <TooltipContent>{t`Assignees`}</TooltipContent>
                   </Tooltip>
                   <div className="flex-1 min-w-0">
-                    <Label className="sr-only">Assignees</Label>
+                    <Label className="sr-only">{t`Assignees`}</Label>
                     <Popover>
                       <PopoverTrigger asChild>
                         <Button variant="outline" className="h-8 w-full justify-between pl-3 pr-2 text-left text-sm" disabled={isReadOnly}>
@@ -414,7 +415,7 @@ export const TaskDetailPanel: React.FC = () => {
                       </PopoverTrigger>
                       <PopoverContent className="w-64 p-2" align="start">
                         {selectableAssignees.length === 0 ? (
-                          <div className="text-xs text-muted-foreground">Нет доступных исполнителей.</div>
+                          <div className="text-xs text-muted-foreground">{t`No assignees available.`}</div>
                         ) : (
                           <ScrollArea className="max-h-48 pr-2">
                             <div className="space-y-1">
@@ -452,17 +453,17 @@ export const TaskDetailPanel: React.FC = () => {
                         <CircleDot className="h-4 w-4 text-muted-foreground" />
                       </span>
                     </TooltipTrigger>
-                    <TooltipContent>Статус</TooltipContent>
+                    <TooltipContent>{t`Status`}</TooltipContent>
                   </Tooltip>
                   <div className="flex-1 min-w-0">
-                    <Label className="sr-only">Status</Label>
+                    <Label className="sr-only">{t`Status`}</Label>
                     <Select
                       value={task.statusId}
                       onValueChange={(v) => handleUpdate('statusId', v)}
                       disabled={isReadOnly}
                     >
                       <SelectTrigger className="h-8 w-full min-w-0 overflow-hidden pl-3 pr-2 text-left text-sm whitespace-nowrap">
-                        <SelectValue placeholder="Select status" className="truncate text-left" />
+                        <SelectValue placeholder={t`Select status`} className="truncate text-left" />
                       </SelectTrigger>
                       <SelectContent>
                         {statuses.map(s => (
@@ -488,17 +489,17 @@ export const TaskDetailPanel: React.FC = () => {
                         <Layers className="h-4 w-4 text-muted-foreground" />
                       </span>
                     </TooltipTrigger>
-                    <TooltipContent>Тип</TooltipContent>
+                    <TooltipContent>{t`Type`}</TooltipContent>
                   </Tooltip>
                   <div className="flex-1 min-w-0">
-                    <Label className="sr-only">Type</Label>
+                    <Label className="sr-only">{t`Type`}</Label>
                     <Select
                       value={task.typeId}
                       onValueChange={(v) => handleUpdate('typeId', v)}
                       disabled={isReadOnly}
                     >
                       <SelectTrigger className="h-8 w-full pl-3 pr-2 text-left text-sm">
-                        <SelectValue placeholder="Select type" className="truncate text-left" />
+                        <SelectValue placeholder={t`Select type`} className="truncate text-left" />
                       </SelectTrigger>
                       <SelectContent>
                         {taskTypes.map(t => (
@@ -516,23 +517,23 @@ export const TaskDetailPanel: React.FC = () => {
                         <AlertTriangle className="h-4 w-4 text-muted-foreground" />
                       </span>
                     </TooltipTrigger>
-                    <TooltipContent>Приоритет</TooltipContent>
+                    <TooltipContent>{t`Priority`}</TooltipContent>
                   </Tooltip>
                   <div className="flex-1 min-w-0">
-                    <Label className="sr-only">Priority</Label>
+                    <Label className="sr-only">{t`Priority`}</Label>
                     <Select
                       value={task.priority ?? 'none'}
                       onValueChange={(value) => handleUpdate('priority', value === 'none' ? null : (value as TaskPriority))}
                       disabled={isReadOnly}
                     >
                       <SelectTrigger className="h-8 w-full pl-3 pr-2 text-left text-sm">
-                        <SelectValue placeholder="Select priority" className="truncate text-left" />
+                        <SelectValue placeholder={t`Select priority`} className="truncate text-left" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="none">No priority</SelectItem>
-                        <SelectItem value="low">Low</SelectItem>
-                        <SelectItem value="medium">Medium</SelectItem>
-                        <SelectItem value="high">High</SelectItem>
+                        <SelectItem value="none">{t`No priority`}</SelectItem>
+                        <SelectItem value="low">{t`Low`}</SelectItem>
+                        <SelectItem value="medium">{t`Medium`}</SelectItem>
+                        <SelectItem value="high">{t`High`}</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -541,7 +542,7 @@ export const TaskDetailPanel: React.FC = () => {
 
               <div className="grid grid-cols-2 gap-2">
                 <div className="space-y-1">
-                  <Label htmlFor="startDate" className="text-xs text-muted-foreground">Start Date</Label>
+                  <Label htmlFor="startDate" className="text-xs text-muted-foreground">{t`Start Date`}</Label>
                   <Input
                     id="startDate"
                     type="date"
@@ -552,7 +553,7 @@ export const TaskDetailPanel: React.FC = () => {
                   />
                 </div>
                 <div className="space-y-1">
-                  <Label htmlFor="endDate" className="text-xs text-muted-foreground">End Date</Label>
+                  <Label htmlFor="endDate" className="text-xs text-muted-foreground">{t`End Date`}</Label>
                   <Input
                     id="endDate"
                     type="date"

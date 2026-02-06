@@ -22,6 +22,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/
 import { Checkbox } from '@/shared/ui/checkbox';
 import { supabase } from '@/shared/lib/supabaseClient';
 import { splitStatusLabel } from '@/shared/lib/statusLabels';
+import { t } from '@lingui/macro';
 
 export const WorkspaceSwitcher: React.FC = () => {
   const {
@@ -194,7 +195,7 @@ export const WorkspaceSwitcher: React.FC = () => {
     event.preventDefault();
     setCreateError('');
     if (!canCreateWorkspace) {
-      setCreateError('Workspace limit reached (5).');
+      setCreateError(t`Workspace limit reached (5).`);
       return;
     }
     if (!workspaceName.trim()) return;
@@ -215,12 +216,12 @@ export const WorkspaceSwitcher: React.FC = () => {
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button variant="outline" className="gap-2">
-            <span className="max-w-[180px] truncate">{currentWorkspace?.name ?? 'Select workspace'}</span>
+            <span className="max-w-[180px] truncate">{currentWorkspace?.name ?? t`Select workspace`}</span>
             <ChevronDown className="h-4 w-4" />
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="w-56">
-          <DropdownMenuLabel>Workspaces</DropdownMenuLabel>
+          <DropdownMenuLabel>{t`Workspaces`}</DropdownMenuLabel>
           <DropdownMenuRadioGroup
             value={currentWorkspaceId ?? ''}
             onValueChange={(value) => setCurrentWorkspaceId(value)}
@@ -241,7 +242,7 @@ export const WorkspaceSwitcher: React.FC = () => {
             disabled={!canCreateWorkspace}
           >
             <Plus className="mr-2 h-4 w-4" />
-            Create workspace
+            {t`Create workspace`}
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
@@ -249,16 +250,16 @@ export const WorkspaceSwitcher: React.FC = () => {
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Create workspace</DialogTitle>
+            <DialogTitle>{t`Create workspace`}</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleCreateWorkspace} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="workspace-name">Workspace name</Label>
+              <Label htmlFor="workspace-name">{t`Workspace name`}</Label>
               <Input
                 id="workspace-name"
                 value={workspaceName}
                 onChange={(event) => setWorkspaceName(event.target.value)}
-                placeholder="My team workspace"
+                placeholder={t`My team workspace`}
                 autoFocus
                 disabled={!canCreateWorkspace}
               />
@@ -269,7 +270,7 @@ export const WorkspaceSwitcher: React.FC = () => {
 
             <Accordion type="single" collapsible className="rounded-md border px-3">
               <AccordionItem value="template" className="border-none">
-                <AccordionTrigger type="button" className="py-2 text-sm">Workspace template</AccordionTrigger>
+                <AccordionTrigger type="button" className="py-2 text-sm">{t`Workspace template`}</AccordionTrigger>
                 <AccordionContent>
                   <div className="space-y-4">
                     <div className="flex flex-wrap items-center gap-2">
@@ -279,31 +280,31 @@ export const WorkspaceSwitcher: React.FC = () => {
                         onClick={handleCopyWorkspaceToTemplate}
                         disabled={templateLoading}
                       >
-                        Use current workspace
+                        {t`Use current workspace`}
                       </Button>
                       <Button
                         type="button"
                         onClick={handleSaveTemplate}
                         disabled={!user || templateLoading}
                       >
-                        Save template
+                        {t`Save template`}
                       </Button>
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      Template is used for all new workspaces.
+                      {t`Template is used for all new workspaces.`}
                     </p>
                     {templateError && (
                       <div className="text-sm text-destructive">{templateError}</div>
                     )}
                     {templateSaved && (
-                      <div className="text-sm text-emerald-600">Template saved.</div>
+                      <div className="text-sm text-emerald-600">{t`Template saved.`}</div>
                     )}
                     {templateLoading && (
-                      <div className="text-sm text-muted-foreground">Loading template...</div>
+                      <div className="text-sm text-muted-foreground">{t`Loading template...`}</div>
                     )}
 
                     <div className="space-y-3">
-                      <h4 className="text-sm font-semibold">Statuses</h4>
+                      <h4 className="text-sm font-semibold">{t`Statuses`}</h4>
                       <div className="flex gap-2">
                         <EmojiPicker
                           value={newTemplateStatusEmoji}
@@ -312,7 +313,7 @@ export const WorkspaceSwitcher: React.FC = () => {
                           onKeyDown={(e) => e.key === 'Enter' && handleAddTemplateStatus()}
                         />
                         <Input
-                          placeholder="New status name..."
+                          placeholder={t`New status name...`}
                           value={newTemplateStatusName}
                           onChange={(e) => setNewTemplateStatusName(e.target.value)}
                         />
@@ -356,7 +357,7 @@ export const WorkspaceSwitcher: React.FC = () => {
                                     );
                                   }}
                                 />
-                                Final
+                                {t`Final`}
                               </label>
                               <label className="flex items-center gap-1 text-xs text-muted-foreground">
                                 <Checkbox
@@ -371,7 +372,7 @@ export const WorkspaceSwitcher: React.FC = () => {
                                     );
                                   }}
                                 />
-                                Cancelled
+                                {t`Cancelled`}
                               </label>
                             </div>
                             <Button
@@ -392,10 +393,10 @@ export const WorkspaceSwitcher: React.FC = () => {
                     </div>
 
                     <div className="space-y-3">
-                      <h4 className="text-sm font-semibold">Types</h4>
+                      <h4 className="text-sm font-semibold">{t`Types`}</h4>
                       <div className="flex gap-2">
                         <Input
-                          placeholder="New type name..."
+                          placeholder={t`New type name...`}
                           value={newTemplateTypeName}
                           onChange={(e) => setNewTemplateTypeName(e.target.value)}
                         />
@@ -441,10 +442,10 @@ export const WorkspaceSwitcher: React.FC = () => {
                     </div>
 
                     <div className="space-y-3">
-                      <h4 className="text-sm font-semibold">Tags</h4>
+                      <h4 className="text-sm font-semibold">{t`Tags`}</h4>
                       <div className="flex gap-2">
                         <Input
-                          placeholder="New tag name..."
+                          placeholder={t`New tag name...`}
                           value={newTemplateTagName}
                           onChange={(e) => setNewTemplateTagName(e.target.value)}
                         />
@@ -500,10 +501,10 @@ export const WorkspaceSwitcher: React.FC = () => {
 
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>
-                Cancel
+                {t`Cancel`}
               </Button>
               <Button type="submit" disabled={creating || !workspaceName.trim()}>
-                Create
+                {t`Create`}
               </Button>
             </DialogFooter>
           </form>

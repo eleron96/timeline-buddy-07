@@ -11,10 +11,14 @@
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
     "preview": "vite preview",
+    "lingui:extract": "lingui extract",
+    "lingui:compile": "lingui compile --namespace es",
     "test": "vitest run",
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@lingui/core": "^5.9.0",
+    "@lingui/react": "^5.9.0",
     "@hookform/resolvers": "^3.10.0",
     "@radix-ui/react-accordion": "^1.2.11",
     "@radix-ui/react-alert-dialog": "^1.1.14",
@@ -72,6 +76,9 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.32.0",
+    "@lingui/babel-plugin-lingui-macro": "^5.9.0",
+    "@lingui/cli": "^5.9.0",
+    "@lingui/macro": "^5.9.0",
     "@tailwindcss/typography": "^0.5.16",
     "@testing-library/jest-dom": "^6.6.0",
     "@testing-library/react": "^16.0.0",

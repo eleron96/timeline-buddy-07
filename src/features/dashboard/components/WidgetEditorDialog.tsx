@@ -26,6 +26,7 @@ import {
 import { BAR_PALETTES, DEFAULT_BAR_PALETTE, createWidgetId } from '@/features/dashboard/lib/dashboardUtils';
 import { formatStatusLabel } from '@/shared/lib/statusLabels';
 import { formatProjectLabel } from '@/shared/lib/projectLabels';
+import { t } from '@lingui/macro';
 
 interface WidgetEditorDialogProps {
   open: boolean;
@@ -39,61 +40,61 @@ interface WidgetEditorDialogProps {
 }
 
 const periodOptions: Array<{ value: DashboardPeriod; label: string }> = [
-  { value: 'day', label: 'Day' },
-  { value: 'week', label: 'Week' },
-  { value: 'month', label: 'Month' },
+  { value: 'day', label: t`Day` },
+  { value: 'week', label: t`Week` },
+  { value: 'month', label: t`Month` },
 ];
 
 const typeOptions: Array<{ value: DashboardWidgetType; label: string }> = [
-  { value: 'kpi', label: 'KPI' },
-  { value: 'bar', label: 'Bar chart' },
-  { value: 'line', label: 'Line chart' },
-  { value: 'area', label: 'Area chart' },
-  { value: 'pie', label: 'Pie chart (Donut)' },
-  { value: 'milestone', label: 'Milestones' },
+  { value: 'kpi', label: t`KPI` },
+  { value: 'bar', label: t`Bar chart` },
+  { value: 'line', label: t`Line chart` },
+  { value: 'area', label: t`Area chart` },
+  { value: 'pie', label: t`Pie chart (Donut)` },
+  { value: 'milestone', label: t`Milestones` },
 ];
 
 const groupByOptions: Array<{ value: DashboardGroupBy; label: string }> = [
-  { value: 'assignee', label: 'By user' },
-  { value: 'status', label: 'By status' },
-  { value: 'project', label: 'By project' },
+  { value: 'assignee', label: t`By user` },
+  { value: 'status', label: t`By status` },
+  { value: 'project', label: t`By project` },
 ];
 
 const statusFilterOptions: Array<{ value: DashboardStatusFilter; label: string }> = [
-  { value: 'all', label: 'All statuses' },
-  { value: 'active', label: 'Active' },
-  { value: 'final', label: 'Closed' },
-  { value: 'cancelled', label: 'Cancelled' },
-  { value: 'custom', label: 'Custom' },
+  { value: 'all', label: t`All statuses` },
+  { value: 'active', label: t`Active` },
+  { value: 'final', label: t`Closed` },
+  { value: 'cancelled', label: t`Cancelled` },
+  { value: 'custom', label: t`Custom` },
 ];
 
 const filterFieldOptions: Array<{ value: DashboardFilterField; label: string }> = [
-  { value: 'assignee', label: 'User' },
-  { value: 'group', label: 'Group' },
-  { value: 'status', label: 'Status' },
-  { value: 'project', label: 'Project' },
+  { value: 'assignee', label: t`User` },
+  { value: 'group', label: t`Group` },
+  { value: 'status', label: t`Status` },
+  { value: 'project', label: t`Project` },
 ];
 
 const UNASSIGNED_FILTER_VALUE = '__unassigned__';
 
 const filterOperatorOptions: Array<{ value: DashboardFilterOperator; label: string }> = [
-  { value: 'eq', label: 'Equals' },
-  { value: 'neq', label: 'Not equals' },
+  { value: 'eq', label: t`Equals` },
+  { value: 'neq', label: t`Not equals` },
 ];
 
 const groupMatchOptions: Array<{ value: DashboardFilterGroup['match']; label: string }> = [
-  { value: 'and', label: 'Match all rules (AND)' },
-  { value: 'or', label: 'Match any rule (OR)' },
+  { value: 'and', label: t`Match all rules (AND)` },
+  { value: 'or', label: t`Match any rule (OR)` },
 ];
 
 const milestoneViewOptions: Array<{ value: DashboardMilestoneView; label: string }> = [
-  { value: 'list', label: 'List' },
-  { value: 'calendar', label: 'Calendar (month)' },
+  { value: 'list', label: t`List` },
+  { value: 'calendar', label: t`Calendar (month)` },
 ];
 
 const milestoneCalendarModeOptions: Array<{ value: DashboardMilestoneCalendarMode; label: string }> = [
-  { value: 'month', label: 'Current month' },
-  { value: 'rolling', label: 'Month from current week' },
+  { value: 'month', label: t`Current month` },
+  { value: 'rolling', label: t`Month from current week` },
 ];
 
 export const WidgetEditorDialog: React.FC<WidgetEditorDialogProps> = ({
@@ -120,7 +121,7 @@ export const WidgetEditorDialog: React.FC<WidgetEditorDialogProps> = ({
   const [milestoneCalendarMode, setMilestoneCalendarMode] = useState<DashboardMilestoneCalendarMode>('month');
   const [filterGroups, setFilterGroups] = useState<DashboardFilterGroup[]>([]);
 
-  const dialogTitle = initialWidget ? 'Edit widget' : 'New widget';
+  const dialogTitle = initialWidget ? t`Edit widget` : t`New widget`;
   const isChartType = type === 'bar' || type === 'line' || type === 'area' || type === 'pie';
   const isMilestoneWidget = type === 'milestone' || type === 'milestone_calendar';
   const isMilestoneCalendar = isMilestoneWidget && milestoneView === 'calendar';
@@ -168,7 +169,7 @@ export const WidgetEditorDialog: React.FC<WidgetEditorDialogProps> = ({
     }
 
     setWidgetId(createWidgetId());
-    setTitle('New widget');
+    setTitle(t`New widget`);
     setType('kpi');
     setGroupBy('none');
     setPeriod('week');
@@ -296,7 +297,7 @@ export const WidgetEditorDialog: React.FC<WidgetEditorDialogProps> = ({
       }));
     }
     return [
-      { id: UNASSIGNED_FILTER_VALUE, name: 'Unassigned' },
+      { id: UNASSIGNED_FILTER_VALUE, name: t`Unassigned` },
       ...orderedAssignees,
     ];
   };
@@ -348,7 +349,7 @@ export const WidgetEditorDialog: React.FC<WidgetEditorDialogProps> = ({
 
         <div className="flex-1 overflow-y-auto space-y-4 pr-2">
           <div className="space-y-2">
-            <Label htmlFor="widget-title">Title</Label>
+            <Label htmlFor="widget-title">{t`Title`}</Label>
             <Input
               id="widget-title"
               value={title}
@@ -358,7 +359,7 @@ export const WidgetEditorDialog: React.FC<WidgetEditorDialogProps> = ({
 
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-2">
-              <Label>Type</Label>
+              <Label>{t`Type`}</Label>
               <Select value={type} onValueChange={(value) => setType(value as DashboardWidgetType)}>
                 <SelectTrigger>
                   <SelectValue />
@@ -374,7 +375,7 @@ export const WidgetEditorDialog: React.FC<WidgetEditorDialogProps> = ({
             </div>
 
             <div className="space-y-2">
-              <Label>Period</Label>
+              <Label>{t`Period`}</Label>
               <Select
                 value={period}
                 onValueChange={(value) => setPeriod(value as DashboardPeriod)}
@@ -396,7 +397,7 @@ export const WidgetEditorDialog: React.FC<WidgetEditorDialogProps> = ({
 
           {isMilestoneWidget && (
             <div className="space-y-2">
-              <Label>Milestone view</Label>
+              <Label>{t`Milestone view`}</Label>
               <Select
                 value={milestoneView}
                 onValueChange={(value) => setMilestoneView(value as DashboardMilestoneView)}
@@ -417,7 +418,7 @@ export const WidgetEditorDialog: React.FC<WidgetEditorDialogProps> = ({
 
           {isMilestoneCalendar && (
             <div className="space-y-2">
-              <Label>Calendar range</Label>
+              <Label>{t`Calendar range`}</Label>
               <Select
                 value={milestoneCalendarMode}
                 onValueChange={(value) => setMilestoneCalendarMode(value as DashboardMilestoneCalendarMode)}
@@ -438,7 +439,7 @@ export const WidgetEditorDialog: React.FC<WidgetEditorDialogProps> = ({
 
           {showGroupBy && (
             <div className="space-y-2">
-              <Label>Group by</Label>
+              <Label>{t`Group by`}</Label>
               <Select value={groupBy} onValueChange={(value) => setGroupBy(value as DashboardGroupBy)}>
                 <SelectTrigger>
                   <SelectValue />
@@ -456,7 +457,7 @@ export const WidgetEditorDialog: React.FC<WidgetEditorDialogProps> = ({
 
           {showGroupBy && (
             <div className="space-y-2">
-              <Label>Chart palette</Label>
+              <Label>{t`Chart palette`}</Label>
               <Select
                 value={barPalette}
                 onValueChange={(value) => setBarPalette(value as DashboardBarPalette)}
@@ -488,7 +489,7 @@ export const WidgetEditorDialog: React.FC<WidgetEditorDialogProps> = ({
 
           {showTaskFilters && (
             <div className="space-y-2">
-              <Label>Status filter</Label>
+              <Label>{t`Status filter`}</Label>
               <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value as DashboardStatusFilter)}>
                 <SelectTrigger>
                   <SelectValue />
@@ -506,10 +507,10 @@ export const WidgetEditorDialog: React.FC<WidgetEditorDialogProps> = ({
 
           {showTaskFilters && showCustomStatuses && (
             <div className="space-y-2">
-              <Label>Selected statuses</Label>
+              <Label>{t`Selected statuses`}</Label>
               <div className="max-h-48 space-y-2 overflow-y-auto rounded-md border p-3">
                 {orderedStatuses.length === 0 && (
-                  <div className="text-sm text-muted-foreground">No statuses found.</div>
+                  <div className="text-sm text-muted-foreground">{t`No statuses found.`}</div>
                 )}
                 {orderedStatuses.map((status) => (
                   <label key={status.id} className="flex items-center gap-2 text-sm">
@@ -527,9 +528,9 @@ export const WidgetEditorDialog: React.FC<WidgetEditorDialogProps> = ({
           {showGroupBy && groupBy === 'assignee' && (
             <div className="flex items-center justify-between rounded-md border px-3 py-2">
               <div>
-                <div className="text-sm font-medium">Include unassigned</div>
+                <div className="text-sm font-medium">{t`Include unassigned`}</div>
                 <div className="text-xs text-muted-foreground">
-                  Show tasks without an assignee.
+                  {t`Show tasks without an assignee.`}
                 </div>
               </div>
               <Switch checked={includeUnassigned} onCheckedChange={setIncludeUnassigned} />
@@ -539,21 +540,21 @@ export const WidgetEditorDialog: React.FC<WidgetEditorDialogProps> = ({
           {showTaskFilters && (
             <div className="space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <Label>Advanced filters</Label>
+                <Label>{t`Advanced filters`}</Label>
                 <Button variant="outline" size="sm" onClick={addFilterGroup}>
                   <Plus className="h-4 w-4" />
-                  Add group
+                  {t`Add group`}
                 </Button>
               </div>
               {filterGroups.length === 0 && (
                 <div className="text-xs text-muted-foreground">
-                  No advanced filters. Add a group to build custom rules.
+                  {t`No advanced filters. Add a group to build custom rules.`}
                 </div>
               )}
               {filterGroups.map((group, index) => (
                 <div key={group.id} className="space-y-3 rounded-md border p-3">
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="text-sm font-medium">Group {index + 1}</div>
+                    <div className="text-sm font-medium">{t`Group ${index + 1}`}</div>
                     <div className="flex flex-wrap items-center gap-2">
                       <Select
                         value={group.match}
@@ -581,7 +582,7 @@ export const WidgetEditorDialog: React.FC<WidgetEditorDialogProps> = ({
                   </div>
 
                   {group.rules.length === 0 && (
-                    <div className="text-xs text-muted-foreground">No rules yet.</div>
+                    <div className="text-xs text-muted-foreground">{t`No rules yet.`}</div>
                   )}
                   {group.rules.map((rule) => {
                     const options = getRuleOptions(rule.field);
@@ -631,7 +632,7 @@ export const WidgetEditorDialog: React.FC<WidgetEditorDialogProps> = ({
                           disabled={options.length === 0}
                         >
                           <SelectTrigger>
-                            <SelectValue placeholder={options.length ? 'Select value' : 'No options'} />
+                            <SelectValue placeholder={options.length ? t`Select value` : t`No options`} />
                           </SelectTrigger>
                           <SelectContent>
                             {options.map((option) => (
@@ -655,7 +656,7 @@ export const WidgetEditorDialog: React.FC<WidgetEditorDialogProps> = ({
 
                   <Button variant="outline" size="sm" onClick={() => addRuleToGroup(group.id)}>
                     <Plus className="h-4 w-4" />
-                    Add rule
+                    {t`Add rule`}
                   </Button>
                 </div>
               ))}
@@ -665,10 +666,10 @@ export const WidgetEditorDialog: React.FC<WidgetEditorDialogProps> = ({
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancel
+            {t`Cancel`}
           </Button>
           <Button onClick={handleSave} disabled={!canSave}>
-            Save
+            {t`Save`}
           </Button>
         </DialogFooter>
       </DialogContent>

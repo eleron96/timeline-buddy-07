@@ -12,6 +12,7 @@ import {
 import { format, parseISO, addDays, subDays, addWeeks, subWeeks } from '@/features/planner/lib/dateUtils';
 import { addMonths, subMonths } from 'date-fns';
 import { cn } from '@/shared/lib/classNames';
+import { t } from '@lingui/macro';
 
 export const TimelineControls: React.FC = () => {
   const { 
@@ -71,7 +72,7 @@ export const TimelineControls: React.FC = () => {
             onClick={handleToday}
             className="h-8 px-3 text-sm"
           >
-            Today
+            {t`Today`}
           </Button>
           <Button 
             variant="outline" 
@@ -102,7 +103,7 @@ export const TimelineControls: React.FC = () => {
               viewMode === 'day' && 'bg-background shadow-sm'
             )}
           >
-            Day
+            {t`Day`}
           </Button>
           <Button
             variant="ghost"
@@ -113,7 +114,7 @@ export const TimelineControls: React.FC = () => {
               viewMode === 'week' && 'bg-background shadow-sm'
             )}
           >
-            Week
+            {t`Week`}
           </Button>
           <Button
             variant="ghost"
@@ -124,7 +125,7 @@ export const TimelineControls: React.FC = () => {
               viewMode === 'calendar' && 'bg-background shadow-sm'
             )}
           >
-            Calendar
+            {t`Calendar`}
           </Button>
         </div>
         
@@ -140,7 +141,7 @@ export const TimelineControls: React.FC = () => {
             )}
           >
             <Users className="h-3.5 w-3.5" />
-            People
+            {t`People`}
           </Button>
           <Button
             variant="ghost"
@@ -152,23 +153,23 @@ export const TimelineControls: React.FC = () => {
             )}
           >
             <FolderKanban className="h-3.5 w-3.5" />
-            Projects
+            {t`Projects`}
           </Button>
         </div>
 
         <div
           className="flex items-center gap-2 text-[11px] text-muted-foreground/70 select-none"
-          title="Не показывать неназначенные"
+          title={t`Hide unassigned`}
         >
           <Checkbox
             id={hideUnassignedId}
             checked={filters.hideUnassigned}
             onCheckedChange={(value) => setFilters({ hideUnassigned: value === true })}
             className="scale-75 border-muted-foreground/40 data-[state=checked]:bg-muted-foreground/60 data-[state=checked]:border-muted-foreground/60 data-[state=checked]:text-white/90"
-            aria-label="Не показывать неназначенные"
+            aria-label={t`Hide unassigned`}
           />
           <label htmlFor={hideUnassignedId} className="cursor-pointer">
-            Без&nbsp;назнач.
+            {t`Unassigned`}
           </label>
         </div>
       </div>

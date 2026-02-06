@@ -2,6 +2,8 @@ import { create } from 'zustand';
 import type { Session, User } from '@supabase/supabase-js';
 import { supabase } from '@/shared/lib/supabaseClient';
 import { usePlannerStore } from '@/features/planner/store/plannerStore';
+import { useLocaleStore } from '@/shared/store/localeStore';
+import type { Locale } from '@/shared/lib/locale';
 
 export type WorkspaceRole = 'viewer' | 'editor' | 'admin';
 
@@ -77,6 +79,7 @@ interface AuthState {
   members: WorkspaceMember[];
   membersLoading: boolean;
   profileDisplayName: string | null;
+  profileLocale: Locale | null;
   isSuperAdmin: boolean;
   superAdminLoading: boolean;
   adminUsers: AdminUser[];
@@ -125,6 +128,7 @@ interface AuthState {
   updateMemberGroup: (userId: string, groupId: string | null) => Promise<{ error?: string }>;
   removeMember: (userId: string) => Promise<{ error?: string }>;
   updateDisplayName: (displayName: string) => Promise<{ error?: string }>;
+  updateLocale: (locale: Locale) => Promise<{ error?: string }>;
 }
 
 const getWorkspaceStorageKey = (userId: string) => `current-workspace-${userId}`;
@@ -215,6 +219,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   members: [],
   membersLoading: false,
   profileDisplayName: null,
+  profileLocale: null,
   isSuperAdmin: false,
   superAdminLoading: false,
   adminUsers: [],
@@ -235,6 +240,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       session,
       user,
       profileDisplayName: null,
+      profileLocale: null,
       isSuperAdmin: false,
       superAdminLoading: Boolean(user),
     });
@@ -472,6 +478,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       backupsLoading: false,
       backupsError: null,
       profileDisplayName: null,
+      profileLocale: null,
       isSuperAdmin: false,
       superAdminLoading: false,
     });
@@ -537,7 +544,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
     const { data, error } = await supabase
       .from('profiles')
-      .select('display_name')
+      .select('display_name, locale')
       .eq('id', user.id)
       .single();
 
@@ -547,7 +554,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
 
     const displayName = data?.display_name?.trim();
-    set({ profileDisplayName: displayName ? displayName : null });
+    const profileLocale = (typeof data?.locale === 'string' ? data.locale : null) as Locale | null;
+    set({
+      profileDisplayName: displayName ? displayName : null,
+      profileLocale,
+    });
+    useLocaleStore.getState().setLocaleFromProfile(profileLocale);
   },
   setCurrentWorkspaceId: (id) => {
     const user = get().user;
@@ -751,6 +763,22 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       await get().fetchMembers(workspaceId);
     }
     await usePlannerStore.getState().refreshAssignees();
+    return {};
+  },
+  updateLocale: async (locale) => {
+    const user = get().user;
+    if (!user) return { error: 'You are not signed in.' };
+
+    const { error } = await supabase
+      .from('profiles')
+      .update({ locale })
+      .eq('id', user.id);
+
+    if (error) {
+      return { error: error.message };
+    }
+
+    set({ profileLocale: locale });
     return {};
   },
 }));
