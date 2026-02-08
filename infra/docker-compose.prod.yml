@@ -190,12 +190,46 @@ services:
         VITE_KEYCLOAK_PUBLIC_URL: ${VITE_KEYCLOAK_PUBLIC_URL:-http://localhost:8081}
         VITE_KEYCLOAK_REALM: ${VITE_KEYCLOAK_REALM:-timeline}
         VITE_KEYCLOAK_CLIENT_ID: ${VITE_KEYCLOAK_CLIENT_ID:-timeline-supabase}
+        VITE_OAUTH2_PROXY_ENABLED: ${VITE_OAUTH2_PROXY_ENABLED:-true}
+        VITE_OAUTH2_PROXY_SIGN_OUT_PATH: ${VITE_OAUTH2_PROXY_SIGN_OUT_PATH:-/oauth2/sign_out}
     restart: unless-stopped
     depends_on:
       gateway:
         condition: service_started
+
+  oauth2-proxy:
+    image: quay.io/oauth2-proxy/oauth2-proxy:v7.6.0
+    restart: unless-stopped
+    depends_on:
+      web:
+        condition: service_started
+      keycloak:
+        condition: service_started
     ports:
-      - "5173:80"
+      - "5173:4180"
+    environment:
+      OAUTH2_PROXY_HTTP_ADDRESS: 0.0.0.0:4180
+      OAUTH2_PROXY_PROVIDER: oidc
+      OAUTH2_PROXY_SKIP_OIDC_DISCOVERY: ${OAUTH2_PROXY_SKIP_OIDC_DISCOVERY:-true}
+      OAUTH2_PROXY_OIDC_ISSUER_URL: ${OAUTH2_PROXY_OIDC_ISSUER_URL:-http://localhost:8081/realms/timeline}
+      OAUTH2_PROXY_LOGIN_URL: ${OAUTH2_PROXY_LOGIN_URL:-http://localhost:8081/realms/timeline/protocol/openid-connect/auth}
+      OAUTH2_PROXY_REDEEM_URL: ${OAUTH2_PROXY_REDEEM_URL:-http://keycloak:8080/realms/timeline/protocol/openid-connect/token}
+      OAUTH2_PROXY_PROFILE_URL: ${OAUTH2_PROXY_PROFILE_URL:-http://keycloak:8080/realms/timeline/protocol/openid-connect/userinfo}
+      OAUTH2_PROXY_OIDC_JWKS_URL: ${OAUTH2_PROXY_OIDC_JWKS_URL:-http://keycloak:8080/realms/timeline/protocol/openid-connect/certs}
+      OAUTH2_PROXY_CLIENT_ID: ${OAUTH2_PROXY_CLIENT_ID:-timeline-supabase}
+      OAUTH2_PROXY_CLIENT_SECRET: ${OAUTH2_PROXY_CLIENT_SECRET:-timeline-supabase-dev-secret-change-me}
+      OAUTH2_PROXY_REDIRECT_URL: ${OAUTH2_PROXY_REDIRECT_URL:-http://localhost:5173/oauth2/callback}
+      OAUTH2_PROXY_SCOPE: ${OAUTH2_PROXY_SCOPE:-openid profile email}
+      OAUTH2_PROXY_EMAIL_DOMAINS: ${OAUTH2_PROXY_EMAIL_DOMAINS:-*}
+      OAUTH2_PROXY_UPSTREAMS: http://web:80/
+      OAUTH2_PROXY_COOKIE_SECRET: ${OAUTH2_PROXY_COOKIE_SECRET}
+      OAUTH2_PROXY_COOKIE_SECURE: ${OAUTH2_PROXY_COOKIE_SECURE:-false}
+      OAUTH2_PROXY_COOKIE_SAMESITE: ${OAUTH2_PROXY_COOKIE_SAMESITE:-lax}
+      OAUTH2_PROXY_REVERSE_PROXY: "true"
+      OAUTH2_PROXY_PASS_ACCESS_TOKEN: "true"
+      OAUTH2_PROXY_SET_XAUTHREQUEST: "true"
+      OAUTH2_PROXY_SKIP_PROVIDER_BUTTON: "true"
+      OAUTH2_PROXY_SILENCE_PING_LOGGING: "true"
 
   migrate:
     image: postgres:15-alpine

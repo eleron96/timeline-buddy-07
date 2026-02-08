@@ -167,6 +167,31 @@ const getBackupBaseUrl = () => {
   return base ? `${base}/backup` : '';
 };
 
+const trimTrailingSlash = (value: string) => value.replace(/\/+$/, '');
+
+const getOauth2ProxySignOutPath = () => {
+  const signOutPath = (import.meta.env.VITE_OAUTH2_PROXY_SIGN_OUT_PATH ?? '/oauth2/sign_out').trim();
+  if (!signOutPath) return '/oauth2/sign_out';
+  const separator = signOutPath.includes('?') ? '&' : '?';
+  return `${signOutPath}${separator}rd=${encodeURIComponent('/auth')}`;
+};
+
+const getKeycloakLogoutUrl = (postLogoutRedirectUri: string) => {
+  const keycloakPublicUrl = trimTrailingSlash((import.meta.env.VITE_KEYCLOAK_PUBLIC_URL ?? '').trim());
+  const keycloakRealm = (import.meta.env.VITE_KEYCLOAK_REALM ?? '').trim();
+  const keycloakClientId = (import.meta.env.VITE_KEYCLOAK_CLIENT_ID ?? '').trim();
+
+  if (!keycloakPublicUrl || !keycloakRealm || !keycloakClientId) {
+    return null;
+  }
+
+  return (
+    `${keycloakPublicUrl}/realms/${encodeURIComponent(keycloakRealm)}/protocol/openid-connect/logout`
+    + `?client_id=${encodeURIComponent(keycloakClientId)}`
+    + `&post_logout_redirect_uri=${encodeURIComponent(postLogoutRedirectUri)}`
+  );
+};
+
 const parseBackupApiError = async (response: Response) => {
   let message = response.statusText || 'Backup request failed.';
   try {
@@ -614,6 +639,18 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     });
 
     if (typeof window !== 'undefined') {
+      const oauth2ProxyEnabled = import.meta.env.VITE_OAUTH2_PROXY_ENABLED === 'true';
+      if (oauth2ProxyEnabled) {
+        const proxySignOutPath = getOauth2ProxySignOutPath();
+        const proxySignOutAbsoluteUrl = new URL(proxySignOutPath, window.location.origin).toString();
+        const keycloakLogoutUrl = getKeycloakLogoutUrl(proxySignOutAbsoluteUrl);
+        if (keycloakLogoutUrl) {
+          window.location.replace(keycloakLogoutUrl);
+          return;
+        }
+        window.location.replace(proxySignOutPath);
+        return;
+      }
       window.location.replace('/auth');
     }
   },

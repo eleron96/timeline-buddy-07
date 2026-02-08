@@ -50,10 +50,26 @@ const envPath = path.join(process.cwd(), '.env');
     KEYCLOAK_DB_NAME: 'keycloak',
     KEYCLOAK_DB_USER: 'keycloak',
     KEYCLOAK_DB_PASSWORD: 'keycloak',
+    OAUTH2_PROXY_SKIP_OIDC_DISCOVERY: 'true',
+    OAUTH2_PROXY_OIDC_ISSUER_URL: 'http://localhost:8081/realms/timeline',
+    OAUTH2_PROXY_LOGIN_URL: 'http://localhost:8081/realms/timeline/protocol/openid-connect/auth',
+    OAUTH2_PROXY_REDEEM_URL: 'http://keycloak:8080/realms/timeline/protocol/openid-connect/token',
+    OAUTH2_PROXY_PROFILE_URL: 'http://keycloak:8080/realms/timeline/protocol/openid-connect/userinfo',
+    OAUTH2_PROXY_OIDC_JWKS_URL: 'http://keycloak:8080/realms/timeline/protocol/openid-connect/certs',
+    OAUTH2_PROXY_CLIENT_ID: 'timeline-supabase',
+    OAUTH2_PROXY_CLIENT_SECRET: 'timeline-supabase-dev-secret-change-me',
+    OAUTH2_PROXY_REDIRECT_URL: 'http://localhost:5173/oauth2/callback',
+    OAUTH2_PROXY_SCOPE: 'openid profile email',
+    OAUTH2_PROXY_EMAIL_DOMAINS: '*',
+    OAUTH2_PROXY_COOKIE_SECRET: '',
+    OAUTH2_PROXY_COOKIE_SECURE: 'false',
+    OAUTH2_PROXY_COOKIE_SAMESITE: 'lax',
     RESERVE_ADMIN_EMAIL: '',
     RESERVE_ADMIN_PASSWORD: '',
     VITE_RESERVE_ADMIN_EMAIL: '',
     VITE_AUTH_MODE: 'keycloak',
+    VITE_OAUTH2_PROXY_ENABLED: 'true',
+    VITE_OAUTH2_PROXY_SIGN_OUT_PATH: '/oauth2/sign_out',
     PGRST_DB_URI: 'postgresql://postgres:postgres@db:5432/postgres',
     GOTRUE_DB_DATABASE_URL: 'postgresql://postgres:postgres@db:5432/postgres?search_path=auth',
     SUPABASE_DB_URL: 'postgresql://postgres:postgres@db:5432/postgres',
@@ -187,6 +203,11 @@ if (!('JWT_SECRET' in entries) || !('ANON_KEY' in entries) || !('SERVICE_ROLE_KE
   updated = true;
 }
 
+if (!entries.OAUTH2_PROXY_COOKIE_SECRET) {
+  entries.OAUTH2_PROXY_COOKIE_SECRET = crypto.randomBytes(32).toString('base64');
+  updated = true;
+}
+
 const apiUrl = entries.VITE_SUPABASE_URL || 'http://localhost:8080';
 const anonKey = entries.ANON_KEY || '';
 
@@ -300,10 +321,26 @@ const entries = Object.fromEntries(env.split('\n')
     KEYCLOAK_DB_NAME: 'keycloak',
     KEYCLOAK_DB_USER: 'keycloak',
     KEYCLOAK_DB_PASSWORD: 'keycloak',
+    OAUTH2_PROXY_SKIP_OIDC_DISCOVERY: 'true',
+    OAUTH2_PROXY_OIDC_ISSUER_URL: 'http://localhost:8081/realms/timeline',
+    OAUTH2_PROXY_LOGIN_URL: 'http://localhost:8081/realms/timeline/protocol/openid-connect/auth',
+    OAUTH2_PROXY_REDEEM_URL: 'http://keycloak:8080/realms/timeline/protocol/openid-connect/token',
+    OAUTH2_PROXY_PROFILE_URL: 'http://keycloak:8080/realms/timeline/protocol/openid-connect/userinfo',
+    OAUTH2_PROXY_OIDC_JWKS_URL: 'http://keycloak:8080/realms/timeline/protocol/openid-connect/certs',
+    OAUTH2_PROXY_CLIENT_ID: 'timeline-supabase',
+    OAUTH2_PROXY_CLIENT_SECRET: 'timeline-supabase-dev-secret-change-me',
+    OAUTH2_PROXY_REDIRECT_URL: 'http://localhost:5173/oauth2/callback',
+    OAUTH2_PROXY_SCOPE: 'openid profile email',
+    OAUTH2_PROXY_EMAIL_DOMAINS: '*',
+    OAUTH2_PROXY_COOKIE_SECRET: '',
+    OAUTH2_PROXY_COOKIE_SECURE: 'false',
+    OAUTH2_PROXY_COOKIE_SAMESITE: 'lax',
     RESERVE_ADMIN_EMAIL: '',
     RESERVE_ADMIN_PASSWORD: '',
     VITE_RESERVE_ADMIN_EMAIL: '',
     VITE_AUTH_MODE: 'keycloak',
+    VITE_OAUTH2_PROXY_ENABLED: 'true',
+    VITE_OAUTH2_PROXY_SIGN_OUT_PATH: '/oauth2/sign_out',
     PGRST_DB_URI: 'postgresql://postgres:postgres@db:5432/postgres',
     GOTRUE_DB_DATABASE_URL: 'postgresql://postgres:postgres@db:5432/postgres?search_path=auth',
     SUPABASE_DB_URL: 'postgresql://postgres:postgres@db:5432/postgres',
@@ -386,6 +423,11 @@ if (!('JWT_SECRET' in entries) || !('ANON_KEY' in entries) || !('SERVICE_ROLE_KE
   entries.JWT_SECRET = jwtSecret;
   entries.ANON_KEY = createJwt({ role: 'anon', iss: 'supabase', iat: now, exp }, jwtSecret);
   entries.SERVICE_ROLE_KEY = createJwt({ role: 'service_role', iss: 'supabase', iat: now, exp }, jwtSecret);
+  updated = true;
+}
+
+if (!entries.OAUTH2_PROXY_COOKIE_SECRET) {
+  entries.OAUTH2_PROXY_COOKIE_SECRET = crypto.randomBytes(32).toString('base64');
   updated = true;
 }
 
@@ -482,4 +524,4 @@ else
   echo "Warning: curl is not installed, skipping Keycloak sync bootstrap request." >&2
 fi
 
-docker compose -f "$compose_file" --env-file "$env_file" up web
+docker compose -f "$compose_file" --env-file "$env_file" up web oauth2-proxy

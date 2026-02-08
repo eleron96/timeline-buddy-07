@@ -39,9 +39,9 @@ make up
 ```
 
 Что произойдет:
-- Поднимется Supabase‑стек (db/auth/rest/functions/gateway) и фронтенд.
+- Поднимется Supabase‑стек (db/auth/rest/functions/gateway), фронтенд и `oauth2-proxy`.
 - Поднимется Keycloak (`keycloak-db` + `keycloak`) для входа через OIDC.
-- `.env` будет сгенерирован автоматически (JWT/ANON/SERVICE роли).
+- `.env` будет сгенерирован автоматически (JWT/ANON/SERVICE роли и `OAUTH2_PROXY_COOKIE_SECRET`).
 - Данные сохраняются в volume `supabase_db_data`.
 
 Остановить контейнеры (данные сохраняются):
@@ -72,9 +72,9 @@ make up-prod
 ```
 
 Что произойдет:
-- Поднимутся `db/keycloak-db/keycloak/auth/rest/functions/backup/gateway`.
+- Поднимутся `db/keycloak-db/keycloak/auth/rest/functions/backup/gateway/web/oauth2-proxy`.
 - Применятся миграции.
-- Соберется фронтенд‑образ и поднимется `web` без `vite dev`.
+- Соберется фронтенд‑образ и поднимутся `web` + `oauth2-proxy`.
 - В production отключена открытая регистрация: вход только по инвайтам.
 - Резервный super admin будет создан автоматически из `RESERVE_ADMIN_EMAIL`/`RESERVE_ADMIN_PASSWORD`.
 
@@ -96,6 +96,7 @@ make logs-prod
 - после деплоя пользователи получают новый функционал после перезагрузки страницы.
 
 Авторизация:
+- Frontend на `http://localhost:5173` идет через `oauth2-proxy` (OIDC в Keycloak).
 - Страница `/auth` работает в режиме Keycloak-only.
 - Локальные формы логина/регистрации/сброса пароля отключены.
 
@@ -155,7 +156,11 @@ npm run dev:compose
 - `KEYCLOAK_ADMIN`, `KEYCLOAK_ADMIN_PASSWORD` — логин/пароль админки Keycloak.
 - `KEYCLOAK_DB_NAME`, `KEYCLOAK_DB_USER`, `KEYCLOAK_DB_PASSWORD` — БД Keycloak.
 - `KEYCLOAK_INTERNAL_URL`, `KEYCLOAK_REALM`, `KEYCLOAK_ADMIN_REALM`, `KEYCLOAK_ADMIN_CLIENT_ID`, `KEYCLOAK_APP_CLIENT_ID` — доступ Edge Functions к Keycloak Admin API.
+- `OAUTH2_PROXY_OIDC_ISSUER_URL`, `OAUTH2_PROXY_CLIENT_ID`, `OAUTH2_PROXY_CLIENT_SECRET`, `OAUTH2_PROXY_REDIRECT_URL` — OIDC-настройки `oauth2-proxy`.
+- `OAUTH2_PROXY_COOKIE_SECRET` — секрет cookie-сессии `oauth2-proxy` (для production обязателен).
+- `OAUTH2_PROXY_SCOPE`, `OAUTH2_PROXY_EMAIL_DOMAINS`, `OAUTH2_PROXY_COOKIE_SECURE`, `OAUTH2_PROXY_COOKIE_SAMESITE` — поведение и безопасность cookie/доступа.
 - `VITE_AUTH_MODE` — оставляйте `keycloak` (поддерживается только Keycloak-only режим).
+- `VITE_OAUTH2_PROXY_ENABLED`, `VITE_OAUTH2_PROXY_SIGN_OUT_PATH` — клиентская логика выхода через `oauth2-proxy`.
 - `BACKUP_RETENTION_COUNT` — сколько последних `.dump` хранить локально (по умолчанию `30`).
 - `BACKUP_SCHEMAS` — схемы для backup/restore (по умолчанию `public,auth,storage`).
 - `BACKUP_RESTORE_DB_URL` — отдельный URL для restore (если не задан, используется `SUPABASE_DB_URL` с пользователем `supabase_admin`).

@@ -30,11 +30,32 @@ get_env_value() {
   echo "${line#*=}"
 }
 
+set_env_value() {
+  local key="$1"
+  local value="$2"
+  local tmp_file
+  tmp_file="$(mktemp)"
+  awk -F= -v key="$key" -v value="$value" '
+    BEGIN { updated = 0 }
+    $1 == key {
+      print key "=" value
+      updated = 1
+      next
+    }
+    { print $0 }
+    END {
+      if (!updated) print key "=" value
+    }
+  ' "$env_file" > "$tmp_file"
+  mv "$tmp_file" "$env_file"
+}
+
 POSTGRES_USER="$(get_env_value POSTGRES_USER)"
 POSTGRES_DB="$(get_env_value POSTGRES_DB)"
 POSTGRES_PASSWORD="$(get_env_value POSTGRES_PASSWORD)"
 RESERVE_ADMIN_EMAIL="$(get_env_value RESERVE_ADMIN_EMAIL)"
 RESERVE_ADMIN_PASSWORD="$(get_env_value RESERVE_ADMIN_PASSWORD)"
+OAUTH2_PROXY_COOKIE_SECRET="$(get_env_value OAUTH2_PROXY_COOKIE_SECRET)"
 
 POSTGRES_USER="${POSTGRES_USER:-postgres}"
 POSTGRES_DB="${POSTGRES_DB:-postgres}"
@@ -43,6 +64,19 @@ POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-postgres}"
 if [[ -z "$RESERVE_ADMIN_EMAIL" || -z "$RESERVE_ADMIN_PASSWORD" ]]; then
   echo "RESERVE_ADMIN_EMAIL and RESERVE_ADMIN_PASSWORD are required for invite-only production mode." >&2
   exit 1
+fi
+
+if [[ -z "$OAUTH2_PROXY_COOKIE_SECRET" ]]; then
+  if command -v openssl >/dev/null 2>&1; then
+    OAUTH2_PROXY_COOKIE_SECRET="$(openssl rand -base64 32)"
+  elif command -v node >/dev/null 2>&1; then
+    OAUTH2_PROXY_COOKIE_SECRET="$(node -e "process.stdout.write(require('node:crypto').randomBytes(32).toString('base64'))")"
+  else
+    echo "OAUTH2_PROXY_COOKIE_SECRET is missing and neither openssl nor node is available to generate it." >&2
+    exit 1
+  fi
+  set_env_value "OAUTH2_PROXY_COOKIE_SECRET" "$OAUTH2_PROXY_COOKIE_SECRET"
+  echo "Generated OAUTH2_PROXY_COOKIE_SECRET in $env_file"
 fi
 
 export COMPOSE_MENU=0
@@ -86,7 +120,7 @@ else
   echo "Warning: curl is not installed, skipping Keycloak sync bootstrap request." >&2
 fi
 
-docker compose -f "$compose_file" --env-file "$env_file" up -d --build web
+docker compose -f "$compose_file" --env-file "$env_file" up -d --build web oauth2-proxy
 
 echo "Production stack is running."
 echo "Frontend: http://localhost:5173"
