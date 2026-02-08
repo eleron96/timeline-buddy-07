@@ -16,6 +16,7 @@ dist
 dist-ssr
 *.local
 .env
+.env.compose
 .supabase
 .supabase-functions.log
 .supabase-functions.env
