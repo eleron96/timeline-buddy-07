@@ -450,5 +450,6 @@ docker exec -e PGPASSWORD="$POSTGRES_PASSWORD" supabase-db psql -U "$POSTGRES_US
 # Let GoTrue apply its own auth migrations on startup.
 
 docker compose -f "$compose_file" --env-file "$env_file" up -d keycloak-db keycloak auth rest functions gateway
+docker compose -f "$compose_file" --env-file "$env_file" restart gateway >/dev/null 2>&1 || true
 docker compose -f "$compose_file" --env-file "$env_file" run --rm migrate
 docker compose -f "$compose_file" --env-file "$env_file" up web

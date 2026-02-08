@@ -57,6 +57,7 @@ until docker compose -f "$compose_file" --env-file "$env_file" exec -T \
 done
 
 docker compose -f "$compose_file" --env-file "$env_file" up -d keycloak-db keycloak auth rest functions backup gateway
+docker compose -f "$compose_file" --env-file "$env_file" restart gateway >/dev/null 2>&1 || true
 
 docker compose -f "$compose_file" --env-file "$env_file" run --rm migrate
 
