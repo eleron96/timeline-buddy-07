@@ -74,6 +74,9 @@ const envPath = path.join(process.cwd(), '.env');
     GOTRUE_DB_DATABASE_URL: 'postgresql://postgres:postgres@db:5432/postgres?search_path=auth',
     SUPABASE_DB_URL: 'postgresql://postgres:postgres@db:5432/postgres',
     SUPABASE_INTERNAL_URL: 'http://gateway:8080',
+    AUTO_PRE_MIGRATION_BACKUP: 'true',
+    LIQUIBASE_LOG_LEVEL: 'info',
+    MIGRATION_MAX_WAIT_SECONDS: '300',
     VITE_SUPABASE_URL: 'http://localhost:8080',
     VITE_SUPABASE_ANON_KEY: '',
   };
@@ -345,6 +348,9 @@ const entries = Object.fromEntries(env.split('\n')
     GOTRUE_DB_DATABASE_URL: 'postgresql://postgres:postgres@db:5432/postgres?search_path=auth',
     SUPABASE_DB_URL: 'postgresql://postgres:postgres@db:5432/postgres',
     SUPABASE_INTERNAL_URL: 'http://gateway:8080',
+    AUTO_PRE_MIGRATION_BACKUP: 'true',
+    LIQUIBASE_LOG_LEVEL: 'info',
+    MIGRATION_MAX_WAIT_SECONDS: '300',
     VITE_SUPABASE_URL: 'http://localhost:8080',
     VITE_SUPABASE_ANON_KEY: '',
   };
@@ -490,8 +496,6 @@ until docker exec -e PGPASSWORD="$POSTGRES_PASSWORD" supabase-db pg_isready -U "
   echo "Waiting for database..."
   sleep 2
 done
-
-docker exec -e PGPASSWORD="$POSTGRES_PASSWORD" supabase-db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -c "drop table if exists public.schema_migrations;"
 
 # Let GoTrue apply its own auth migrations on startup.
 

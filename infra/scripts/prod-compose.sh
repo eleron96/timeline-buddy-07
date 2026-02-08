@@ -50,16 +50,33 @@ set_env_value() {
   mv "$tmp_file" "$env_file"
 }
 
+normalize_bool() {
+  local value="${1:-}"
+  value="$(printf '%s' "$value" | tr '[:upper:]' '[:lower:]')"
+  case "$value" in
+    1|true|yes|on)
+      echo "true"
+      ;;
+    *)
+      echo "false"
+      ;;
+  esac
+}
+
 POSTGRES_USER="$(get_env_value POSTGRES_USER)"
 POSTGRES_DB="$(get_env_value POSTGRES_DB)"
 POSTGRES_PASSWORD="$(get_env_value POSTGRES_PASSWORD)"
 RESERVE_ADMIN_EMAIL="$(get_env_value RESERVE_ADMIN_EMAIL)"
 RESERVE_ADMIN_PASSWORD="$(get_env_value RESERVE_ADMIN_PASSWORD)"
 OAUTH2_PROXY_COOKIE_SECRET="$(get_env_value OAUTH2_PROXY_COOKIE_SECRET)"
+AUTO_PRE_MIGRATION_BACKUP="$(get_env_value AUTO_PRE_MIGRATION_BACKUP)"
+BACKUP_SCHEMAS="$(get_env_value BACKUP_SCHEMAS)"
 
 POSTGRES_USER="${POSTGRES_USER:-postgres}"
 POSTGRES_DB="${POSTGRES_DB:-postgres}"
 POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-postgres}"
+AUTO_PRE_MIGRATION_BACKUP="$(normalize_bool "${AUTO_PRE_MIGRATION_BACKUP:-true}")"
+BACKUP_SCHEMAS="${BACKUP_SCHEMAS:-public,auth,storage}"
 
 if [[ -z "$RESERVE_ADMIN_EMAIL" || -z "$RESERVE_ADMIN_PASSWORD" ]]; then
   echo "RESERVE_ADMIN_EMAIL and RESERVE_ADMIN_PASSWORD are required for invite-only production mode." >&2
@@ -91,6 +108,55 @@ until docker compose -f "$compose_file" --env-file "$env_file" exec -T \
 done
 
 docker compose -f "$compose_file" --env-file "$env_file" up -d keycloak-db keycloak auth rest functions backup gateway
+
+if [[ "$AUTO_PRE_MIGRATION_BACKUP" == "true" ]]; then
+  until docker compose -f "$compose_file" --env-file "$env_file" exec -T \
+    -e PGPASSWORD="$POSTGRES_PASSWORD" db \
+    psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc "select 1 from pg_tables where schemaname='auth' and tablename='users'" | grep -q 1; do
+    echo "Waiting for auth schema before pre-migration backup..."
+    sleep 2
+  done
+
+  backup_dir="infra/backups"
+  backup_file="pre-migrate-$(date +%Y%m%d-%H%M%S).dump"
+  backup_path="$backup_dir/$backup_file"
+  mkdir -p "$backup_dir"
+
+  schema_args=()
+  IFS=',' read -r -a requested_schemas <<< "$BACKUP_SCHEMAS"
+  for schema in "${requested_schemas[@]}"; do
+    schema="$(echo "$schema" | xargs)"
+    if [[ -z "$schema" ]]; then
+      continue
+    fi
+    if [[ ! "$schema" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]]; then
+      echo "Invalid schema name in BACKUP_SCHEMAS: $schema" >&2
+      exit 1
+    fi
+    schema_exists=$(docker compose -f "$compose_file" --env-file "$env_file" exec -T \
+      -e PGPASSWORD="$POSTGRES_PASSWORD" db \
+      psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc "select 1 from pg_namespace where nspname='${schema}'" | tr -d '[:space:]')
+    if [[ "$schema_exists" == "1" ]]; then
+      schema_args+=("--schema=${schema}")
+    else
+      echo "Skipping missing schema '$schema' in pre-migration backup."
+    fi
+  done
+
+  if [[ "${#schema_args[@]}" -eq 0 ]]; then
+    echo "No valid schemas resolved for pre-migration backup. Aborting deployment for safety." >&2
+    exit 1
+  fi
+
+  echo "Creating pre-migration backup: $backup_path"
+  docker compose -f "$compose_file" --env-file "$env_file" exec -T \
+    -e PGPASSWORD="$POSTGRES_PASSWORD" db \
+    pg_dump --format=custom --no-owner "${schema_args[@]}" -U "$POSTGRES_USER" -d "$POSTGRES_DB" > "$backup_path"
+  echo "Pre-migration backup created: $backup_path"
+else
+  echo "AUTO_PRE_MIGRATION_BACKUP=false, skipping pre-migration backup."
+fi
+
 docker compose -f "$compose_file" --env-file "$env_file" restart gateway >/dev/null 2>&1 || true
 
 docker compose -f "$compose_file" --env-file "$env_file" run --rm migrate

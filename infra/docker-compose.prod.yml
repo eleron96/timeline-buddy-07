@@ -232,16 +232,22 @@ services:
       OAUTH2_PROXY_SILENCE_PING_LOGGING: "true"
 
   migrate:
-    image: postgres:15-alpine
+    image: liquibase/liquibase:4.27
     depends_on:
       db:
         condition: service_healthy
     environment:
-      PGPASSWORD: ${POSTGRES_PASSWORD}
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: ${POSTGRES_DB}
+      DB_USER: ${POSTGRES_USER}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      MIGRATION_CHANGELOG_FILE: liquibase/changelog-master.xml
+      LIQUIBASE_LOG_LEVEL: ${LIQUIBASE_LOG_LEVEL:-info}
+      MIGRATION_MAX_WAIT_SECONDS: ${MIGRATION_MAX_WAIT_SECONDS:-300}
     volumes:
-      - ./supabase/migrations:/migrations:ro
-      - ./supabase/migrate.sh:/migrate.sh:ro
-    entrypoint: ["/bin/sh", "/migrate.sh"]
+      - ./supabase:/liquibase/changelog:ro
+    entrypoint: ["/bin/sh", "/liquibase/changelog/liquibase-run.sh"]
 
 volumes:
   supabase_db_data:

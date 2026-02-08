@@ -21,7 +21,7 @@
 - `src/features/projects` — список проектов и задачи проекта.
 - `src/features/members` — участники и их задачи/доступ.
 - `src/features/workspace` — настройки воркспейса и управление участниками.
-- `infra/supabase` — миграции и Edge Functions (`admin`, `invite`).
+- `infra/supabase` — SQL-миграции, Liquibase changelog и Edge Functions (`admin`, `invite`).
 - `infra/backup-service` — сервис бэкапов (доступ через `/backup`).
 
 ## Требования
@@ -73,7 +73,8 @@ make up-prod
 
 Что произойдет:
 - Поднимутся `db/keycloak-db/keycloak/auth/rest/functions/backup/gateway/web/oauth2-proxy`.
-- Применятся миграции.
+- Перед миграциями создастся страховочный backup `pre-migrate-*.dump` (если `AUTO_PRE_MIGRATION_BACKUP=true`).
+- Применятся Liquibase-миграции (`DATABASECHANGELOG`/`DATABASECHANGELOGLOCK`) с контролем checksums и блокировкой параллельных запусков.
 - Соберется фронтенд‑образ и поднимутся `web` + `oauth2-proxy`.
 - В production отключена открытая регистрация: вход только по инвайтам.
 - Резервный super admin будет создан автоматически из `RESERVE_ADMIN_EMAIL`/`RESERVE_ADMIN_PASSWORD`.
@@ -126,7 +127,7 @@ npm run dev:compose
 ## Ручная настройка Supabase (если используете внешний проект)
 
 1) Создайте Supabase‑проект.
-2) Примените миграции из `infra/supabase/migrations/`.
+2) Примените Liquibase changelog `infra/supabase/liquibase/changelog-master.xml`.
 3) Создайте `.env` на основе `.env.example` и заполните:
    - `VITE_SUPABASE_URL`
    - `VITE_SUPABASE_ANON_KEY`
@@ -167,6 +168,9 @@ npm run dev:compose
 - `BACKUP_AUTH_DB_USER` — роль, которой после restore выдаются права на `auth` (по умолчанию берется пользователь из `GOTRUE_DB_DATABASE_URL`).
 - `BACKUP_AUTH_HOST` — хост контейнера GoTrue для точечного сброса его DB-соединений после restore (по умолчанию `auth`).
 - `BACKUP_MAX_UPLOAD_MB` — максимальный размер загружаемого backup-файла (по умолчанию `1024`).
+- `AUTO_PRE_MIGRATION_BACKUP` — делать ли автоматический backup перед миграциями в `make up-prod` (по умолчанию `true`).
+- `LIQUIBASE_LOG_LEVEL` — уровень логов Liquibase (по умолчанию `info`).
+- `MIGRATION_MAX_WAIT_SECONDS` — сколько ждать доступности DB/auth схемы перед стартом Liquibase (по умолчанию `300`).
 
 Файл‑шаблон: `.env.example`. В Compose‑режиме `.env` создается автоматически.
 
@@ -232,4 +236,6 @@ make logs-prod
 - Перед восстановлением автоматически создается страховочный бэкап `pre-restore-*.dump`.
 - По умолчанию backup/restore обрабатывают схемы `public`, `auth`, `storage`, чтобы не затрагивать системные объекты Supabase и сохранить пользователей/файлы.
 - После restore backup-сервис автоматически восстанавливает права на `auth` для роли GoTrue и сбрасывает только его DB-соединения.
+- Миграции выполняет Liquibase, состояние хранится в `DATABASECHANGELOG` и `DATABASECHANGELOGLOCK`.
+- Новую SQL-миграцию добавляйте в `infra/supabase/migrations/` и отдельным `changeSet` в `infra/supabase/liquibase/changelog-master.xml`.
 - Все пользовательские настройки и роли ограничены RLS в Supabase.
