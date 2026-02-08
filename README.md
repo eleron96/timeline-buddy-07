@@ -11,6 +11,7 @@
 - Роли и доступ: viewer/editor/admin, инвайты по email или ссылке.
 - Настройки воркспейса: статусы, типы задач, теги, шаблоны, удаление.
 - Супер‑админка: пользователи, воркспейсы, супер‑админы, бэкапы.
+- SSO через Keycloak (OIDC) с брендированной страницей логина.
 
 ## Архитектура и ключевые модули
 
@@ -39,6 +40,7 @@ make up
 
 Что произойдет:
 - Поднимется Supabase‑стек (db/auth/rest/functions/gateway) и фронтенд.
+- Поднимется Keycloak (`keycloak-db` + `keycloak`) для входа через OIDC.
 - `.env` будет сгенерирован автоматически (JWT/ANON/SERVICE роли).
 - Данные сохраняются в volume `supabase_db_data`.
 
@@ -58,6 +60,7 @@ make logs
 - Frontend: `http://localhost:5173`
 - Supabase Gateway health: `http://localhost:8080/health`
 - Supabase Auth health: `http://localhost:8080/auth/v1/health`
+- Keycloak: `http://localhost:8081`
 - Postgres: `localhost:54322`
 
 ## Production запуск (build + static)
@@ -69,7 +72,7 @@ make up-prod
 ```
 
 Что произойдет:
-- Поднимутся `db/auth/rest/functions/backup/gateway`.
+- Поднимутся `db/keycloak-db/keycloak/auth/rest/functions/backup/gateway`.
 - Применятся миграции.
 - Соберется фронтенд‑образ и поднимется `web` без `vite dev`.
 - В production отключена открытая регистрация: вход только по инвайтам.
@@ -91,6 +94,10 @@ make logs-prod
 - `index.html` отдается без кеша.
 - ассеты в `/assets` кешируются долго (immutable).
 - после деплоя пользователи получают новый функционал после перезагрузки страницы.
+
+Авторизация:
+- По умолчанию страница `/auth` отправляет пользователя в Keycloak.
+- Для аварийного входа локальным супер‑админом используйте кнопку `Emergency local login` на `/auth`.
 
 ## Локальный запуск с Supabase CLI
 
@@ -142,6 +149,11 @@ npm run dev:compose
 - `VITE_SUPABASE_ANON_KEY` — публичный ключ.
 - `RESEND_API_KEY`, `RESEND_FROM` — отправка инвайтов через Resend.
 - `RESERVE_ADMIN_EMAIL`, `RESERVE_ADMIN_PASSWORD` — резервный супер‑админ.
+- `GOTRUE_EXTERNAL_KEYCLOAK_URL` — URL realm Keycloak (должен быть доступен браузеру и контейнеру `auth`).
+- `GOTRUE_EXTERNAL_KEYCLOAK_CLIENT_ID`, `GOTRUE_EXTERNAL_KEYCLOAK_SECRET` — OIDC client Supabase в Keycloak.
+- `KEYCLOAK_ADMIN`, `KEYCLOAK_ADMIN_PASSWORD` — логин/пароль админки Keycloak.
+- `KEYCLOAK_DB_NAME`, `KEYCLOAK_DB_USER`, `KEYCLOAK_DB_PASSWORD` — БД Keycloak.
+- `VITE_AUTH_MODE` — режим UI авторизации (`keycloak`, `hybrid`, `password`).
 - `BACKUP_RETENTION_COUNT` — сколько последних `.dump` хранить локально (по умолчанию `30`).
 - `BACKUP_SCHEMAS` — схемы для backup/restore (по умолчанию `public,auth,storage`).
 - `BACKUP_RESTORE_DB_URL` — отдельный URL для restore (если не задан, используется `SUPABASE_DB_URL` с пользователем `supabase_admin`).
@@ -159,6 +171,13 @@ npm run dev:compose
   - `RESERVE_ADMIN_EMAIL`
   - `RESERVE_ADMIN_PASSWORD`
 - В production используйте сильный пароль для `RESERVE_ADMIN_PASSWORD`.
+
+## Keycloak брендинг
+
+- Realm import: `infra/keycloak/realm/timeline-realm.json`
+- Тема логина: `infra/keycloak/themes/timeline/login/theme.properties`
+- CSS темы: `infra/keycloak/themes/timeline/login/resources/css/styles.css`
+- Админка Keycloak: `http://localhost:8081` (по умолчанию `admin/admin`, обязательно смените в `.env` перед продом).
 
 ## Использование
 

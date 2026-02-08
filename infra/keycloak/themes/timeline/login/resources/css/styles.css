@@ -1,0 +1,49 @@
+:root {
+  --timeline-bg-from: #0b1020;
+  --timeline-bg-to: #162a46;
+  --timeline-accent: #2aa7b8;
+  --timeline-accent-hover: #1f8d9b;
+  --timeline-text: #0f172a;
+}
+
+body.login-pf {
+  background: radial-gradient(circle at 20% 10%, rgba(42, 167, 184, 0.26), transparent 45%),
+    linear-gradient(135deg, var(--timeline-bg-from), var(--timeline-bg-to));
+}
+
+#kc-header-wrapper {
+  color: #e2e8f0;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.pf-c-login,
+#kc-content-wrapper {
+  border-radius: 14px;
+}
+
+.card-pf,
+.pf-c-login__main {
+  border: 0;
+  box-shadow: 0 18px 46px rgba(0, 0, 0, 0.35);
+}
+
+#kc-form-login .pf-c-button.pf-m-primary {
+  background-color: var(--timeline-accent);
+  border-color: var(--timeline-accent);
+}
+
+#kc-form-login .pf-c-button.pf-m-primary:hover,
+#kc-form-login .pf-c-button.pf-m-primary:focus {
+  background-color: var(--timeline-accent-hover);
+  border-color: var(--timeline-accent-hover);
+}
+
+#kc-page-title,
+#kc-current-locale-link,
+.pf-c-form__label-text,
+#kc-info-wrapper,
+#kc-form-options,
+#kc-registration {
+  color: var(--timeline-text);
+}

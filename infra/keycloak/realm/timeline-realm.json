@@ -1,0 +1,45 @@
+{
+  "realm": "timeline",
+  "enabled": true,
+  "displayName": "Timeline Planner",
+  "displayNameHtml": "<strong>Timeline Planner</strong>",
+  "loginTheme": "timeline",
+  "registrationAllowed": false,
+  "resetPasswordAllowed": true,
+  "rememberMe": true,
+  "internationalizationEnabled": true,
+  "supportedLocales": [
+    "en",
+    "ru"
+  ],
+  "defaultLocale": "en",
+  "clients": [
+    {
+      "clientId": "timeline-supabase",
+      "name": "Timeline Supabase",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "timeline-supabase-dev-secret-change-me",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "fullScopeAllowed": true,
+      "rootUrl": "http://localhost:5173",
+      "baseUrl": "http://localhost:5173",
+      "redirectUris": [
+        "http://localhost:8080/auth/v1/callback",
+        "http://127.0.0.1:8080/auth/v1/callback",
+        "http://host.docker.internal:8080/auth/v1/callback",
+        "http://localhost:5173/*",
+        "http://127.0.0.1:5173/*",
+        "http://host.docker.internal:5173/*"
+      ],
+      "webOrigins": [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://host.docker.internal:5173"
+      ]
+    }
+  ]
+}

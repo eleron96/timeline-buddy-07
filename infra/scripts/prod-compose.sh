@@ -56,7 +56,7 @@ until docker compose -f "$compose_file" --env-file "$env_file" exec -T \
   sleep 2
 done
 
-docker compose -f "$compose_file" --env-file "$env_file" up -d auth rest functions backup gateway
+docker compose -f "$compose_file" --env-file "$env_file" up -d keycloak-db keycloak auth rest functions backup gateway
 
 docker compose -f "$compose_file" --env-file "$env_file" run --rm migrate
 
@@ -91,4 +91,5 @@ echo "Production stack is running."
 echo "Frontend: http://localhost:5173"
 echo "Supabase Gateway health: http://localhost:8080/health"
 echo "Supabase Auth health: http://localhost:8080/auth/v1/health"
+echo "Keycloak: http://localhost:8081"
 echo "Login as reserve super admin: $RESERVE_ADMIN_EMAIL"

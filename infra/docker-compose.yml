@@ -18,6 +18,46 @@ services:
       timeout: 5s
       retries: 10
 
+  keycloak-db:
+    image: postgres:15-alpine
+    container_name: keycloak-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${KEYCLOAK_DB_NAME:-keycloak}
+      POSTGRES_USER: ${KEYCLOAK_DB_USER:-keycloak}
+      POSTGRES_PASSWORD: ${KEYCLOAK_DB_PASSWORD:-keycloak}
+    volumes:
+      - keycloak_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${KEYCLOAK_DB_USER:-keycloak} -d ${KEYCLOAK_DB_NAME:-keycloak}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.1
+    container_name: timeline-keycloak
+    restart: unless-stopped
+    depends_on:
+      keycloak-db:
+        condition: service_healthy
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://keycloak-db:5432/${KEYCLOAK_DB_NAME:-keycloak}
+      KC_DB_USERNAME: ${KEYCLOAK_DB_USER:-keycloak}
+      KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD:-keycloak}
+      KC_HTTP_ENABLED: "true"
+      KC_PROXY_HEADERS: xforwarded
+      KC_HOSTNAME_STRICT: "false"
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+    command: ["start-dev", "--import-realm", "--http-port=8080"]
+    volumes:
+      - ./keycloak/realm:/opt/keycloak/data/import:ro
+      - ./keycloak/themes:/opt/keycloak/themes:ro
+    ports:
+      - "8081:8080"
+
   auth:
     image: supabase/gotrue:v2.151.0
     container_name: supabase-auth
@@ -25,6 +65,10 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      keycloak:
+        condition: service_started
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       GOTRUE_API_HOST: 0.0.0.0
       GOTRUE_API_PORT: 9999
@@ -48,6 +92,10 @@ services:
       GOTRUE_SMTP_PASS: ${GOTRUE_SMTP_PASS}
       GOTRUE_SMTP_ADMIN_EMAIL: ${GOTRUE_SMTP_ADMIN_EMAIL}
       GOTRUE_SMTP_SENDER_NAME: ${GOTRUE_SMTP_SENDER_NAME}
+      GOTRUE_EXTERNAL_KEYCLOAK_ENABLED: ${GOTRUE_EXTERNAL_KEYCLOAK_ENABLED:-true}
+      GOTRUE_EXTERNAL_KEYCLOAK_CLIENT_ID: ${GOTRUE_EXTERNAL_KEYCLOAK_CLIENT_ID:-timeline-supabase}
+      GOTRUE_EXTERNAL_KEYCLOAK_SECRET: ${GOTRUE_EXTERNAL_KEYCLOAK_SECRET:-timeline-supabase-dev-secret-change-me}
+      GOTRUE_EXTERNAL_KEYCLOAK_URL: ${GOTRUE_EXTERNAL_KEYCLOAK_URL:-http://host.docker.internal:8081/realms/timeline}
 
   rest:
     image: postgrest/postgrest:v12.2.3
@@ -138,6 +186,7 @@ services:
       VITE_SUPABASE_URL: ${VITE_SUPABASE_URL}
       VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY}
       VITE_RESERVE_ADMIN_EMAIL: ${VITE_RESERVE_ADMIN_EMAIL}
+      VITE_AUTH_MODE: ${VITE_AUTH_MODE:-keycloak}
       CHOKIDAR_USEPOLLING: "true"
     volumes:
       - ../:/app
@@ -161,5 +210,7 @@ volumes:
   supabase_db_data:
     name: supabase_db_data
     external: true
+  keycloak_db_data:
+    name: keycloak_db_data
   web_node_modules:
     name: timeline_web_node_modules

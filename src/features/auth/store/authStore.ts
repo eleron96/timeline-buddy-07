@@ -98,6 +98,7 @@ interface AuthState {
   setLoading: (loading: boolean) => void;
   resolveSuperAdmin: (user: User | null) => Promise<boolean>;
   signIn: (email: string, password: string) => Promise<{ error?: string }>;
+  signInWithKeycloak: (redirectTo?: string) => Promise<{ error?: string }>;
   signUp: (email: string, password: string) => Promise<{ error?: string }>;
   sendPasswordReset: (email: string) => Promise<{ error?: string }>;
   updatePassword: (password: string) => Promise<{ error?: string }>;
@@ -290,6 +291,16 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       return { error: error.message };
     }
     return { error: 'Authentication failed.' };
+  },
+  signInWithKeycloak: async (redirectTo) => {
+    const destination = redirectTo
+      ?? (typeof window !== 'undefined' ? `${window.location.origin}/auth` : undefined);
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'keycloak',
+      options: destination ? { redirectTo: destination } : undefined,
+    });
+    if (error) return { error: error.message };
+    return {};
   },
   signUp: async (email, password) => {
     const { error } = await supabase.auth.signUp({ email, password });
