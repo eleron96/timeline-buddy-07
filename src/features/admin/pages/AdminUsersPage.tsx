@@ -22,6 +22,7 @@ import {
 } from '@/shared/ui/alert-dialog';
 import { Alert, AlertDescription, AlertTitle } from '@/shared/ui/alert';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/shared/ui/tabs';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/shared/ui/tooltip';
 import { t } from '@lingui/macro';
 import { useLocaleStore } from '@/shared/store/localeStore';
 import type { Locale } from '@/shared/lib/locale';
@@ -34,6 +35,14 @@ const formatDate = (value: string | null | undefined, locale: Locale) => {
   return date.toLocaleString(language);
 };
 
+const formatDateCompact = (value: string | null | undefined, locale: Locale) => {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '—';
+  const language = locale === 'ru' ? 'ru-RU' : 'en-US';
+  return date.toLocaleDateString(language);
+};
+
 const formatWorkspaceSummary = (workspaces: AdminUser['workspaces']) => {
   if (workspaces.length === 0) return '—';
   const preview = workspaces.slice(0, 3).map((workspace) => `${workspace.name} (${workspace.role})`);
@@ -41,17 +50,30 @@ const formatWorkspaceSummary = (workspaces: AdminUser['workspaces']) => {
   return `${preview.join(', ')}${suffix}`;
 };
 
-const formatBytes = (value?: number) => {
+const formatStorageMain = (value?: number) => {
   if (!value && value !== 0) return '—';
-  if (value < 1024) return `${value} B`;
-  const units = ['KB', 'MB', 'GB'];
-  let size = value / 1024;
-  let unitIndex = 0;
-  while (size >= 1024 && unitIndex < units.length - 1) {
-    size /= 1024;
-    unitIndex += 1;
-  }
-  return `${size.toFixed(1)} ${units[unitIndex]}`;
+  const safe = Math.max(0, value);
+  const kb = safe / 1024;
+  if (kb < 1024) return `${kb.toFixed(1)} KB`;
+  const mb = kb / 1024;
+  if (mb < 1024) return `${mb.toFixed(1)} MB`;
+  const gb = mb / 1024;
+  return `${gb.toFixed(2)} GB`;
+};
+
+const formatStorageTooltip = (value?: number) => {
+  if (!value && value !== 0) return 'No storage data';
+  const safe = Math.max(0, value);
+  const kb = safe / 1024;
+  const mb = kb / 1024;
+  const gb = mb / 1024;
+  return `${safe} B · ${kb.toFixed(2)} KB · ${mb.toFixed(2)} MB · ${gb.toFixed(4)} GB`;
+};
+
+const shortId = (value: string, start = 8, end = 6) => {
+  if (!value) return '—';
+  if (value.length <= start + end + 1) return value;
+  return `${value.slice(0, start)}…${value.slice(-end)}`;
 };
 
 const formatBackupType = (type: BackupEntry['type']) => {
@@ -363,7 +385,8 @@ const AdminUsersPage: React.FC = () => {
             </div>
           </CardHeader>
           <CardContent>
-            <Tabs value={tab} onValueChange={(value) => setTab(value as typeof tab)}>
+            <TooltipProvider delayDuration={150}>
+              <Tabs value={tab} onValueChange={(value) => setTab(value as typeof tab)}>
               <TabsList className="flex flex-wrap w-full h-auto items-start justify-start gap-2 mb-4">
                 <TabsTrigger value="users">Users</TabsTrigger>
                 <TabsTrigger value="workspaces">Workspaces</TabsTrigger>
@@ -420,14 +443,53 @@ const AdminUsersPage: React.FC = () => {
                         ) : (
                           filteredUsers.map((item) => (
                             <TableRow key={item.id}>
-                              <TableCell className="font-medium">{item.email ?? '—'}</TableCell>
-                              <TableCell className="text-xs text-muted-foreground">{item.id}</TableCell>
-                              <TableCell className="text-sm text-muted-foreground">
-                                {item.displayName ?? '—'}
+                              <TableCell className="font-medium">
+                                {item.email ? (
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <span className="inline-block max-w-[220px] truncate align-bottom">
+                                        {item.email}
+                                      </span>
+                                    </TooltipTrigger>
+                                    <TooltipContent>{item.email}</TooltipContent>
+                                  </Tooltip>
+                                ) : '—'}
                               </TableCell>
                               <TableCell className="text-xs text-muted-foreground">
-                                <div className="text-sm text-foreground">{item.workspaceCount}</div>
-                                <div>{formatWorkspaceSummary(item.workspaces)}</div>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <span className="cursor-default">{shortId(item.id)}</span>
+                                  </TooltipTrigger>
+                                  <TooltipContent>{item.id}</TooltipContent>
+                                </Tooltip>
+                              </TableCell>
+                              <TableCell className="text-sm text-muted-foreground">
+                                {item.displayName ? (
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <span className="inline-block max-w-[180px] truncate align-bottom">
+                                        {item.displayName}
+                                      </span>
+                                    </TooltipTrigger>
+                                    <TooltipContent>{item.displayName}</TooltipContent>
+                                  </Tooltip>
+                                ) : '—'}
+                              </TableCell>
+                              <TableCell className="text-xs text-muted-foreground">
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <div className="cursor-default">
+                                      <div className="text-sm text-foreground">{item.workspaceCount}</div>
+                                      <div className="max-w-[220px] truncate">{formatWorkspaceSummary(item.workspaces)}</div>
+                                    </div>
+                                  </TooltipTrigger>
+                                  <TooltipContent className="max-w-xs">
+                                    <div className="space-y-1">
+                                      <div>Total: {item.workspaceCount}</div>
+                                      <div>{formatWorkspaceSummary(item.workspaces)}</div>
+                                    </div>
+                                  </TooltipContent>
+                                </Tooltip>
                                 {item.workspaces.length > 0 && (
                                   <Button
                                     type="button"
@@ -440,14 +502,54 @@ const AdminUsersPage: React.FC = () => {
                                   </Button>
                                 )}
                               </TableCell>
-                              <TableCell className="text-sm">{item.ownedWorkspaceCount}</TableCell>
-                              <TableCell className="text-sm">{item.managedWorkspaceCount}</TableCell>
-                              <TableCell className="text-xs text-muted-foreground">
-                                <div className="text-sm text-foreground">{formatBytes(item.storageUsedBytes)}</div>
-                                <div>{item.storageObjectsCount} objects</div>
+                              <TableCell className="text-sm">
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <span className="cursor-default">{item.ownedWorkspaceCount}</span>
+                                  </TooltipTrigger>
+                                  <TooltipContent>Workspaces where user is owner</TooltipContent>
+                                </Tooltip>
                               </TableCell>
-                              <TableCell className="text-xs">{formatDate(item.createdAt, locale)}</TableCell>
-                              <TableCell className="text-xs">{formatDate(item.lastSignInAt, locale)}</TableCell>
+                              <TableCell className="text-sm">
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <span className="cursor-default">{item.managedWorkspaceCount}</span>
+                                  </TooltipTrigger>
+                                  <TooltipContent>Owner or admin workspaces</TooltipContent>
+                                </Tooltip>
+                              </TableCell>
+                              <TableCell className="text-xs text-muted-foreground">
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <div className="cursor-default">
+                                      <div className="text-sm text-foreground">{formatStorageMain(item.storageUsedBytes)}</div>
+                                      <div>{item.storageObjectsCount} objects</div>
+                                    </div>
+                                  </TooltipTrigger>
+                                  <TooltipContent className="max-w-xs">
+                                    <div className="space-y-1">
+                                      <div>{formatStorageTooltip(item.storageUsedBytes)}</div>
+                                      <div>Objects: {item.storageObjectsCount}</div>
+                                    </div>
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TableCell>
+                              <TableCell className="text-xs">
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <span className="cursor-default">{formatDateCompact(item.createdAt, locale)}</span>
+                                  </TooltipTrigger>
+                                  <TooltipContent>{formatDate(item.createdAt, locale)}</TooltipContent>
+                                </Tooltip>
+                              </TableCell>
+                              <TableCell className="text-xs">
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <span className="cursor-default">{formatDateCompact(item.lastSignInAt, locale)}</span>
+                                  </TooltipTrigger>
+                                  <TooltipContent>{formatDate(item.lastSignInAt, locale)}</TooltipContent>
+                                </Tooltip>
+                              </TableCell>
                             </TableRow>
                           ))
                         )}
@@ -502,15 +604,43 @@ const AdminUsersPage: React.FC = () => {
                           filteredWorkspaces.map((workspace) => (
                             <TableRow key={workspace.id}>
                               <TableCell className="font-medium">
-                                <div>{workspace.name}</div>
-                                <div className="text-xs text-muted-foreground">{workspace.id}</div>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <div className="cursor-default">
+                                      <div className="max-w-[220px] truncate">{workspace.name}</div>
+                                      <div className="text-xs text-muted-foreground">{shortId(workspace.id)}</div>
+                                    </div>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <div className="space-y-1">
+                                      <div>{workspace.name}</div>
+                                      <div className="text-xs">{workspace.id}</div>
+                                    </div>
+                                  </TooltipContent>
+                                </Tooltip>
                               </TableCell>
                               <TableCell className="text-sm text-muted-foreground">
-                                {workspace.ownerDisplayName ?? workspace.ownerEmail ?? workspace.ownerId}
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <span className="inline-block max-w-[220px] truncate cursor-default align-bottom">
+                                      {workspace.ownerDisplayName ?? workspace.ownerEmail ?? shortId(workspace.ownerId)}
+                                    </span>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    {workspace.ownerDisplayName ?? workspace.ownerEmail ?? workspace.ownerId}
+                                  </TooltipContent>
+                                </Tooltip>
                               </TableCell>
                               <TableCell className="text-sm">{workspace.membersCount}</TableCell>
                               <TableCell className="text-sm">{workspace.tasksCount}</TableCell>
-                              <TableCell className="text-xs">{formatDate(workspace.createdAt, locale)}</TableCell>
+                              <TableCell className="text-xs">
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <span className="cursor-default">{formatDateCompact(workspace.createdAt, locale)}</span>
+                                  </TooltipTrigger>
+                                  <TooltipContent>{formatDate(workspace.createdAt, locale)}</TooltipContent>
+                                </Tooltip>
+                              </TableCell>
                               <TableCell className="text-right">
                                 <div className="flex flex-wrap justify-end gap-2">
                                   <Button
@@ -612,14 +742,35 @@ const AdminUsersPage: React.FC = () => {
                         ) : (
                           backups.map((item) => (
                             <TableRow key={item.name}>
-                              <TableCell className="font-medium">{item.name}</TableCell>
+                              <TableCell className="font-medium">
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <span className="inline-block max-w-[260px] truncate cursor-default align-bottom">
+                                      {item.name}
+                                    </span>
+                                  </TooltipTrigger>
+                                  <TooltipContent>{item.name}</TooltipContent>
+                                </Tooltip>
+                              </TableCell>
                               <TableCell className="text-sm text-muted-foreground">
                                 {formatBackupType(item.type)}
                               </TableCell>
                               <TableCell className="text-sm text-muted-foreground">
-                                {formatBytes(item.size)}
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <span className="cursor-default">{formatStorageMain(item.size)}</span>
+                                  </TooltipTrigger>
+                                  <TooltipContent>{formatStorageTooltip(item.size)}</TooltipContent>
+                                </Tooltip>
                               </TableCell>
-                              <TableCell className="text-xs">{formatDate(item.createdAt, locale)}</TableCell>
+                              <TableCell className="text-xs">
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <span className="cursor-default">{formatDateCompact(item.createdAt, locale)}</span>
+                                  </TooltipTrigger>
+                                  <TooltipContent>{formatDate(item.createdAt, locale)}</TooltipContent>
+                                </Tooltip>
+                              </TableCell>
                               <TableCell className="text-right">
                                 <div className="flex flex-wrap justify-end gap-2">
                                   <Button
@@ -664,7 +815,8 @@ const AdminUsersPage: React.FC = () => {
                   </div>
                 )}
               </TabsContent>
-            </Tabs>
+              </Tabs>
+            </TooltipProvider>
           </CardContent>
         </Card>
       </div>
