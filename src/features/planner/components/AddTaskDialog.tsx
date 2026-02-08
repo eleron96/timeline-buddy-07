@@ -28,6 +28,7 @@ import { ChevronDown, Plus } from 'lucide-react';
 import { format, addDays } from '@/features/planner/lib/dateUtils';
 import { cn } from '@/shared/lib/classNames';
 import { TaskPriority } from '@/features/planner/types/planner';
+import { useAuthStore } from '@/features/auth/store/authStore';
 import { endOfMonth, isSameMonth, isSameYear, parseISO } from 'date-fns';
 import { sortProjectsByTracking } from '@/shared/lib/projectSorting';
 import { t } from '@lingui/macro';
@@ -50,6 +51,7 @@ export const AddTaskDialog: React.FC<AddTaskDialogProps> = ({
   initialAssigneeIds,
 }) => {
   const { projects, trackedProjectIds, assignees, statuses, taskTypes, tags, addTask, createRepeats } = usePlannerStore();
+  const currentWorkspaceId = useAuthStore((state) => state.currentWorkspaceId);
   const filteredAssignees = useFilteredAssignees(assignees);
   const activeProjects = useMemo(
     () => sortProjectsByTracking(
@@ -592,6 +594,7 @@ export const AddTaskDialog: React.FC<AddTaskDialogProps> = ({
             <RichTextEditor
               id="new-description"
               value={description}
+              workspaceId={currentWorkspaceId}
               onChange={(value) => {
                 markChanged();
                 setDescription(value);

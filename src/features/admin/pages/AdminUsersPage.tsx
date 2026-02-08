@@ -68,16 +68,12 @@ const AdminUsersPage: React.FC = () => {
     adminUsersLoading,
     adminUsersError,
     fetchAdminUsers,
-    createAdminUser,
-    updateAdminUser,
-    deleteAdminUser,
     adminWorkspaces,
     adminWorkspacesLoading,
     adminWorkspacesError,
     fetchAdminWorkspaces,
     updateAdminWorkspace,
     deleteAdminWorkspace,
-    syncKeycloakUsers,
     backups,
     backupsLoading,
     backupsError,
@@ -97,19 +93,6 @@ const AdminUsersPage: React.FC = () => {
   const [workspaceSearch, setWorkspaceSearch] = useState('');
   const [workspacesDialogOpen, setWorkspacesDialogOpen] = useState(false);
   const [workspacesTarget, setWorkspacesTarget] = useState<AdminUser | null>(null);
-
-  const [userDialogOpen, setUserDialogOpen] = useState(false);
-  const [userDialogMode, setUserDialogMode] = useState<'create' | 'edit'>('create');
-  const [userFormEmail, setUserFormEmail] = useState('');
-  const [userFormDisplayName, setUserFormDisplayName] = useState('');
-  const [userFormError, setUserFormError] = useState('');
-  const [userFormSubmitting, setUserFormSubmitting] = useState(false);
-  const [userFormTarget, setUserFormTarget] = useState<AdminUser | null>(null);
-
-  const [deleteOpen, setDeleteOpen] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState<AdminUser | null>(null);
-  const [deleteSubmitting, setDeleteSubmitting] = useState(false);
-  const [deleteError, setDeleteError] = useState('');
 
   const [workspaceEditOpen, setWorkspaceEditOpen] = useState(false);
   const [workspaceEditTarget, setWorkspaceEditTarget] = useState<AdminWorkspace | null>(null);
@@ -140,8 +123,6 @@ const AdminUsersPage: React.FC = () => {
   const [backupDeleteSubmitting, setBackupDeleteSubmitting] = useState(false);
   const [backupDeleteError, setBackupDeleteError] = useState('');
   const backupUploadInputRef = useRef<HTMLInputElement | null>(null);
-  const [syncSubmitting, setSyncSubmitting] = useState(false);
-  const [syncError, setSyncError] = useState('');
 
   useEffect(() => {
     if (!isSuperAdmin) return;
@@ -175,90 +156,9 @@ const AdminUsersPage: React.FC = () => {
     ));
   }, [adminWorkspaces, workspaceSearch]);
 
-  const openCreateUser = () => {
-    setUserDialogMode('create');
-    setUserFormTarget(null);
-    setUserFormEmail('');
-    setUserFormDisplayName('');
-    setUserFormError('');
-    setUserDialogOpen(true);
-  };
-
-  const openEditUser = (target: AdminUser) => {
-    setUserDialogMode('edit');
-    setUserFormTarget(target);
-    setUserFormEmail(target.email ?? '');
-    setUserFormDisplayName(target.displayName ?? '');
-    setUserFormError('');
-    setUserDialogOpen(true);
-  };
-
   const openWorkspacesDialog = (target: AdminUser) => {
     setWorkspacesTarget(target);
     setWorkspacesDialogOpen(true);
-  };
-
-  const handleSubmitUserForm = async () => {
-    const email = userFormEmail.trim();
-    if (!email) {
-      setUserFormError('Email is required.');
-      return;
-    }
-
-    setUserFormSubmitting(true);
-    setUserFormError('');
-
-    if (userDialogMode === 'create') {
-      const result = await createAdminUser({
-        email,
-        displayName: userFormDisplayName.trim() || undefined,
-      });
-      if (result.error) {
-        setUserFormError(result.error);
-        setUserFormSubmitting(false);
-        return;
-      }
-      if (result.warning) {
-        setSyncError(result.warning);
-      }
-    } else if (userFormTarget) {
-      const result = await updateAdminUser({
-        userId: userFormTarget.id,
-        email,
-        displayName: userFormDisplayName.trim() || undefined,
-      });
-      if (result.error) {
-        setUserFormError(result.error);
-        setUserFormSubmitting(false);
-        return;
-      }
-    }
-
-    await fetchAdminUsers(userSearch.trim());
-    setUserFormSubmitting(false);
-    setUserDialogOpen(false);
-  };
-
-  const handleOpenDelete = (target: AdminUser) => {
-    setDeleteTarget(target);
-    setDeleteError('');
-    setDeleteOpen(true);
-  };
-
-  const handleDeleteUser = async () => {
-    if (!deleteTarget) return;
-    setDeleteError('');
-    setDeleteSubmitting(true);
-    const result = await deleteAdminUser(deleteTarget.id);
-    if (result.error) {
-      setDeleteError(result.error);
-      setDeleteSubmitting(false);
-      return;
-    }
-    setDeleteSubmitting(false);
-    setDeleteOpen(false);
-    setDeleteTarget(null);
-    await fetchAdminUsers(userSearch.trim());
   };
 
   const openWorkspaceEdit = (workspace: AdminWorkspace) => {
@@ -322,22 +222,6 @@ const AdminUsersPage: React.FC = () => {
     }
     await fetchBackups();
     setBackupCreateSubmitting(false);
-  };
-
-  const handleSyncKeycloak = async () => {
-    setSyncSubmitting(true);
-    setSyncError('');
-    const result = await syncKeycloakUsers();
-    if (result.error) {
-      setSyncError(result.error);
-      setSyncSubmitting(false);
-      return;
-    }
-    await Promise.all([
-      fetchAdminUsers(userSearch.trim()),
-      fetchAdminWorkspaces(),
-    ]);
-    setSyncSubmitting(false);
   };
 
   const openBackupUploadDialog = () => {
@@ -479,12 +363,6 @@ const AdminUsersPage: React.FC = () => {
             </div>
           </CardHeader>
           <CardContent>
-            {syncError && (
-              <Alert variant="destructive" className="mb-4">
-                <AlertTitle>{t`Error`}</AlertTitle>
-                <AlertDescription>{syncError}</AlertDescription>
-              </Alert>
-            )}
             <Tabs value={tab} onValueChange={(value) => setTab(value as typeof tab)}>
               <TabsList className="flex flex-wrap w-full h-auto items-start justify-start gap-2 mb-4">
                 <TabsTrigger value="users">Users</TabsTrigger>
@@ -502,12 +380,9 @@ const AdminUsersPage: React.FC = () => {
                   <Button type="button" variant="outline" onClick={() => fetchAdminUsers(userSearch.trim())}>
                     Refresh
                   </Button>
-                  <Button type="button" variant="outline" onClick={handleSyncKeycloak} disabled={syncSubmitting}>
-                    Sync Keycloak
-                  </Button>
-                  <Button type="button" onClick={openCreateUser}>
-                    Create user
-                  </Button>
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  User create/edit/delete is managed in Keycloak admin console.
                 </div>
 
                 {adminUsersError && (
@@ -528,67 +403,53 @@ const AdminUsersPage: React.FC = () => {
                           <TableHead>ID</TableHead>
                           <TableHead>Display name</TableHead>
                           <TableHead>Workspaces</TableHead>
+                          <TableHead>Owned</TableHead>
+                          <TableHead>Managed</TableHead>
+                          <TableHead>Storage</TableHead>
                           <TableHead>Created</TableHead>
                           <TableHead>Last sign in</TableHead>
-                          <TableHead className="text-right">Actions</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {filteredUsers.length === 0 ? (
                           <TableRow>
-                            <TableCell colSpan={7} className="text-sm text-muted-foreground">
+                            <TableCell colSpan={9} className="text-sm text-muted-foreground">
                               No users.
                             </TableCell>
                           </TableRow>
                         ) : (
-                          filteredUsers.map((item) => {
-                            const isSelf = user?.id === item.id;
-                            return (
-                              <TableRow key={item.id}>
-                                <TableCell className="font-medium">{item.email ?? '—'}</TableCell>
-                                <TableCell className="text-xs text-muted-foreground">{item.id}</TableCell>
-                                <TableCell className="text-sm text-muted-foreground">
-                                  {item.displayName ?? '—'}
-                                </TableCell>
-                                <TableCell className="text-xs text-muted-foreground">
-                                  <div className="text-sm text-foreground">{item.workspaceCount}</div>
-                                  <div>{formatWorkspaceSummary(item.workspaces)}</div>
-                                  {item.workspaces.length > 0 && (
-                                    <Button
-                                      type="button"
-                                      variant="link"
-                                      size="sm"
-                                      className="h-auto p-0 text-xs"
-                                      onClick={() => openWorkspacesDialog(item)}
-                                    >
-                                      {t`Details`}
-                                    </Button>
-                                  )}
-                                </TableCell>
-                                <TableCell className="text-xs">{formatDate(item.createdAt, locale)}</TableCell>
-                                <TableCell className="text-xs">{formatDate(item.lastSignInAt, locale)}</TableCell>
-                                <TableCell className="text-right">
-                                  <div className="flex flex-wrap justify-end gap-2">
-                                    <Button
-                                      size="sm"
-                                      variant="outline"
-                                      onClick={() => openEditUser(item)}
-                                    >
-                                      Edit
-                                    </Button>
-                                    <Button
-                                      size="sm"
-                                      variant="destructive"
-                                      onClick={() => handleOpenDelete(item)}
-                                      disabled={isSelf}
-                                    >
-                                      Delete
-                                    </Button>
-                                  </div>
-                                </TableCell>
-                              </TableRow>
-                            );
-                          })
+                          filteredUsers.map((item) => (
+                            <TableRow key={item.id}>
+                              <TableCell className="font-medium">{item.email ?? '—'}</TableCell>
+                              <TableCell className="text-xs text-muted-foreground">{item.id}</TableCell>
+                              <TableCell className="text-sm text-muted-foreground">
+                                {item.displayName ?? '—'}
+                              </TableCell>
+                              <TableCell className="text-xs text-muted-foreground">
+                                <div className="text-sm text-foreground">{item.workspaceCount}</div>
+                                <div>{formatWorkspaceSummary(item.workspaces)}</div>
+                                {item.workspaces.length > 0 && (
+                                  <Button
+                                    type="button"
+                                    variant="link"
+                                    size="sm"
+                                    className="h-auto p-0 text-xs"
+                                    onClick={() => openWorkspacesDialog(item)}
+                                  >
+                                    {t`Details`}
+                                  </Button>
+                                )}
+                              </TableCell>
+                              <TableCell className="text-sm">{item.ownedWorkspaceCount}</TableCell>
+                              <TableCell className="text-sm">{item.managedWorkspaceCount}</TableCell>
+                              <TableCell className="text-xs text-muted-foreground">
+                                <div className="text-sm text-foreground">{formatBytes(item.storageUsedBytes)}</div>
+                                <div>{item.storageObjectsCount} objects</div>
+                              </TableCell>
+                              <TableCell className="text-xs">{formatDate(item.createdAt, locale)}</TableCell>
+                              <TableCell className="text-xs">{formatDate(item.lastSignInAt, locale)}</TableCell>
+                            </TableRow>
+                          ))
                         )}
                       </TableBody>
                     </Table>
@@ -808,46 +669,6 @@ const AdminUsersPage: React.FC = () => {
         </Card>
       </div>
 
-      <Dialog open={userDialogOpen} onOpenChange={setUserDialogOpen}>
-        <DialogContent className="sm:max-w-[420px]">
-          <DialogHeader>
-            <DialogTitle>{userDialogMode === 'create' ? 'Create user' : 'Edit user'}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3">
-            <Input
-              placeholder="Email"
-              value={userFormEmail}
-              onChange={(event) => setUserFormEmail(event.target.value)}
-            />
-            <Input
-              placeholder="Display name"
-              value={userFormDisplayName}
-              onChange={(event) => setUserFormDisplayName(event.target.value)}
-            />
-            {userDialogMode === 'create' && (
-              <div className="text-xs text-muted-foreground">
-                {t`Password setup is managed in Keycloak.`}
-              </div>
-            )}
-            {userFormError && (
-              <div className="text-sm text-destructive">{userFormError}</div>
-            )}
-          </div>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setUserDialogOpen(false)}>
-              Close
-            </Button>
-            <Button
-              type="button"
-              onClick={handleSubmitUserForm}
-              disabled={userFormSubmitting}
-            >
-              {userDialogMode === 'create' ? 'Create' : 'Save'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
       <Dialog
         open={workspacesDialogOpen}
         onOpenChange={(open) => {
@@ -895,32 +716,6 @@ const AdminUsersPage: React.FC = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete user?</AlertDialogTitle>
-            <AlertDialogDescription>
-              {t`The user will be deleted permanently. This action cannot be undone.`}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          {deleteError && (
-            <div className="text-sm text-destructive">{deleteError}</div>
-          )}
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={(event) => {
-                event.preventDefault();
-                void handleDeleteUser();
-              }}
-              disabled={deleteSubmitting}
-            >
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
 
       <Dialog open={workspaceEditOpen} onOpenChange={setWorkspaceEditOpen}>
         <DialogContent className="sm:max-w-[420px]">

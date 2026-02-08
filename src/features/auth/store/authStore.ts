@@ -40,8 +40,12 @@ export interface AdminUser {
   displayName: string | null;
   createdAt: string | null;
   lastSignInAt: string | null;
+  managedWorkspaceCount: number;
+  ownedWorkspaceCount: number;
   workspaceCount: number;
-  workspaces: Array<{ id: string; name: string; role: WorkspaceRole }>;
+  storageObjectsCount: number;
+  storageUsedBytes: number;
+  workspaces: Array<{ id: string; name: string; role: WorkspaceRole | 'owner' }>;
 }
 
 export interface AdminWorkspace {
@@ -103,16 +107,12 @@ interface AuthState {
   sendPasswordReset: (email: string) => Promise<{ error?: string }>;
   updatePassword: (password: string) => Promise<{ error?: string }>;
   fetchAdminUsers: (search?: string) => Promise<{ error?: string }>;
-  createAdminUser: (payload: { email: string; displayName?: string }) => Promise<{ error?: string; warning?: string }>;
-  updateAdminUser: (payload: { userId: string; email?: string; displayName?: string }) => Promise<{ error?: string }>;
-  deleteAdminUser: (userId: string) => Promise<{ error?: string }>;
   fetchAdminWorkspaces: () => Promise<{ error?: string }>;
   updateAdminWorkspace: (workspaceId: string, name: string) => Promise<{ error?: string }>;
   deleteAdminWorkspace: (workspaceId: string) => Promise<{ error?: string }>;
   fetchSuperAdmins: () => Promise<{ error?: string }>;
   createSuperAdmin: (payload: { email: string; displayName?: string }) => Promise<{ error?: string; warning?: string }>;
   deleteSuperAdmin: (userId: string) => Promise<{ error?: string }>;
-  syncKeycloakUsers: () => Promise<{ error?: string }>;
   fetchBackups: () => Promise<{ error?: string }>;
   createBackup: () => Promise<{ error?: string }>;
   restoreBackup: (name: string) => Promise<{ error?: string }>;
@@ -368,33 +368,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     });
     return {};
   },
-  createAdminUser: async (payload) => {
-    const { data, error } = await invokeAdmin<{ warning?: string }>({
-      action: 'users.create',
-      email: payload.email,
-      displayName: payload.displayName,
-    });
-    if (error) return { error };
-    return { warning: data?.warning };
-  },
-  updateAdminUser: async (payload) => {
-    const { error } = await invokeAdmin({
-      action: 'users.update',
-      userId: payload.userId,
-      email: payload.email,
-      displayName: payload.displayName,
-    });
-    if (error) return { error };
-    return {};
-  },
-  deleteAdminUser: async (userId) => {
-    const { error } = await invokeAdmin({
-      action: 'users.delete',
-      userId,
-    });
-    if (error) return { error };
-    return {};
-  },
   fetchAdminWorkspaces: async () => {
     set({ adminWorkspacesLoading: true, adminWorkspacesError: null });
     const { data, error } = await invokeAdmin<{ workspaces: AdminWorkspace[] }>({
@@ -457,13 +430,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const { error } = await invokeAdmin({
       action: 'superAdmins.delete',
       userId,
-    });
-    if (error) return { error };
-    return {};
-  },
-  syncKeycloakUsers: async () => {
-    const { error } = await invokeAdmin({
-      action: 'keycloak.sync',
     });
     if (error) return { error };
     return {};

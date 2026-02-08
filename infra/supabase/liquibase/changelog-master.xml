@@ -373,4 +373,18 @@
     <sqlFile path="../migrations/0027_drop_legacy_migration_runner_tables.sql" relativeToChangelogFile="true" splitStatements="true" stripComments="false" endDelimiter=";"/>
   </changeSet>
 
+  <changeSet id="0028_add_task_media.sql" author="timeline" runInTransaction="true">
+    <preConditions onFail="MARK_RAN" onError="HALT">
+      <or>
+        <not>
+          <tableExists schemaName="public" tableName="schema_migrations"/>
+        </not>
+        <sqlCheck expectedResult="0">
+          select count(*) from public.schema_migrations where filename = '0028_add_task_media.sql'
+        </sqlCheck>
+      </or>
+    </preConditions>
+    <sqlFile path="../migrations/0028_add_task_media.sql" relativeToChangelogFile="true" splitStatements="false" stripComments="false" endDelimiter=";"/>
+  </changeSet>
+
 </databaseChangeLog>

@@ -4,12 +4,14 @@ import DOMPurify from 'dompurify';
 import { Button } from '@/shared/ui/button';
 import { toast } from '@/shared/ui/sonner';
 import { cn } from '@/shared/lib/classNames';
+import { supabase } from '@/shared/lib/supabaseClient';
 import { t } from '@lingui/macro';
 
 interface RichTextEditorProps {
   id?: string;
   value: string;
   onChange: (value: string) => void;
+  workspaceId?: string | null;
   onBlur?: () => void;
   placeholder?: string;
   disabled?: boolean;
@@ -19,6 +21,8 @@ interface RichTextEditorProps {
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
 const MIN_IMAGE_WIDTH = 120;
 const DEFAULT_IMAGE_SCALE = 0.7;
+
+const trimTrailingSlash = (value: string) => value.replace(/\/+$/, '');
 
 const hasRichTags = (value: string) => (
   /<\/?(b|strong|i|em|u|s|strike|ul|ol|li|blockquote|br|div|p|span|img)\b/i.test(value)
@@ -105,6 +109,7 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
   id,
   value,
   onChange,
+  workspaceId,
   onBlur,
   placeholder,
   disabled = false,
@@ -210,7 +215,47 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
     syncFromEditor();
   }, [getDefaultImageWidth, restoreSelection, saveSelection, syncFromEditor]);
 
-  const handleImageFile = useCallback((file: File) => {
+  const uploadTaskImage = useCallback(async (file: File) => {
+    const normalizedWorkspaceId = workspaceId?.trim() ?? '';
+    if (!normalizedWorkspaceId) {
+      throw new Error('Workspace is not selected.');
+    }
+
+    const supabaseUrl = trimTrailingSlash((import.meta.env.VITE_SUPABASE_URL ?? '').trim());
+    if (!supabaseUrl) {
+      throw new Error('Upload service is not configured.');
+    }
+
+    const { data } = await supabase.auth.getSession();
+    const accessToken = data.session?.access_token;
+    if (!accessToken) {
+      throw new Error('Not authenticated.');
+    }
+
+    const response = await fetch(`${supabaseUrl}/functions/v1/task-media`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': file.type || 'application/octet-stream',
+        'X-Workspace-Id': normalizedWorkspaceId,
+        'X-File-Name': file.name,
+      },
+      body: file,
+    });
+
+    const payload = await response.json().catch(() => ({} as { error?: string; id?: string; token?: string }));
+    if (!response.ok) {
+      throw new Error(payload.error || `Failed to upload image (${response.status}).`);
+    }
+
+    if (typeof payload.id !== 'string' || typeof payload.token !== 'string') {
+      throw new Error('Upload response is invalid.');
+    }
+
+    return `${supabaseUrl}/functions/v1/task-media/${encodeURIComponent(payload.id)}?token=${encodeURIComponent(payload.token)}`;
+  }, [workspaceId]);
+
+  const handleImageFile = useCallback(async (file: File) => {
     if (!file.type.startsWith('image/')) return;
     if (file.size > MAX_IMAGE_SIZE) {
       toast(t`File is too large`, {
@@ -218,16 +263,15 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
       });
       return;
     }
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result !== 'string') return;
-      insertImage(reader.result, file.name || 'Image');
-    };
-    reader.onerror = () => {
-      toast(t`Failed to upload image`);
-    };
-    reader.readAsDataURL(file);
-  }, [insertImage]);
+
+    try {
+      const uploadedUrl = await uploadTaskImage(file);
+      insertImage(uploadedUrl, file.name || 'Image');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '';
+      toast(t`Failed to upload image`, message ? { description: message } : undefined);
+    }
+  }, [insertImage, uploadTaskImage]);
 
   useEffect(() => {
     const editor = editorRef.current;
@@ -356,17 +400,19 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
     }
   };
 
-  const handlePaste = (event: React.ClipboardEvent<HTMLDivElement>) => {
+  const handlePaste = async (event: React.ClipboardEvent<HTMLDivElement>) => {
     if (disabled) return;
     const items = Array.from(event.clipboardData?.items ?? []);
     const imageItems = items.filter((item) => item.type.startsWith('image/'));
     if (imageItems.length === 0) return;
     event.preventDefault();
     saveSelection();
-    imageItems.forEach((item) => {
+    for (const item of imageItems) {
       const file = item.getAsFile();
-      if (file) handleImageFile(file);
-    });
+      if (file) {
+        await handleImageFile(file);
+      }
+    }
   };
 
   const handleImageButtonClick = () => {
@@ -375,10 +421,12 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
     fileInputRef.current?.click();
   };
 
-  const handleFileInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileInputChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files ?? []);
     if (files.length === 0) return;
-    files.forEach(handleImageFile);
+    for (const file of files) {
+      await handleImageFile(file);
+    }
     event.target.value = '';
   };
 
@@ -416,12 +464,54 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
   };
 
   const handleDragOver = (event: React.DragEvent<HTMLDivElement>) => {
-    if (!draggingImageRef.current) return;
+    if (draggingImageRef.current) {
+      event.preventDefault();
+      event.dataTransfer.dropEffect = 'move';
+      return;
+    }
+
+    const hasImageFile = Array.from(event.dataTransfer?.items ?? [])
+      .some((item) => item.kind === 'file' && item.type.startsWith('image/'));
+    const hasImageFromFiles = Array.from(event.dataTransfer?.files ?? [])
+      .some((file) => file.type.startsWith('image/'));
+    if (!hasImageFile && !hasImageFromFiles) return;
+
+    if (disabled) {
+      event.preventDefault();
+      event.dataTransfer.dropEffect = 'none';
+      return;
+    }
+
     event.preventDefault();
-    event.dataTransfer.dropEffect = 'move';
+    event.dataTransfer.dropEffect = 'copy';
   };
 
-  const handleDrop = (event: React.DragEvent<HTMLDivElement>) => {
+  const handleDrop = async (event: React.DragEvent<HTMLDivElement>) => {
+    const droppedFiles = Array.from(event.dataTransfer?.files ?? [])
+      .filter((file) => file.type.startsWith('image/'));
+
+    if (droppedFiles.length > 0) {
+      event.preventDefault();
+      if (disabled) return;
+      const editor = editorRef.current;
+      if (!editor) return;
+
+      const dropRange = getCaretRangeFromPoint(event.clientX, event.clientY);
+      if (dropRange && editor.contains(dropRange.startContainer)) {
+        const selection = window.getSelection();
+        if (selection) {
+          selection.removeAllRanges();
+          selection.addRange(dropRange);
+          savedSelectionRef.current = dropRange;
+        }
+      }
+
+      for (const file of droppedFiles) {
+        await handleImageFile(file);
+      }
+      return;
+    }
+
     const editor = editorRef.current;
     const wrapper = draggingImageRef.current;
     if (!editor || !wrapper) return;

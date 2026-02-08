@@ -2,7 +2,6 @@ import { serve } from "https://deno.land/std@0.203.0/http/server.ts";
 import {
   APP_REALM_ROLES,
   type AppRealmRole,
-  deleteKeycloakUser,
   ensureKeycloakReady,
   ensureKeycloakUser,
   ensureRealmRoles,
@@ -129,16 +128,6 @@ const listSuperAdminIds = async () => {
   return {
     userIds: (data ?? []).map((row) => row.user_id),
   };
-};
-
-const ensureSuperAdminUser = async (userId: string) => {
-  const { data, error } = await supabaseAdmin
-    .from("super_admins")
-    .select("user_id")
-    .eq("user_id", userId)
-    .maybeSingle();
-  if (error || !data) return false;
-  return true;
 };
 
 const buildDesiredRealmRoles = (snapshot: RoleSnapshot | undefined) => {
@@ -536,7 +525,13 @@ const handleUsersList = async (payload: { search?: string }) => {
     return jsonResponse({ users: [], total: 0 });
   }
 
-  const [{ data: profiles }, { data: memberships, error: membershipsError }] = await Promise.all([
+  const [
+    { data: profiles },
+    { data: memberships, error: membershipsError },
+    { data: ownedWorkspaces, error: ownedWorkspacesError },
+    { data: storageObjects, error: storageObjectsError },
+    { data: taskMedia, error: taskMediaError },
+  ] = await Promise.all([
     supabaseAdmin
       .from("profiles")
       .select("id, display_name, email")
@@ -545,38 +540,133 @@ const handleUsersList = async (payload: { search?: string }) => {
       .from("workspace_members")
       .select("user_id, role, workspace_id, workspaces(id, name)")
       .in("user_id", userIds),
+    supabaseAdmin
+      .from("workspaces")
+      .select("id, name, owner_id")
+      .in("owner_id", userIds),
+    supabaseAdmin
+      .schema("storage")
+      .from("objects")
+      .select("owner, metadata")
+      .in("owner", userIds),
+    supabaseAdmin
+      .from("task_media")
+      .select("owner_id, byte_size")
+      .in("owner_id", userIds),
   ]);
 
   if (membershipsError) {
     return jsonResponse({ error: membershipsError.message }, 400);
+  }
+  if (ownedWorkspacesError) {
+    return jsonResponse({ error: ownedWorkspacesError.message }, 400);
+  }
+  if (storageObjectsError) {
+    return jsonResponse({ error: storageObjectsError.message }, 400);
+  }
+  if (taskMediaError) {
+    return jsonResponse({ error: taskMediaError.message }, 400);
   }
 
   const profileMap = new Map(
     (profiles ?? []).map((profile) => [profile.id, profile]),
   );
 
-  const workspaceMap = new Map<string, Array<{ id: string; name: string; role: string }>>();
+  const workspaceMap = new Map<string, Map<string, { id: string; name: string; role: string }>>();
+
+  const upsertWorkspace = (
+    userId: string,
+    workspace: { id: string; name: string; role: string },
+  ) => {
+    const list = workspaceMap.get(userId) ?? new Map<string, { id: string; name: string; role: string }>();
+    const existing = list.get(workspace.id);
+    if (!existing) {
+      list.set(workspace.id, workspace);
+      workspaceMap.set(userId, list);
+      return;
+    }
+
+    if (workspace.role === "owner") {
+      existing.role = "owner";
+    } else if (existing.role !== "owner") {
+      existing.role = workspace.role;
+    }
+    existing.name = workspace.name || existing.name;
+    list.set(workspace.id, existing);
+    workspaceMap.set(userId, list);
+  };
+
   (memberships ?? []).forEach((row) => {
-    const list = workspaceMap.get(row.user_id) ?? [];
-    list.push({
+    upsertWorkspace(row.user_id, {
       id: row.workspace_id,
       name: row.workspaces?.name ?? "Workspace",
       role: row.role,
     });
-    workspaceMap.set(row.user_id, list);
+  });
+
+  (ownedWorkspaces ?? []).forEach((row) => {
+    upsertWorkspace(row.owner_id, {
+      id: row.id,
+      name: row.name ?? "Workspace",
+      role: "owner",
+    });
+  });
+
+  const mediaUsageByUser = new Map<string, { objectsCount: number; usedBytes: number }>();
+  (storageObjects ?? []).forEach((row) => {
+    const owner = typeof row.owner === "string" ? row.owner : "";
+    if (!owner) return;
+
+    const current = mediaUsageByUser.get(owner) ?? { objectsCount: 0, usedBytes: 0 };
+    current.objectsCount += 1;
+
+    let size = 0;
+    const metadata = (row as { metadata?: unknown }).metadata;
+    if (metadata && typeof metadata === "object" && !Array.isArray(metadata)) {
+      const rawSize = (metadata as Record<string, unknown>).size;
+      if (typeof rawSize === "number" && Number.isFinite(rawSize) && rawSize > 0) {
+        size = Math.floor(rawSize);
+      } else if (typeof rawSize === "string" && /^[0-9]+$/.test(rawSize)) {
+        size = Number(rawSize);
+      }
+    }
+
+    current.usedBytes += size;
+    mediaUsageByUser.set(owner, current);
+  });
+
+  (taskMedia ?? []).forEach((row) => {
+    const owner = typeof row.owner_id === "string" ? row.owner_id : "";
+    if (!owner) return;
+
+    const current = mediaUsageByUser.get(owner) ?? { objectsCount: 0, usedBytes: 0 };
+    current.objectsCount += 1;
+    current.usedBytes += typeof row.byte_size === "number" && Number.isFinite(row.byte_size)
+      ? Math.max(0, Math.floor(row.byte_size))
+      : 0;
+    mediaUsageByUser.set(owner, current);
   });
 
   let result = visibleUsers.map((user) => {
     const profile = profileMap.get(user.id);
-    const workspaces = workspaceMap.get(user.id) ?? [];
+    const workspaceEntries = Array.from(workspaceMap.get(user.id)?.values() ?? []);
+    workspaceEntries.sort((left, right) => left.name.localeCompare(right.name));
+    const ownedWorkspaceCount = workspaceEntries.filter((workspace) => workspace.role === "owner").length;
+    const managedWorkspaceCount = workspaceEntries.filter((workspace) => workspace.role === "owner" || workspace.role === "admin").length;
+    const mediaUsage = mediaUsageByUser.get(user.id) ?? { objectsCount: 0, usedBytes: 0 };
+
     return {
       id: user.id,
       email: user.email ?? profile?.email ?? null,
       displayName: profile?.display_name ?? null,
       createdAt: user.created_at ?? null,
       lastSignInAt: user.last_sign_in_at ?? null,
-      workspaceCount: workspaces.length,
-      workspaces,
+      managedWorkspaceCount,
+      ownedWorkspaceCount,
+      workspaceCount: workspaceEntries.length,
+      storageObjectsCount: mediaUsage.objectsCount,
+      storageUsedBytes: mediaUsage.usedBytes,
+      workspaces: workspaceEntries,
     };
   });
 
@@ -595,139 +685,20 @@ const handleUsersList = async (payload: { search?: string }) => {
   return jsonResponse({ users: result, total: result.length });
 };
 
-const handleUsersCreate = async (payload: { email?: string; displayName?: string }) => {
-  const email = payload.email?.trim().toLowerCase() ?? "";
-  if (!email) {
-    return jsonResponse({ error: "email is required" }, 400);
-  }
-
-  const linked = await resolveLinkedUserByEmail(email, payload.displayName, { sendSetupEmail: true });
-  if ("error" in linked) {
-    return jsonResponse({ error: linked.error }, 400);
-  }
-
-  const roleSyncResult = await syncUserRoles(linked.userId, linked.keycloakUserId);
-  if ("error" in roleSyncResult) {
-    return jsonResponse({ error: roleSyncResult.error }, 400);
-  }
-
-  return jsonResponse({
-    user: {
-      id: linked.userId,
-      email,
-      displayName: payload.displayName?.trim() || null,
-    },
-    warning: linked.warning,
-  });
+const handleUsersCreate = async (_payload: { email?: string; displayName?: string }) => {
+  return jsonResponse({ error: "User lifecycle operations are managed in Keycloak admin console." }, 400);
 };
 
-const handleUsersUpdate = async (payload: { userId?: string; email?: string; displayName?: string; superAdmin?: boolean }) => {
-  const userId = payload.userId?.trim() ?? "";
-  if (!userId) {
-    return jsonResponse({ error: "userId is required" }, 400);
-  }
-
-  const authUserResult = await supabaseAdmin.auth.admin.getUserById(userId);
-  if (authUserResult.error || !authUserResult.data.user) {
-    return jsonResponse({ error: authUserResult.error?.message ?? "User not found." }, 400);
-  }
-
-  const currentEmail = (authUserResult.data.user.email ?? "").trim().toLowerCase();
-  const nextEmail = payload.email?.trim().toLowerCase();
-  const finalEmail = nextEmail && nextEmail.length > 0 ? nextEmail : currentEmail;
-
-  if (nextEmail && nextEmail !== currentEmail) {
-    const updateResult = await supabaseAdmin.auth.admin.updateUserById(userId, {
-      email: nextEmail,
-      email_confirm: true,
-    });
-
-    if (updateResult.error) {
-      return jsonResponse({ error: updateResult.error.message }, 400);
-    }
-  }
-
-  if (payload.displayName !== undefined) {
-    const profileResult = await ensureProfileDisplayName(supabaseAdmin, userId, payload.displayName);
-    if ("error" in profileResult) {
-      return jsonResponse({ error: profileResult.error }, 400);
-    }
-  }
-
-  let keycloakUserId: string | null = null;
-  if (finalEmail) {
-    const profileMap = await getProfileMap(supabaseAdmin, [userId]);
-    if ("error" in profileMap) {
-      return jsonResponse({ error: profileMap.error }, 400);
-    }
-
-    const linked = await resolveLinkedUserByEmail(
-      finalEmail,
-      payload.displayName ?? profileMap.profiles.get(userId)?.displayName ?? null,
-    );
-    if ("error" in linked) {
-      return jsonResponse({ error: linked.error }, 400);
-    }
-    keycloakUserId = linked.keycloakUserId;
-  }
-
-  if (payload.superAdmin !== undefined) {
-    return jsonResponse({ error: "Manage super admin role in Keycloak (realm role app_super_admin)." }, 400);
-  }
-
-  const roleSync = await syncUserRoles(userId, keycloakUserId);
-  if ("error" in roleSync) {
-    return jsonResponse({ error: roleSync.error }, 400);
-  }
-
-  return jsonResponse({ success: true });
+const handleUsersUpdate = async (_payload: { userId?: string; email?: string; displayName?: string; superAdmin?: boolean }) => {
+  return jsonResponse({ error: "User lifecycle operations are managed in Keycloak admin console." }, 400);
 };
 
 const handleUsersResetPassword = async () => {
   return jsonResponse({ error: "Password reset is managed in Keycloak admin console." }, 400);
 };
 
-const handleUsersDelete = async (payload: { userId?: string }, currentUserId: string) => {
-  const userId = payload.userId?.trim() ?? "";
-  if (!userId) {
-    return jsonResponse({ error: "userId is required" }, 400);
-  }
-  if (userId === currentUserId) {
-    return jsonResponse({ error: "You cannot delete your own account." }, 400);
-  }
-
-  if (await ensureSuperAdminUser(userId)) {
-    return jsonResponse({ error: "Cannot delete a super admin account." }, 400);
-  }
-
-  if (reserveAdminEmail) {
-    const reserveUser = await findAuthUserByEmail(supabaseAdmin, reserveAdminEmail);
-    if ("error" in reserveUser) {
-      return jsonResponse({ error: reserveUser.error }, 400);
-    }
-    if (reserveUser.user?.id && reserveUser.user.id === userId) {
-      return jsonResponse({ error: "Cannot delete reserve admin account." }, 400);
-    }
-  }
-
-  const identityResult = await findKeycloakIdentityForUser(supabaseAdmin, userId);
-  if ("error" in identityResult) {
-    return jsonResponse({ error: identityResult.error }, 400);
-  }
-
-  const { error: deleteError } = await supabaseAdmin.auth.admin.deleteUser(userId);
-  if (deleteError) {
-    return jsonResponse({ error: deleteError.message }, 400);
-  }
-
-  if (identityResult.identity?.providerId) {
-    const keycloakDeleteResult = await deleteKeycloakUser(keycloakConfig, identityResult.identity.providerId);
-    if ("error" in keycloakDeleteResult) {
-      console.error(`Failed to delete Keycloak user ${identityResult.identity.providerId}:`, keycloakDeleteResult.error);
-    }
-  }
-
-  return jsonResponse({ success: true });
+const handleUsersDelete = async (_payload: { userId?: string }, _currentUserId: string) => {
+  return jsonResponse({ error: "User lifecycle operations are managed in Keycloak admin console." }, 400);
 };
 
 const handleWorkspacesList = async () => {

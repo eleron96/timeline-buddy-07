@@ -74,6 +74,7 @@ export const TaskDetailPanel: React.FC = () => {
     createRepeats,
   } = usePlannerStore();
   const currentWorkspaceRole = useAuthStore((state) => state.currentWorkspaceRole);
+  const currentWorkspaceId = useAuthStore((state) => state.currentWorkspaceId);
   const canEdit = currentWorkspaceRole === 'editor' || currentWorkspaceRole === 'admin';
   const isReadOnly = !canEdit;
   const filteredAssignees = useFilteredAssignees(assignees);
@@ -392,6 +393,7 @@ export const TaskDetailPanel: React.FC = () => {
                 <RichTextEditor
                   id="description"
                   value={task.description || ''}
+                  workspaceId={currentWorkspaceId}
                   onChange={(value) => handleUpdate('description', value || null)}
                   placeholder={t`Add a description...`}
                   disabled={isReadOnly}
