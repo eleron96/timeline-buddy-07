@@ -127,9 +127,11 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
   } | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const draggingImageRef = useRef<HTMLSpanElement | null>(null);
+  const dragDepthRef = useRef(0);
   const contextImageRef = useRef<HTMLImageElement | null>(null);
   const lastValueRef = useRef(value);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+  const [isFileDragOver, setIsFileDragOver] = useState(false);
 
   const syncFromEditor = useCallback(() => {
     const editor = editorRef.current;
@@ -195,6 +197,15 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
     range.setStart(position.offsetNode, position.offset);
     range.collapse(true);
     return range;
+  }, []);
+
+  const hasImageFiles = useCallback((dataTransfer?: DataTransfer | null) => {
+    if (!dataTransfer) return false;
+    const hasImageItem = Array.from(dataTransfer.items ?? [])
+      .some((item) => item.kind === 'file' && item.type.startsWith('image/'));
+    if (hasImageItem) return true;
+    return Array.from(dataTransfer.files ?? [])
+      .some((file) => file.type.startsWith('image/'));
   }, []);
 
   const insertImage = useCallback((src: string, altText: string) => {
@@ -308,6 +319,12 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
       }
     });
   }, [getDefaultImageWidth, value]);
+
+  useEffect(() => {
+    if (!disabled) return;
+    dragDepthRef.current = 0;
+    setIsFileDragOver(false);
+  }, [disabled]);
 
   const handleResizeMove = useCallback((event: PointerEvent) => {
     const state = resizeStateRef.current;
@@ -463,6 +480,22 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
     event.dataTransfer.setData('text/plain', 'image');
   };
 
+  const handleDragEnter = (event: React.DragEvent<HTMLDivElement>) => {
+    if (draggingImageRef.current) return;
+    if (!hasImageFiles(event.dataTransfer)) return;
+    event.preventDefault();
+
+    if (disabled) {
+      event.dataTransfer.dropEffect = 'none';
+      return;
+    }
+
+    dragDepthRef.current += 1;
+    if (!isFileDragOver) {
+      setIsFileDragOver(true);
+    }
+  };
+
   const handleDragOver = (event: React.DragEvent<HTMLDivElement>) => {
     if (draggingImageRef.current) {
       event.preventDefault();
@@ -470,11 +503,7 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
       return;
     }
 
-    const hasImageFile = Array.from(event.dataTransfer?.items ?? [])
-      .some((item) => item.kind === 'file' && item.type.startsWith('image/'));
-    const hasImageFromFiles = Array.from(event.dataTransfer?.files ?? [])
-      .some((file) => file.type.startsWith('image/'));
-    if (!hasImageFile && !hasImageFromFiles) return;
+    if (!hasImageFiles(event.dataTransfer)) return;
 
     if (disabled) {
       event.preventDefault();
@@ -484,9 +513,26 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
 
     event.preventDefault();
     event.dataTransfer.dropEffect = 'copy';
+    if (!isFileDragOver) {
+      setIsFileDragOver(true);
+    }
+  };
+
+  const handleDragLeave = (event: React.DragEvent<HTMLDivElement>) => {
+    if (draggingImageRef.current) return;
+    if (!hasImageFiles(event.dataTransfer)) return;
+    const nextDepth = Math.max(0, dragDepthRef.current - 1);
+    dragDepthRef.current = nextDepth;
+    const relatedTarget = event.relatedTarget as Node | null;
+    if (relatedTarget && event.currentTarget.contains(relatedTarget)) return;
+    if (nextDepth === 0) {
+      setIsFileDragOver(false);
+    }
   };
 
   const handleDrop = async (event: React.DragEvent<HTMLDivElement>) => {
+    dragDepthRef.current = 0;
+    setIsFileDragOver(false);
     const droppedFiles = Array.from(event.dataTransfer?.files ?? [])
       .filter((file) => file.type.startsWith('image/'));
 
@@ -504,6 +550,16 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
           selection.addRange(dropRange);
           savedSelectionRef.current = dropRange;
         }
+      } else {
+        const range = document.createRange();
+        range.selectNodeContents(editor);
+        range.collapse(false);
+        const selection = window.getSelection();
+        if (selection) {
+          selection.removeAllRanges();
+          selection.addRange(range);
+        }
+        savedSelectionRef.current = range;
       }
 
       for (const file of droppedFiles) {
@@ -544,6 +600,8 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
 
   const handleDragEnd = () => {
     draggingImageRef.current = null;
+    dragDepthRef.current = 0;
+    setIsFileDragOver(false);
   };
 
   const handleContextMenu = (event: React.MouseEvent<HTMLDivElement>) => {
@@ -623,7 +681,14 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
   };
 
   return (
-    <div ref={containerRef} className="relative space-y-2">
+    <div
+      ref={containerRef}
+      className="relative space-y-2"
+      onDragEnter={handleDragEnter}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
       <div className="flex flex-wrap items-center gap-1 rounded-md border border-input bg-muted/30 p-1">
         {toolbarItems.map((item) => {
           const Icon = item.icon;
@@ -671,6 +736,7 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
         className={cn(
           'rich-text-editor',
           disabled && 'bg-muted/40',
+          isFileDragOver && !disabled && 'border-primary/60 bg-primary/5 ring-2 ring-primary/30',
           className
         )}
         id={id}
@@ -687,11 +753,14 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
         onPointerDown={handlePointerDown}
         onContextMenu={handleContextMenu}
         onDragStart={handleDragStart}
-        onDragOver={handleDragOver}
-        onDrop={handleDrop}
         onDragEnd={handleDragEnd}
         suppressContentEditableWarning
       />
+      {!disabled && (
+        <p className="text-xs text-muted-foreground">
+          {t`Drag and drop image files into the description area.`}
+        </p>
+      )}
       {contextMenu && (
         <div
           ref={menuRef}

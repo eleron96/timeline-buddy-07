@@ -529,7 +529,6 @@ const handleUsersList = async (payload: { search?: string }) => {
     { data: profiles },
     { data: memberships, error: membershipsError },
     { data: ownedWorkspaces, error: ownedWorkspacesError },
-    { data: storageObjects, error: storageObjectsError },
     { data: taskMedia, error: taskMediaError },
   ] = await Promise.all([
     supabaseAdmin
@@ -545,11 +544,6 @@ const handleUsersList = async (payload: { search?: string }) => {
       .select("id, name, owner_id")
       .in("owner_id", userIds),
     supabaseAdmin
-      .schema("storage")
-      .from("objects")
-      .select("owner, metadata")
-      .in("owner", userIds),
-    supabaseAdmin
       .from("task_media")
       .select("owner_id, byte_size")
       .in("owner_id", userIds),
@@ -560,9 +554,6 @@ const handleUsersList = async (payload: { search?: string }) => {
   }
   if (ownedWorkspacesError) {
     return jsonResponse({ error: ownedWorkspacesError.message }, 400);
-  }
-  if (storageObjectsError) {
-    return jsonResponse({ error: storageObjectsError.message }, 400);
   }
   if (taskMediaError) {
     return jsonResponse({ error: taskMediaError.message }, 400);
@@ -613,27 +604,6 @@ const handleUsersList = async (payload: { search?: string }) => {
   });
 
   const mediaUsageByUser = new Map<string, { objectsCount: number; usedBytes: number }>();
-  (storageObjects ?? []).forEach((row) => {
-    const owner = typeof row.owner === "string" ? row.owner : "";
-    if (!owner) return;
-
-    const current = mediaUsageByUser.get(owner) ?? { objectsCount: 0, usedBytes: 0 };
-    current.objectsCount += 1;
-
-    let size = 0;
-    const metadata = (row as { metadata?: unknown }).metadata;
-    if (metadata && typeof metadata === "object" && !Array.isArray(metadata)) {
-      const rawSize = (metadata as Record<string, unknown>).size;
-      if (typeof rawSize === "number" && Number.isFinite(rawSize) && rawSize > 0) {
-        size = Math.floor(rawSize);
-      } else if (typeof rawSize === "string" && /^[0-9]+$/.test(rawSize)) {
-        size = Number(rawSize);
-      }
-    }
-
-    current.usedBytes += size;
-    mediaUsageByUser.set(owner, current);
-  });
 
   (taskMedia ?? []).forEach((row) => {
     const owner = typeof row.owner_id === "string" ? row.owner_id : "";
