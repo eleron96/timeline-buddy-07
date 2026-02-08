@@ -53,21 +53,22 @@ const formatWorkspaceSummary = (workspaces: AdminUser['workspaces']) => {
 const formatStorageMain = (value?: number) => {
   if (!value && value !== 0) return '—';
   const safe = Math.max(0, value);
-  const kb = safe / 1024;
-  if (kb < 1024) return `${kb.toFixed(1)} KB`;
-  const mb = kb / 1024;
-  if (mb < 1024) return `${mb.toFixed(1)} MB`;
-  const gb = mb / 1024;
+  const mbThreshold = 1024 * 1024;
+  const gbThreshold = 1024 * 1024 * 1024;
+  if (safe < mbThreshold) {
+    return `${(safe / 1024).toFixed(1)} KB`;
+  }
+  if (safe < gbThreshold) {
+    return `${(safe / (1024 * 1024)).toFixed(1)} MB`;
+  }
+  const gb = safe / gbThreshold;
   return `${gb.toFixed(2)} GB`;
 };
 
-const formatStorageTooltip = (value?: number) => {
+const formatStorageExactBytes = (value?: number) => {
   if (!value && value !== 0) return 'No storage data';
   const safe = Math.max(0, value);
-  const kb = safe / 1024;
-  const mb = kb / 1024;
-  const gb = mb / 1024;
-  return `${safe} B · ${kb.toFixed(2)} KB · ${mb.toFixed(2)} MB · ${gb.toFixed(4)} GB`;
+  return `${safe.toLocaleString('en-US')} B`;
 };
 
 const shortId = (value: string, start = 8, end = 6) => {
@@ -486,7 +487,16 @@ const AdminUsersPage: React.FC = () => {
                                   <TooltipContent className="max-w-xs">
                                     <div className="space-y-1">
                                       <div>Total: {item.workspaceCount}</div>
-                                      <div>{formatWorkspaceSummary(item.workspaces)}</div>
+                                      {item.workspaces.slice(0, 6).map((workspace) => (
+                                        <div key={`${item.id}-${workspace.id}`} className="text-xs">
+                                          {workspace.name} ({workspace.role})
+                                        </div>
+                                      ))}
+                                      {item.workspaces.length > 6 && (
+                                        <div className="text-xs text-muted-foreground">
+                                          +{item.workspaces.length - 6} more
+                                        </div>
+                                      )}
                                     </div>
                                   </TooltipContent>
                                 </Tooltip>
@@ -523,13 +533,17 @@ const AdminUsersPage: React.FC = () => {
                                   <TooltipTrigger asChild>
                                     <div className="cursor-default">
                                       <div className="text-sm text-foreground">{formatStorageMain(item.storageUsedBytes)}</div>
-                                      <div>{item.storageObjectsCount} objects</div>
                                     </div>
                                   </TooltipTrigger>
                                   <TooltipContent className="max-w-xs">
                                     <div className="space-y-1">
-                                      <div>{formatStorageTooltip(item.storageUsedBytes)}</div>
+                                      <div>Exact size: {formatStorageExactBytes(item.storageUsedBytes)}</div>
                                       <div>Objects: {item.storageObjectsCount}</div>
+                                      {item.storageObjectsCount > 0 && (
+                                        <div>
+                                          Avg/object: {formatStorageMain(item.storageUsedBytes / item.storageObjectsCount)}
+                                        </div>
+                                      )}
                                     </div>
                                   </TooltipContent>
                                 </Tooltip>
@@ -760,7 +774,9 @@ const AdminUsersPage: React.FC = () => {
                                   <TooltipTrigger asChild>
                                     <span className="cursor-default">{formatStorageMain(item.size)}</span>
                                   </TooltipTrigger>
-                                  <TooltipContent>{formatStorageTooltip(item.size)}</TooltipContent>
+                                  <TooltipContent>
+                                    Exact size: {formatStorageExactBytes(item.size)}
+                                  </TooltipContent>
                                 </Tooltip>
                               </TableCell>
                               <TableCell className="text-xs">
