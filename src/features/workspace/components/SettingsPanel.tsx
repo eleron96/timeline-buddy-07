@@ -258,8 +258,8 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ open, onOpenChange
             name: status.name.trim(),
             emoji: status.emoji ?? null,
             color: status.color ?? '#94a3b8',
-            is_final: Boolean(status.is_final) && !Boolean(status.is_cancelled),
-            is_cancelled: Boolean(status.is_cancelled),
+            is_final: !!status.is_final && !status.is_cancelled,
+            is_cancelled: !!status.is_cancelled,
           })));
         if (error) throw error;
       }

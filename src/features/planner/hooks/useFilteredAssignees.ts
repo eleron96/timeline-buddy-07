@@ -32,8 +32,9 @@ export const useFilteredAssignees = (
         if (!mounted) return;
         setAdminUserId(null);
       } finally {
-        if (!mounted) return;
-        setLoaded(true);
+        if (mounted) {
+          setLoaded(true);
+        }
       }
     })();
 

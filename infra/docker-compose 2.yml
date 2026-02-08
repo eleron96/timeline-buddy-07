@@ -99,6 +99,7 @@ services:
       JWT_SECRET: ${JWT_SECRET}
       BACKUP_DIR: /backups
       BACKUP_CRON: ${BACKUP_CRON:-0 3 * * *}
+      BACKUP_RETENTION_COUNT: ${BACKUP_RETENTION_COUNT:-30}
       BACKUP_CORS_ORIGIN: ${BACKUP_CORS_ORIGIN:-http://localhost:5173}
     volumes:
       - ./backups:/backups

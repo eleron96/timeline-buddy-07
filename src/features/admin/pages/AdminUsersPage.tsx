@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   useAuthStore,
   AdminUser,
@@ -65,6 +65,12 @@ const formatBytes = (value?: number) => {
   return `${size.toFixed(1)} ${units[unitIndex]}`;
 };
 
+const formatBackupType = (type: BackupEntry['type']) => {
+  if (type === 'daily') return 'Daily';
+  if (type === 'pre-restore') return 'Pre-restore';
+  return 'Manual';
+};
+
 const AdminUsersPage: React.FC = () => {
   const {
     user,
@@ -95,6 +101,10 @@ const AdminUsersPage: React.FC = () => {
     fetchBackups,
     createBackup,
     restoreBackup,
+    uploadBackup,
+    downloadBackup,
+    renameBackup,
+    deleteBackup,
     signOut,
   } = useAuthStore();
   const locale = useLocaleStore((state) => state.locale);
@@ -152,10 +162,22 @@ const AdminUsersPage: React.FC = () => {
 
   const [backupCreateSubmitting, setBackupCreateSubmitting] = useState(false);
   const [backupCreateError, setBackupCreateError] = useState('');
+  const [backupActionSubmitting, setBackupActionSubmitting] = useState(false);
+  const [backupActionError, setBackupActionError] = useState('');
   const [backupRestoreOpen, setBackupRestoreOpen] = useState(false);
   const [backupRestoreTarget, setBackupRestoreTarget] = useState<BackupEntry | null>(null);
   const [backupRestoreError, setBackupRestoreError] = useState('');
   const [backupRestoreSubmitting, setBackupRestoreSubmitting] = useState(false);
+  const [backupRenameOpen, setBackupRenameOpen] = useState(false);
+  const [backupRenameTarget, setBackupRenameTarget] = useState<BackupEntry | null>(null);
+  const [backupRenameValue, setBackupRenameValue] = useState('');
+  const [backupRenameSubmitting, setBackupRenameSubmitting] = useState(false);
+  const [backupRenameError, setBackupRenameError] = useState('');
+  const [backupDeleteOpen, setBackupDeleteOpen] = useState(false);
+  const [backupDeleteTarget, setBackupDeleteTarget] = useState<BackupEntry | null>(null);
+  const [backupDeleteSubmitting, setBackupDeleteSubmitting] = useState(false);
+  const [backupDeleteError, setBackupDeleteError] = useState('');
+  const backupUploadInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     if (!isSuperAdmin) return;
@@ -409,6 +431,7 @@ const AdminUsersPage: React.FC = () => {
   const handleCreateBackup = async () => {
     setBackupCreateSubmitting(true);
     setBackupCreateError('');
+    setBackupActionError('');
     const result = await createBackup();
     if (result.error) {
       setBackupCreateError(result.error);
@@ -419,9 +442,92 @@ const AdminUsersPage: React.FC = () => {
     setBackupCreateSubmitting(false);
   };
 
+  const openBackupUploadDialog = () => {
+    setBackupActionError('');
+    backupUploadInputRef.current?.click();
+  };
+
+  const handleUploadBackup = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+
+    setBackupActionSubmitting(true);
+    setBackupActionError('');
+    const result = await uploadBackup(file);
+    if (result.error) {
+      setBackupActionError(result.error);
+      setBackupActionSubmitting(false);
+      return;
+    }
+    await fetchBackups();
+    setBackupActionSubmitting(false);
+  };
+
+  const handleDownloadBackup = async (target: BackupEntry) => {
+    setBackupActionSubmitting(true);
+    setBackupActionError('');
+    const result = await downloadBackup(target.name);
+    if (result.error) {
+      setBackupActionError(result.error);
+    }
+    setBackupActionSubmitting(false);
+  };
+
+  const openBackupRename = (target: BackupEntry) => {
+    setBackupRenameTarget(target);
+    setBackupRenameValue(target.name);
+    setBackupRenameError('');
+    setBackupRenameOpen(true);
+  };
+
+  const handleRenameBackup = async () => {
+    if (!backupRenameTarget) return;
+    const nextName = backupRenameValue.trim();
+    if (!nextName) {
+      setBackupRenameError('Backup name is required.');
+      return;
+    }
+    setBackupRenameSubmitting(true);
+    setBackupRenameError('');
+    const result = await renameBackup(backupRenameTarget.name, nextName);
+    if (result.error) {
+      setBackupRenameError(result.error);
+      setBackupRenameSubmitting(false);
+      return;
+    }
+    await fetchBackups();
+    setBackupRenameSubmitting(false);
+    setBackupRenameOpen(false);
+    setBackupRenameTarget(null);
+  };
+
+  const openBackupDelete = (target: BackupEntry) => {
+    setBackupDeleteTarget(target);
+    setBackupDeleteError('');
+    setBackupDeleteOpen(true);
+  };
+
+  const handleDeleteBackup = async () => {
+    if (!backupDeleteTarget) return;
+    setBackupDeleteSubmitting(true);
+    setBackupDeleteError('');
+    const result = await deleteBackup(backupDeleteTarget.name);
+    if (result.error) {
+      setBackupDeleteError(result.error);
+      setBackupDeleteSubmitting(false);
+      return;
+    }
+    await fetchBackups();
+    setBackupDeleteSubmitting(false);
+    setBackupDeleteOpen(false);
+    setBackupDeleteTarget(null);
+  };
+
   const openBackupRestore = (target: BackupEntry) => {
     setBackupRestoreTarget(target);
     setBackupRestoreError('');
+    setBackupActionError('');
     setBackupRestoreOpen(true);
   };
 
@@ -435,6 +541,7 @@ const AdminUsersPage: React.FC = () => {
       setBackupRestoreSubmitting(false);
       return;
     }
+    await fetchBackups();
     setBackupRestoreSubmitting(false);
     setBackupRestoreOpen(false);
     setBackupRestoreTarget(null);
@@ -739,6 +846,13 @@ const AdminUsersPage: React.FC = () => {
               </TabsContent>
 
               <TabsContent value="backups" className="space-y-4">
+                <input
+                  ref={backupUploadInputRef}
+                  type="file"
+                  accept=".dump,application/octet-stream"
+                  className="hidden"
+                  onChange={handleUploadBackup}
+                />
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                   <Button
                     type="button"
@@ -749,6 +863,14 @@ const AdminUsersPage: React.FC = () => {
                   </Button>
                   <Button type="button" variant="outline" onClick={() => fetchBackups()}>
                     Refresh
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={openBackupUploadDialog}
+                    disabled={backupActionSubmitting}
+                  >
+                    Upload backup
                   </Button>
                 </div>
 
@@ -763,6 +885,13 @@ const AdminUsersPage: React.FC = () => {
                   <Alert variant="destructive">
                     <AlertTitle>{t`Error`}</AlertTitle>
                     <AlertDescription>{backupsError}</AlertDescription>
+                  </Alert>
+                )}
+
+                {backupActionError && (
+                  <Alert variant="destructive">
+                    <AlertTitle>{t`Error`}</AlertTitle>
+                    <AlertDescription>{backupActionError}</AlertDescription>
                   </Alert>
                 )}
 
@@ -792,20 +921,47 @@ const AdminUsersPage: React.FC = () => {
                             <TableRow key={item.name}>
                               <TableCell className="font-medium">{item.name}</TableCell>
                               <TableCell className="text-sm text-muted-foreground">
-                                {item.type === 'daily' ? 'Daily' : 'Manual'}
+                                {formatBackupType(item.type)}
                               </TableCell>
                               <TableCell className="text-sm text-muted-foreground">
                                 {formatBytes(item.size)}
                               </TableCell>
                               <TableCell className="text-xs">{formatDate(item.createdAt, locale)}</TableCell>
                               <TableCell className="text-right">
-                                <Button
-                                  size="sm"
-                                  variant="destructive"
-                                  onClick={() => openBackupRestore(item)}
-                                >
-                                  Restore
-                                </Button>
+                                <div className="flex flex-wrap justify-end gap-2">
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => void handleDownloadBackup(item)}
+                                    disabled={backupActionSubmitting}
+                                  >
+                                    Download
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => openBackupRename(item)}
+                                    disabled={backupRenameSubmitting || backupDeleteSubmitting || backupRestoreSubmitting}
+                                  >
+                                    Rename
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => openBackupDelete(item)}
+                                    disabled={backupRenameSubmitting || backupDeleteSubmitting || backupRestoreSubmitting}
+                                  >
+                                    Delete
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="destructive"
+                                    onClick={() => openBackupRestore(item)}
+                                    disabled={backupRenameSubmitting || backupDeleteSubmitting || backupRestoreSubmitting}
+                                  >
+                                    Restore
+                                  </Button>
+                                </div>
                               </TableCell>
                             </TableRow>
                           ))
@@ -1087,6 +1243,58 @@ const AdminUsersPage: React.FC = () => {
               disabled={superAdminDeleteSubmitting}
             >
               Remove
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <Dialog open={backupRenameOpen} onOpenChange={setBackupRenameOpen}>
+        <DialogContent className="sm:max-w-[420px]">
+          <DialogHeader>
+            <DialogTitle>Rename backup</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <Input
+              value={backupRenameValue}
+              onChange={(event) => setBackupRenameValue(event.target.value)}
+              placeholder="backup-name.dump"
+            />
+            {backupRenameError && (
+              <div className="text-sm text-destructive">{backupRenameError}</div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setBackupRenameOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="button" onClick={handleRenameBackup} disabled={backupRenameSubmitting}>
+              Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={backupDeleteOpen} onOpenChange={setBackupDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete backup?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete backup {backupDeleteTarget?.name ?? '—'}.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {backupDeleteError && (
+            <div className="text-sm text-destructive">{backupDeleteError}</div>
+          )}
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(event) => {
+                event.preventDefault();
+                void handleDeleteBackup();
+              }}
+              disabled={backupDeleteSubmitting}
+            >
+              Delete
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

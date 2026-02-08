@@ -64,7 +64,7 @@ export interface SuperAdminUser {
 
 export interface BackupEntry {
   name: string;
-  type: 'daily' | 'manual';
+  type: 'daily' | 'manual' | 'pre-restore';
   createdAt: string;
   size: number;
 }
@@ -115,6 +115,10 @@ interface AuthState {
   fetchBackups: () => Promise<{ error?: string }>;
   createBackup: () => Promise<{ error?: string }>;
   restoreBackup: (name: string) => Promise<{ error?: string }>;
+  uploadBackup: (file: File) => Promise<{ error?: string }>;
+  downloadBackup: (name: string) => Promise<{ error?: string }>;
+  renameBackup: (name: string, nextName: string) => Promise<{ error?: string }>;
+  deleteBackup: (name: string) => Promise<{ error?: string }>;
   signOut: () => Promise<void>;
   fetchWorkspaces: () => Promise<void>;
   fetchProfile: () => Promise<void>;
@@ -153,9 +157,31 @@ const parseInvokeError = async (error: { message: string }, response?: Response)
   return message;
 };
 
+const isTransientSchemaAuthError = (message: string) => (
+  message.toLowerCase().includes('database error querying schema')
+);
+
 const getBackupBaseUrl = () => {
   const base = import.meta.env.VITE_SUPABASE_URL;
   return base ? `${base}/backup` : '';
+};
+
+const parseBackupApiError = async (response: Response) => {
+  let message = response.statusText || 'Backup request failed.';
+  try {
+    const body = await response.clone().json();
+    if (body && typeof body === 'object' && typeof (body as { error?: string }).error === 'string') {
+      message = (body as { error: string }).error;
+    }
+  } catch (_error) {
+    try {
+      const text = await response.clone().text();
+      if (text) message = text;
+    } catch (_innerError) {
+      // Ignore parsing errors.
+    }
+  }
+  return message;
 };
 
 const callBackupApi = async <T>(token: string | null | undefined, path: string, options?: RequestInit) => {
@@ -176,20 +202,7 @@ const callBackupApi = async <T>(token: string | null | undefined, path: string, 
   });
 
   if (!response.ok) {
-    let message = response.statusText || 'Backup request failed.';
-    try {
-      const body = await response.clone().json();
-      if (body && typeof body === 'object' && typeof (body as { error?: string }).error === 'string') {
-        message = (body as { error: string }).error;
-      }
-    } catch (_error) {
-      try {
-        const text = await response.clone().text();
-        if (text) message = text;
-      } catch (_innerError) {
-        // Ignore parsing errors.
-      }
-    }
+    const message = await parseBackupApiError(response);
     return { error: message };
   }
 
@@ -267,9 +280,16 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
   },
   signIn: async (email, password) => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) return { error: error.message };
-    return {};
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (!error) return {};
+      if (attempt === 0 && isTransientSchemaAuthError(error.message)) {
+        await new Promise((resolve) => setTimeout(resolve, 700));
+        continue;
+      }
+      return { error: error.message };
+    }
+    return { error: 'Authentication failed.' };
   },
   signUp: async (email, password) => {
     const { error } = await supabase.auth.signUp({ email, password });
@@ -454,6 +474,103 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       { method: 'POST' },
     );
     if (error) return { error };
+    return {};
+  },
+  uploadBackup: async (file) => {
+    const token = get().session?.access_token;
+    if (!token) return { error: 'Not authenticated.' };
+    const baseUrl = getBackupBaseUrl();
+    if (!baseUrl) return { error: 'Backup service is not configured.' };
+
+    const fileName = file.name.trim();
+    if (!fileName) return { error: 'Invalid backup file name.' };
+
+    const response = await fetch(`${baseUrl}/backups/upload`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/octet-stream',
+        'X-Backup-Name': fileName,
+      },
+      body: file,
+    });
+
+    if (!response.ok) {
+      const message = await parseBackupApiError(response);
+      return { error: message };
+    }
+
+    const data = await response.json().catch(() => ({})) as { backup?: BackupEntry };
+    if (data.backup) {
+      set((state) => ({
+        backups: [data.backup!, ...state.backups.filter((item) => item.name !== data.backup?.name)],
+      }));
+    }
+    return {};
+  },
+  downloadBackup: async (name) => {
+    const token = get().session?.access_token;
+    if (!token) return { error: 'Not authenticated.' };
+    const baseUrl = getBackupBaseUrl();
+    if (!baseUrl) return { error: 'Backup service is not configured.' };
+    if (typeof window === 'undefined') return { error: 'Download is only available in browser.' };
+
+    const encoded = encodeURIComponent(name);
+    const response = await fetch(`${baseUrl}/backups/${encoded}/download`, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    if (!response.ok) {
+      const message = await parseBackupApiError(response);
+      return { error: message };
+    }
+
+    const blob = await response.blob();
+    const objectUrl = window.URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = objectUrl;
+    anchor.download = name;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    window.setTimeout(() => window.URL.revokeObjectURL(objectUrl), 0);
+    return {};
+  },
+  renameBackup: async (name, nextName) => {
+    const trimmed = nextName.trim();
+    if (!trimmed) return { error: 'Backup name is required.' };
+
+    const encoded = encodeURIComponent(name);
+    const { data, error } = await callBackupApi<{ backup?: BackupEntry }>(
+      get().session?.access_token,
+      `/backups/${encoded}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ name: trimmed }),
+      },
+    );
+    if (error) return { error };
+    if (data?.backup) {
+      set((state) => ({
+        backups: [data.backup!, ...state.backups.filter((item) => item.name !== name && item.name !== data.backup?.name)],
+      }));
+    }
+    return {};
+  },
+  deleteBackup: async (name) => {
+    const encoded = encodeURIComponent(name);
+    const { error } = await callBackupApi(
+      get().session?.access_token,
+      `/backups/${encoded}`,
+      { method: 'DELETE' },
+    );
+    if (error) return { error };
+    set((state) => ({
+      backups: state.backups.filter((item) => item.name !== name),
+    }));
     return {};
   },
   signOut: async () => {

@@ -56,8 +56,41 @@ make logs
 
 Сервис доступен:
 - Frontend: `http://localhost:5173`
-- Supabase Gateway: `http://localhost:8080`
+- Supabase Gateway health: `http://localhost:8080/health`
+- Supabase Auth health: `http://localhost:8080/auth/v1/health`
 - Postgres: `localhost:54322`
+
+## Production запуск (build + static)
+
+Для сервера используйте production‑контур: фронтенд собирается через `vite build` и раздается через `nginx` как статические файлы.
+
+```sh
+make up-prod
+```
+
+Что произойдет:
+- Поднимутся `db/auth/rest/functions/backup/gateway`.
+- Применятся миграции.
+- Соберется фронтенд‑образ и поднимется `web` без `vite dev`.
+- В production отключена открытая регистрация: вход только по инвайтам.
+- Резервный super admin будет создан автоматически из `RESERVE_ADMIN_EMAIL`/`RESERVE_ADMIN_PASSWORD`.
+
+Остановить production‑контур:
+
+```sh
+make down-prod
+```
+
+Логи production‑контейнеров:
+
+```sh
+make logs-prod
+```
+
+Важно для обновлений:
+- `index.html` отдается без кеша.
+- ассеты в `/assets` кешируются долго (immutable).
+- после деплоя пользователи получают новый функционал после перезагрузки страницы.
 
 ## Локальный запуск с Supabase CLI
 
@@ -109,6 +142,12 @@ npm run dev:compose
 - `VITE_SUPABASE_ANON_KEY` — публичный ключ.
 - `RESEND_API_KEY`, `RESEND_FROM` — отправка инвайтов через Resend.
 - `RESERVE_ADMIN_EMAIL`, `RESERVE_ADMIN_PASSWORD` — резервный супер‑админ.
+- `BACKUP_RETENTION_COUNT` — сколько последних `.dump` хранить локально (по умолчанию `30`).
+- `BACKUP_SCHEMAS` — схемы для backup/restore (по умолчанию `public,auth,storage`).
+- `BACKUP_RESTORE_DB_URL` — отдельный URL для restore (если не задан, используется `SUPABASE_DB_URL` с пользователем `supabase_admin`).
+- `BACKUP_AUTH_DB_USER` — роль, которой после restore выдаются права на `auth` (по умолчанию берется пользователь из `GOTRUE_DB_DATABASE_URL`).
+- `BACKUP_AUTH_HOST` — хост контейнера GoTrue для точечного сброса его DB-соединений после restore (по умолчанию `auth`).
+- `BACKUP_MAX_UPLOAD_MB` — максимальный размер загружаемого backup-файла (по умолчанию `1024`).
 
 Файл‑шаблон: `.env.example`. В Compose‑режиме `.env` создается автоматически.
 
@@ -119,6 +158,7 @@ npm run dev:compose
 - Резервный супер‑админ создается автоматически, если заданы:
   - `RESERVE_ADMIN_EMAIL`
   - `RESERVE_ADMIN_PASSWORD`
+- В production используйте сильный пароль для `RESERVE_ADMIN_PASSWORD`.
 
 ## Использование
 
@@ -144,6 +184,15 @@ npm run test
 npm run test:watch
 ```
 
+```sh
+make up       # локальный dev-контур (vite dev)
+make down
+make logs
+make up-prod  # production-контур (build + nginx)
+make down-prod
+make logs-prod
+```
+
 ## Тестирование и линтинг
 
 - `npm run test` — прогон тестов.
@@ -153,4 +202,8 @@ npm run test:watch
 
 - Инвайты работают через Edge Function `invite` и возвращают ссылку, если email не отправлен.
 - Бэкапы доступны в супер‑админке (вкладка `Backups`).
+- В супер‑админке можно создавать, загружать, скачивать, переименовывать, удалять и восстанавливать `.dump` бэкапы.
+- Перед восстановлением автоматически создается страховочный бэкап `pre-restore-*.dump`.
+- По умолчанию backup/restore обрабатывают схемы `public`, `auth`, `storage`, чтобы не затрагивать системные объекты Supabase и сохранить пользователей/файлы.
+- После restore backup-сервис автоматически восстанавливает права на `auth` для роли GoTrue и сбрасывает только его DB-соединения.
 - Все пользовательские настройки и роли ограничены RLS в Supabase.

@@ -1,7 +1,7 @@
-.PHONY: help up down logs
+.PHONY: help up down logs up-prod down-prod logs-prod
 
 help:
-	@printf "Targets:\n  up\n  down\n  logs\n"
+	@printf "Targets:\n  up\n  down\n  logs\n  up-prod\n  down-prod\n  logs-prod\n"
 
 up:
 	./infra/scripts/dev-compose.sh
@@ -11,3 +11,12 @@ down:
 
 logs:
 	docker compose -f infra/docker-compose.yml --env-file .env logs -f
+
+up-prod:
+	./infra/scripts/prod-compose.sh
+
+down-prod:
+	docker compose -f infra/docker-compose.prod.yml --env-file .env down
+
+logs-prod:
+	docker compose -f infra/docker-compose.prod.yml --env-file .env logs -f
