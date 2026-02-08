@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { usePlannerStore } from '@/features/planner/store/plannerStore';
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/shared/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/shared/ui/dialog';
 import { Button } from '@/shared/ui/button';
 import { Input } from '@/shared/ui/input';
 import { Label } from '@/shared/ui/label';
@@ -90,6 +90,11 @@ export const MilestoneDialog: React.FC<MilestoneDialogProps> = ({
       <DialogContent className="sm:max-w-[420px]">
         <DialogHeader>
           <DialogTitle>{mode === 'edit' ? 'Edit milestone' : 'Create milestone'}</DialogTitle>
+          <DialogDescription className="sr-only">
+            {mode === 'edit'
+              ? 'Update milestone details.'
+              : 'Create a new milestone for the selected date.'}
+          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 mt-4">

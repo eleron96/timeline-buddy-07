@@ -8,7 +8,7 @@
 - Проекты с цветами, архивированием и просмотром задач проекта.
 - Сотрудники: список участников, их задачи, массовые действия, фильтры и история.
 - Дашборд с настраиваемыми виджетами и автосохранением раскладки.
-- Роли и доступ: viewer/editor/admin, инвайты по email или ссылке.
+- Роли и доступ: viewer/editor/admin, инвайты через Keycloak + ссылка на вход.
 - Настройки воркспейса: статусы, типы задач, теги, шаблоны, удаление.
 - Супер‑админка: пользователи, воркспейсы, супер‑админы, бэкапы.
 - SSO через Keycloak (OIDC) с брендированной страницей логина.
@@ -96,8 +96,8 @@ make logs-prod
 - после деплоя пользователи получают новый функционал после перезагрузки страницы.
 
 Авторизация:
-- По умолчанию страница `/auth` отправляет пользователя в Keycloak.
-- Для аварийного входа локальным супер‑админом используйте кнопку `Emergency local login` на `/auth`.
+- Страница `/auth` работает в режиме Keycloak-only.
+- Локальные формы логина/регистрации/сброса пароля отключены.
 
 ## Локальный запуск с Supabase CLI
 
@@ -139,7 +139,7 @@ npm run dev:compose
    - `APP_URL` (например, `http://localhost:5173`)
    - `RESEND_API_KEY` и `RESEND_FROM` (опционально для email‑инвайтов)
    - `RESERVE_ADMIN_EMAIL`, `RESERVE_ADMIN_PASSWORD` (см. ниже)
-6) Включите email‑auth в Supabase и настройте SMTP при необходимости.
+6) В Supabase используйте только OAuth через Keycloak (локальный email/password выключен).
 
 ## Переменные окружения
 
@@ -154,7 +154,8 @@ npm run dev:compose
 - `GOTRUE_EXTERNAL_KEYCLOAK_CLIENT_ID`, `GOTRUE_EXTERNAL_KEYCLOAK_SECRET` — OIDC client Supabase в Keycloak.
 - `KEYCLOAK_ADMIN`, `KEYCLOAK_ADMIN_PASSWORD` — логин/пароль админки Keycloak.
 - `KEYCLOAK_DB_NAME`, `KEYCLOAK_DB_USER`, `KEYCLOAK_DB_PASSWORD` — БД Keycloak.
-- `VITE_AUTH_MODE` — режим UI авторизации (`keycloak`, `hybrid`, `password`).
+- `KEYCLOAK_INTERNAL_URL`, `KEYCLOAK_REALM`, `KEYCLOAK_ADMIN_REALM`, `KEYCLOAK_ADMIN_CLIENT_ID`, `KEYCLOAK_APP_CLIENT_ID` — доступ Edge Functions к Keycloak Admin API.
+- `VITE_AUTH_MODE` — оставляйте `keycloak` (поддерживается только Keycloak-only режим).
 - `BACKUP_RETENTION_COUNT` — сколько последних `.dump` хранить локально (по умолчанию `30`).
 - `BACKUP_SCHEMAS` — схемы для backup/restore (по умолчанию `public,auth,storage`).
 - `BACKUP_RESTORE_DB_URL` — отдельный URL для restore (если не задан, используется `SUPABASE_DB_URL` с пользователем `supabase_admin`).
@@ -182,7 +183,7 @@ npm run dev:compose
 
 ## Использование
 
-1) Перейдите на `/auth`, зарегистрируйтесь или войдите.
+1) Перейдите на `/auth` и войдите через Keycloak.
 2) Создайте воркспейс (создается автоматически при первом входе).
 3) На таймлайне создайте задачи и назначьте участников.
 4) В `Projects` управляйте проектами и смотрите задачи.
@@ -220,7 +221,7 @@ make logs-prod
 
 ## Примечания
 
-- Инвайты работают через Edge Function `invite` и возвращают ссылку, если email не отправлен.
+- Инвайты работают через Edge Function `invite`, создают/связывают пользователя с Keycloak и возвращают ссылку входа, если email не отправлен.
 - Бэкапы доступны в супер‑админке (вкладка `Backups`).
 - В супер‑админке можно создавать, загружать, скачивать, переименовывать, удалять и восстанавливать `.dump` бэкапы.
 - Перед восстановлением автоматически создается страховочный бэкап `pre-restore-*.dump`.

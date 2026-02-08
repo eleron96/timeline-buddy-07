@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { usePlannerStore } from '@/features/planner/store/plannerStore';
 import { useFilteredAssignees } from '@/features/planner/hooks/useFilteredAssignees';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/shared/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/shared/ui/dialog';
 import { Button } from '@/shared/ui/button';
 import { Checkbox } from '@/shared/ui/checkbox';
 import { Input } from '@/shared/ui/input';
@@ -224,6 +224,9 @@ export const TaskDetailPanel: React.FC = () => {
         <DialogContent className="w-[90vw] max-w-[420px]">
           <DialogHeader>
             <DialogTitle>Task not found</DialogTitle>
+            <DialogDescription>
+              {t`The selected task does not exist or was deleted.`}
+            </DialogDescription>
           </DialogHeader>
         </DialogContent>
       </Dialog>
@@ -324,6 +327,10 @@ export const TaskDetailPanel: React.FC = () => {
             }
           }}
         >
+          <DialogHeader className="sr-only">
+            <DialogTitle>{t`Task details`}</DialogTitle>
+            <DialogDescription>{t`View and edit task details.`}</DialogDescription>
+          </DialogHeader>
           <div className="grid gap-6 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
             <div className="space-y-3">
               <div className="space-y-2">

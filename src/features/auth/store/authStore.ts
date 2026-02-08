@@ -103,16 +103,16 @@ interface AuthState {
   sendPasswordReset: (email: string) => Promise<{ error?: string }>;
   updatePassword: (password: string) => Promise<{ error?: string }>;
   fetchAdminUsers: (search?: string) => Promise<{ error?: string }>;
-  createAdminUser: (payload: { email: string; password: string; displayName?: string }) => Promise<{ error?: string }>;
-  updateAdminUser: (payload: { userId: string; email?: string; password?: string; displayName?: string }) => Promise<{ error?: string }>;
-  resetUserPassword: (userId: string, password: string) => Promise<{ error?: string }>;
+  createAdminUser: (payload: { email: string; displayName?: string }) => Promise<{ error?: string; warning?: string }>;
+  updateAdminUser: (payload: { userId: string; email?: string; displayName?: string }) => Promise<{ error?: string }>;
   deleteAdminUser: (userId: string) => Promise<{ error?: string }>;
   fetchAdminWorkspaces: () => Promise<{ error?: string }>;
   updateAdminWorkspace: (workspaceId: string, name: string) => Promise<{ error?: string }>;
   deleteAdminWorkspace: (workspaceId: string) => Promise<{ error?: string }>;
   fetchSuperAdmins: () => Promise<{ error?: string }>;
-  createSuperAdmin: (payload: { email: string; password: string; displayName?: string }) => Promise<{ error?: string }>;
+  createSuperAdmin: (payload: { email: string; displayName?: string }) => Promise<{ error?: string; warning?: string }>;
   deleteSuperAdmin: (userId: string) => Promise<{ error?: string }>;
+  syncKeycloakUsers: () => Promise<{ error?: string }>;
   fetchBackups: () => Promise<{ error?: string }>;
   createBackup: () => Promise<{ error?: string }>;
   restoreBackup: (name: string) => Promise<{ error?: string }>;
@@ -297,7 +297,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       ?? (typeof window !== 'undefined' ? `${window.location.origin}/auth` : undefined);
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'keycloak',
-      options: destination ? { redirectTo: destination } : undefined,
+      options: {
+        ...(destination ? { redirectTo: destination } : {}),
+        queryParams: { prompt: 'login' },
+      },
     });
     if (error) return { error: error.message };
     return {};
@@ -341,31 +344,20 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     return {};
   },
   createAdminUser: async (payload) => {
-    const { error } = await invokeAdmin({
+    const { data, error } = await invokeAdmin<{ warning?: string }>({
       action: 'users.create',
       email: payload.email,
-      password: payload.password,
       displayName: payload.displayName,
     });
     if (error) return { error };
-    return {};
+    return { warning: data?.warning };
   },
   updateAdminUser: async (payload) => {
     const { error } = await invokeAdmin({
       action: 'users.update',
       userId: payload.userId,
       email: payload.email,
-      password: payload.password,
       displayName: payload.displayName,
-    });
-    if (error) return { error };
-    return {};
-  },
-  resetUserPassword: async (userId, password) => {
-    const { error } = await invokeAdmin({
-      action: 'users.resetPassword',
-      userId,
-      password,
     });
     if (error) return { error };
     return {};
@@ -428,19 +420,25 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     return {};
   },
   createSuperAdmin: async (payload) => {
-    const { error } = await invokeAdmin({
+    const { data, error } = await invokeAdmin<{ warning?: string }>({
       action: 'superAdmins.create',
       email: payload.email,
-      password: payload.password,
       displayName: payload.displayName,
     });
     if (error) return { error };
-    return {};
+    return { warning: data?.warning };
   },
   deleteSuperAdmin: async (userId) => {
     const { error } = await invokeAdmin({
       action: 'superAdmins.delete',
       userId,
+    });
+    if (error) return { error };
+    return {};
+  },
+  syncKeycloakUsers: async () => {
+    const { error } = await invokeAdmin({
+      action: 'keycloak.sync',
     });
     if (error) return { error };
     return {};
@@ -585,7 +583,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     return {};
   },
   signOut: async () => {
-    await supabase.auth.signOut();
+    if (typeof window !== 'undefined') {
+      window.sessionStorage.removeItem('auth.skipAutoOAuthUntil');
+      window.sessionStorage.setItem('auth.silentOAuth', '1');
+    }
+    await supabase.auth.signOut({ scope: 'local' });
     set({
       user: null,
       session: null,
@@ -610,6 +612,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       isSuperAdmin: false,
       superAdminLoading: false,
     });
+
+    if (typeof window !== 'undefined') {
+      window.location.replace('/auth');
+    }
   },
   fetchWorkspaces: async () => {
     const user = get().user;

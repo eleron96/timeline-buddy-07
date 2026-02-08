@@ -1,43 +1,60 @@
 :root {
   --timeline-bg: #ffffff;
-  --timeline-text: #101828;
-  --timeline-muted: #667085;
-  --timeline-border: #d0d5dd;
-  --timeline-primary: #111827;
-  --timeline-primary-hover: #000000;
+  --timeline-surface: #ffffff;
+  --timeline-text: #17212f;
+  --timeline-muted: #6b7787;
+  --timeline-border: #d7dee7;
+  --timeline-primary: #20a8b9;
+  --timeline-primary-hover: #1a95a4;
+  --timeline-ring: rgba(32, 168, 185, 0.22);
+  --timeline-radius: 8px;
 }
 
-html.login-pf,
-body {
+html.login-pf {
   background: var(--timeline-bg) !important;
+}
+
+.timeline-kc-hidden body {
+  visibility: hidden;
+}
+
+.login-pf body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--timeline-bg) !important;
+  background-image: none !important;
   color: var(--timeline-text);
 }
 
 .login-pf-page {
-  min-height: 100vh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
+  min-height: 100vh !important;
+  width: 100%;
+  margin: 0 !important;
+  padding: 24px !important;
+  box-sizing: border-box;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
 }
 
-#kc-header {
+#kc-header,
+#kc-header-wrapper {
   display: none;
 }
 
-.card-pf {
+.login-pf-page .card-pf {
   width: min(420px, calc(100vw - 32px));
   max-width: 420px;
-  margin: 0 auto;
-  padding: 28px 28px 72px;
+  margin: 0 auto !important;
+  padding: 28px 28px 72px !important;
   border: 1px solid var(--timeline-border);
-  border-radius: 14px;
-  background: #fff;
-  box-shadow: 0 8px 24px rgba(16, 24, 40, 0.08);
+  border-radius: calc(var(--timeline-radius) + 2px);
+  background: var(--timeline-surface);
+  box-shadow: 0 8px 26px rgba(23, 33, 47, 0.08);
   position: relative;
 }
 
-.login-pf-header {
+.login-pf-page .login-pf-header {
   margin-bottom: 12px;
 }
 
@@ -55,16 +72,22 @@ body {
 
 #username,
 #password {
-  border-radius: 10px;
+  width: 100%;
+  border-radius: var(--timeline-radius);
   border: 1px solid var(--timeline-border);
+  background: #fff;
+  color: var(--timeline-text);
   box-shadow: none;
-  height: 44px;
+  height: 40px;
+  padding: 0 12px;
+  font-size: 14px;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
 }
 
 #username:focus,
 #password:focus {
-  border-color: #98a2b3;
-  box-shadow: 0 0 0 2px rgba(152, 162, 179, 0.2);
+  border-color: var(--timeline-primary);
+  box-shadow: 0 0 0 2px var(--timeline-ring);
 }
 
 #kc-form-buttons {
@@ -72,12 +95,14 @@ body {
 }
 
 #kc-login {
-  border-radius: 10px;
-  height: 44px;
+  border-radius: var(--timeline-radius);
+  height: 40px;
   border: 1px solid var(--timeline-primary);
   background: var(--timeline-primary);
   color: #fff;
   font-weight: 600;
+  font-size: 14px;
+  transition: background-color 120ms ease, border-color 120ms ease;
 }
 
 #kc-login:hover,
@@ -97,11 +122,17 @@ body {
   right: 16px;
   bottom: 16px;
   margin: 0;
+  float: none;
+  z-index: 5;
+}
+
+#kc-locale-dropdown {
+  position: relative;
 }
 
 #kc-current-locale-link {
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -111,11 +142,15 @@ body {
   color: transparent;
   font-size: 0;
   padding: 0;
+  line-height: 1;
 }
 
 #kc-current-locale-link::before {
-  content: "\1F310";
-  font-size: 18px;
+  content: "\f0ac";
+  font-family: FontAwesome;
+  font-size: 15px;
+  font-style: normal;
+  font-weight: normal;
   color: var(--timeline-muted);
   line-height: 1;
 }
@@ -126,14 +161,22 @@ body {
 }
 
 #language-switch1 {
+  display: none;
+  position: absolute;
   right: 0;
   left: auto;
-  top: auto;
-  bottom: calc(100% + 8px);
+  top: calc(100% + 8px);
+  bottom: auto;
   min-width: 92px;
-  border-radius: 10px;
+  border-radius: var(--timeline-radius);
   border: 1px solid var(--timeline-border);
   box-shadow: 0 8px 24px rgba(16, 24, 40, 0.08);
+  background: #fff;
+  z-index: 10;
+}
+
+#kc-current-locale-link[aria-expanded="true"] + #language-switch1 {
+  display: block;
 }
 
 #language-1,
@@ -155,4 +198,42 @@ body {
 
 #language-2::after {
   content: "RU";
+}
+
+.pf-c-input-group {
+  position: relative;
+  display: block;
+}
+
+.pf-c-input-group .pf-c-form-control {
+  width: 100%;
+  border-radius: var(--timeline-radius) !important;
+}
+
+#password {
+  padding-right: 38px;
+}
+
+.pf-c-input-group .pf-c-button.pf-m-control {
+  position: absolute;
+  top: 50%;
+  right: 10px;
+  transform: translateY(-50%);
+  width: 20px;
+  height: 20px;
+  min-width: 20px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--timeline-muted);
+  box-shadow: none;
+}
+
+.pf-c-input-group .pf-c-button.pf-m-control:hover,
+.pf-c-input-group .pf-c-button.pf-m-control:focus,
+.pf-c-input-group .pf-c-button.pf-m-control:active {
+  background: transparent;
+  border: 0;
+  color: var(--timeline-text);
+  box-shadow: none;
 }

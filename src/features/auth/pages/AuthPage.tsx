@@ -1,10 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@/features/auth/store/authStore';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/ui/card';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/shared/ui/tabs';
-import { Input } from '@/shared/ui/input';
-import { Label } from '@/shared/ui/label';
 import { Button } from '@/shared/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/shared/ui/alert';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/shared/ui/select';
@@ -14,383 +11,171 @@ import { t } from '@lingui/macro';
 
 const AuthPage: React.FC = () => {
   const navigate = useNavigate();
-  const { user, signIn, signInWithKeycloak, signUp, sendPasswordReset, updatePassword, signOut, loading } = useAuthStore();
   const location = useLocation();
-  const recoveryTokenPresent = location.hash.includes('type=recovery');
-  const authMode = String(import.meta.env.VITE_AUTH_MODE ?? 'keycloak').toLowerCase();
-  const keycloakPreferred = authMode === 'keycloak' || authMode === 'hybrid';
-  const keycloakOnly = authMode === 'keycloak';
-  const localFallbackRequested = new URLSearchParams(location.search).get('local') === '1';
-  const [tab, setTab] = useState<'login' | 'register' | 'reset' | 'update'>('login');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmNewPassword, setConfirmNewPassword] = useState('');
-  const [error, setError] = useState('');
-  const [message, setMessage] = useState('');
+  const { user, loading, signInWithKeycloak } = useAuthStore();
+
   const [submitting, setSubmitting] = useState(false);
-  const [recoveryMode, setRecoveryMode] = useState(false);
-  const [localFallback, setLocalFallback] = useState(!keycloakOnly || localFallbackRequested);
   const [oauthAttempted, setOauthAttempted] = useState(false);
+  const [error, setError] = useState('');
+  const [silentOAuth, setSilentOAuth] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return window.sessionStorage.getItem('auth.silentOAuth') === '1';
+  });
+  const [skipAutoOAuth, setSkipAutoOAuth] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    const untilRaw = window.sessionStorage.getItem('auth.skipAutoOAuthUntil');
+    const until = untilRaw ? Number(untilRaw) : 0;
+    if (Number.isFinite(until) && until > Date.now()) return true;
+    window.sessionStorage.removeItem('auth.skipAutoOAuthUntil');
+    return false;
+  });
+
   const locale = useLocaleStore((state) => state.locale);
   const setLocale = useLocaleStore((state) => state.setLocale);
-  const languageOptions: Array<{ value: Locale; label: string }> = [
-    { value: 'en', label: localeLabels.en },
-    { value: 'ru', label: localeLabels.ru },
-  ];
 
-  const resetMessages = () => {
-    setError('');
-    setMessage('');
-  };
+  const oauthError = useMemo(() => {
+    const searchParams = new URLSearchParams(location.search);
+    const rawError = searchParams.get('error');
+    const rawCode = searchParams.get('error_code');
+    const rawDescription = searchParams.get('error_description');
+    if (!rawError) return '';
 
-  const handleLocaleChange = (value: string) => {
-    setLocale(value as Locale);
-  };
-  
-  useEffect(() => {
-    if (!recoveryTokenPresent) return;
-    resetMessages();
-    setRecoveryMode(true);
-    setTab('update');
-  }, [recoveryTokenPresent]);
+    const description = rawDescription
+      ? decodeURIComponent(rawDescription.replace(/\+/g, ' '))
+      : t`Authentication failed.`;
+
+    return rawCode ? `${rawCode}: ${description}` : description;
+  }, [location.search]);
 
   useEffect(() => {
-    if (user && !recoveryMode && !recoveryTokenPresent) {
-      const redirectTo = (location.state as { redirectTo?: string } | null)?.redirectTo ?? '/';
-      navigate(redirectTo, { replace: true });
+    if (!oauthError) return;
+    setError(oauthError);
+    setSubmitting(false);
+    setOauthAttempted(true);
+    setSilentOAuth(false);
+    if (typeof window !== 'undefined') {
+      window.sessionStorage.removeItem('auth.silentOAuth');
     }
-  }, [location.state, navigate, recoveryMode, recoveryTokenPresent, user]);
+  }, [oauthError]);
 
   useEffect(() => {
-    if (!keycloakOnly || localFallbackRequested) return;
-    setLocalFallback(false);
-    setTab('login');
-  }, [keycloakOnly, localFallbackRequested]);
+    if (!user || typeof window === 'undefined') return;
+    window.sessionStorage.removeItem('auth.silentOAuth');
+    setSilentOAuth(false);
+  }, [user]);
 
   useEffect(() => {
-    if (!keycloakPreferred) return;
-    if (localFallback || recoveryMode || recoveryTokenPresent || loading || user || oauthAttempted) return;
+    if (!user) return;
+    const redirectTo = (location.state as { redirectTo?: string } | null)?.redirectTo ?? '/';
+    navigate(redirectTo, { replace: true });
+  }, [location.state, navigate, user]);
+
+  useEffect(() => {
+    if (loading || user || oauthAttempted || skipAutoOAuth) return;
+
     setOauthAttempted(true);
     setSubmitting(true);
+
     const redirectTo = typeof window !== 'undefined' ? `${window.location.origin}/auth` : undefined;
     signInWithKeycloak(redirectTo)
       .then(({ error: keycloakError }) => {
         if (keycloakError) {
           setError(keycloakError);
-          setLocalFallback(true);
-          setSubmitting(false);
-          return;
+          if (typeof window !== 'undefined') {
+            window.sessionStorage.removeItem('auth.silentOAuth');
+          }
+          setSilentOAuth(false);
         }
         setSubmitting(false);
       })
       .catch((authError: unknown) => {
         setError(authError instanceof Error ? authError.message : t`Authentication failed.`);
-        setLocalFallback(true);
+        if (typeof window !== 'undefined') {
+          window.sessionStorage.removeItem('auth.silentOAuth');
+        }
+        setSilentOAuth(false);
         setSubmitting(false);
       });
-  }, [
-    keycloakPreferred,
-    localFallback,
-    recoveryMode,
-    recoveryTokenPresent,
-    loading,
-    user,
-    oauthAttempted,
-    signInWithKeycloak,
-  ]);
+  }, [loading, oauthAttempted, signInWithKeycloak, skipAutoOAuth, user]);
 
   const handleKeycloakSignIn = async () => {
-    resetMessages();
+    setError('');
     setSubmitting(true);
+    if (typeof window !== 'undefined') {
+      window.sessionStorage.removeItem('auth.skipAutoOAuthUntil');
+      window.sessionStorage.removeItem('auth.silentOAuth');
+    }
+    setSkipAutoOAuth(false);
+    setSilentOAuth(false);
+
     const redirectTo = typeof window !== 'undefined' ? `${window.location.origin}/auth` : undefined;
     const { error: keycloakError } = await signInWithKeycloak(redirectTo);
     if (keycloakError) {
       setError(keycloakError);
-      setSubmitting(false);
-      return;
     }
     setSubmitting(false);
   };
 
-  const handleLogin = async (event: React.FormEvent) => {
-    event.preventDefault();
-    resetMessages();
-    setSubmitting(true);
-    const { error: signInError } = await signIn(email.trim(), password);
-    if (signInError) {
-      setError(signInError);
-    }
-    setSubmitting(false);
+  const handleLocaleChange = (value: string) => {
+    setLocale(value as Locale);
   };
 
-  const handleRegister = async (event: React.FormEvent) => {
-    event.preventDefault();
-    resetMessages();
-    if (password !== confirmPassword) {
-      setError(t`Passwords do not match.`);
-      return;
-    }
-    setSubmitting(true);
-    const { error: signUpError } = await signUp(email.trim(), password);
-    if (signUpError) {
-      setError(signUpError);
-    } else {
-      setMessage(t`Check your email to confirm your account.`);
-    }
-    setSubmitting(false);
-  };
-
-  const handleResetPassword = async (event: React.FormEvent) => {
-    event.preventDefault();
-    resetMessages();
-    if (!email.trim()) {
-      setError(t`Email is required.`);
-      return;
-    }
-    setSubmitting(true);
-    const { error: resetError } = await sendPasswordReset(email.trim());
-    if (resetError) {
-      setError(resetError);
-    } else {
-      setMessage(t`We sent a password reset link to your email.`);
-    }
-    setSubmitting(false);
-  };
-
-  const handleUpdatePassword = async (event: React.FormEvent) => {
-    event.preventDefault();
-    resetMessages();
-    if (!newPassword.trim()) {
-      setError(t`Password is required.`);
-      return;
-    }
-    if (newPassword !== confirmNewPassword) {
-      setError(t`Passwords do not match.`);
-      return;
-    }
-    setSubmitting(true);
-    const { error: updateError } = await updatePassword(newPassword);
-    if (updateError) {
-      setError(updateError);
-      setSubmitting(false);
-      return;
-    }
-    await signOut();
-    setRecoveryMode(false);
-    setNewPassword('');
-    setConfirmNewPassword('');
-    setTab('login');
-    setMessage(t`Password updated. Please sign in again.`);
-    navigate('/auth', { replace: true });
-    setSubmitting(false);
-  };
+  const hideAuthCard = (silentOAuth || submitting) && !skipAutoOAuth && !user && !oauthError && !error;
+  if (hideAuthCard) {
+    return <div className="min-h-screen bg-background" />;
+  }
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4 py-10">
       <Card className="w-full max-w-md">
         <CardHeader>
           <CardTitle>{t`Welcome`}</CardTitle>
-          <CardDescription>{t`Sign in or create an account to continue.`}</CardDescription>
+          <CardDescription>{t`Continue with Keycloak to access the workspace.`}</CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <div className="text-xs text-muted-foreground">{t`Language`}</div>
+            <Select value={locale} onValueChange={handleLocaleChange}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder={t`Select language`} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="en">{localeLabels.en}</SelectItem>
+                <SelectItem value="ru">{localeLabels.ru}</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
           {error && (
-            <Alert variant="destructive" className="mb-4">
+            <Alert variant="destructive">
               <AlertTitle>{t`Authentication error`}</AlertTitle>
               <AlertDescription>{error}</AlertDescription>
             </Alert>
           )}
-          {message && (
-            <Alert className="mb-4">
-              <AlertTitle>{t`Check your inbox`}</AlertTitle>
-              <AlertDescription>{message}</AlertDescription>
-            </Alert>
-          )}
-          {keycloakPreferred && !localFallback && !recoveryMode && !recoveryTokenPresent ? (
-            <div className="space-y-3">
-              <Button type="button" className="w-full" onClick={handleKeycloakSignIn} disabled={loading || submitting}>
-                {t`Continue with Keycloak`}
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                className="w-full"
-                onClick={() => {
-                  resetMessages();
-                  setLocalFallback(true);
-                  setTab('login');
-                }}
-                disabled={loading || submitting}
-              >
-                {t`Emergency local login`}
-              </Button>
-            </div>
-          ) : (
-            <Tabs value={tab} onValueChange={(value) => { resetMessages(); setTab(value as typeof tab); }}>
-              {tab !== 'update' && (
-                <TabsList className="grid w-full grid-cols-3">
-                  <TabsTrigger value="login">{t`Login`}</TabsTrigger>
-                  <TabsTrigger value="register">{t`Register`}</TabsTrigger>
-                  <TabsTrigger value="reset">{t`Reset`}</TabsTrigger>
-                </TabsList>
-              )}
-              <TabsContent value="login">
-                <form onSubmit={handleLogin} className="space-y-4 mt-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="login-email">{t`Email`}</Label>
-                    <Input
-                      id="login-email"
-                      type="email"
-                      autoComplete="email"
-                      value={email}
-                      onChange={(event) => setEmail(event.target.value)}
-                      required
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="login-password">{t`Password`}</Label>
-                    <Input
-                      id="login-password"
-                      type="password"
-                      autoComplete="current-password"
-                      value={password}
-                      onChange={(event) => setPassword(event.target.value)}
-                      required
-                    />
-                  </div>
-                  <Button type="submit" className="w-full" disabled={loading || submitting}>
-                    {t`Sign in`}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="link"
-                    className="w-full text-sm"
-                    onClick={() => setTab('reset')}
-                  >
-                    {t`Forgot password?`}
-                  </Button>
-                </form>
-              </TabsContent>
-              <TabsContent value="register">
-                <form onSubmit={handleRegister} className="space-y-4 mt-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="register-email">{t`Email`}</Label>
-                    <Input
-                      id="register-email"
-                      type="email"
-                      autoComplete="email"
-                      value={email}
-                      onChange={(event) => setEmail(event.target.value)}
-                      required
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="register-password">{t`Password`}</Label>
-                    <Input
-                      id="register-password"
-                      type="password"
-                      autoComplete="new-password"
-                      value={password}
-                      onChange={(event) => setPassword(event.target.value)}
-                      required
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="register-confirm">{t`Confirm password`}</Label>
-                    <Input
-                      id="register-confirm"
-                      type="password"
-                      autoComplete="new-password"
-                      value={confirmPassword}
-                      onChange={(event) => setConfirmPassword(event.target.value)}
-                      required
-                    />
-                  </div>
-                  <Button type="submit" className="w-full" disabled={loading || submitting}>
-                    {t`Create account`}
-                  </Button>
-                </form>
-              </TabsContent>
-              <TabsContent value="reset">
-                <form onSubmit={handleResetPassword} className="space-y-4 mt-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="reset-email">{t`Email`}</Label>
-                    <Input
-                      id="reset-email"
-                      type="email"
-                      autoComplete="email"
-                      value={email}
-                      onChange={(event) => setEmail(event.target.value)}
-                      required
-                    />
-                  </div>
-                  <Button type="submit" className="w-full" disabled={loading || submitting}>
-                    {t`Send reset link`}
-                  </Button>
-                </form>
-              </TabsContent>
-              <TabsContent value="update">
-                <form onSubmit={handleUpdatePassword} className="space-y-4 mt-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="new-password">{t`New password`}</Label>
-                    <Input
-                      id="new-password"
-                      type="password"
-                      autoComplete="new-password"
-                      value={newPassword}
-                      onChange={(event) => setNewPassword(event.target.value)}
-                      required
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="confirm-new-password">{t`Confirm new password`}</Label>
-                    <Input
-                      id="confirm-new-password"
-                      type="password"
-                      autoComplete="new-password"
-                      value={confirmNewPassword}
-                      onChange={(event) => setConfirmNewPassword(event.target.value)}
-                      required
-                    />
-                  </div>
-                  <Button type="submit" className="w-full" disabled={loading || submitting}>
-                    {t`Update password`}
-                  </Button>
-                </form>
-              </TabsContent>
-            </Tabs>
-          )}
-          {keycloakPreferred && localFallback && !recoveryMode && (
+
+          <Button type="button" className="w-full" onClick={handleKeycloakSignIn} disabled={loading || submitting}>
+            {t`Continue with Keycloak`}
+          </Button>
+
+          {skipAutoOAuth && (
             <Button
               type="button"
-              variant="link"
-              className="w-full mt-2 text-sm"
+              variant="outline"
+              className="w-full"
               onClick={() => {
-                resetMessages();
-                setLocalFallback(false);
+                if (typeof window !== 'undefined') {
+                  window.sessionStorage.removeItem('auth.skipAutoOAuthUntil');
+                }
+                setSkipAutoOAuth(false);
                 setOauthAttempted(false);
-                void handleKeycloakSignIn();
               }}
-              disabled={loading || submitting}
             >
-              {t`Back to Keycloak sign in`}
+              {t`Retry automatic sign in`}
             </Button>
           )}
-          <div className="mt-6 space-y-2">
-            <Label htmlFor="auth-language">{t`Language`}</Label>
-            <Select value={locale} onValueChange={handleLocaleChange}>
-              <SelectTrigger id="auth-language">
-                <SelectValue placeholder={t`Select language`} />
-              </SelectTrigger>
-              <SelectContent>
-                {languageOptions.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+
+          <div className="text-xs text-muted-foreground">
+            {t`Passwords and account recovery are managed in Keycloak.`}
           </div>
         </CardContent>
       </Card>

@@ -63,7 +63,7 @@ docker compose -f "$compose_file" --env-file "$env_file" run --rm migrate
 
 if command -v curl >/dev/null 2>&1; then
   bootstrap_url="http://localhost:8080/functions/v1/admin"
-  bootstrap_payload='{"action":"bootstrap.reserveAdmin"}'
+  bootstrap_payload='{"action":"bootstrap.sync"}'
   bootstrap_ok=0
   for attempt in {1..20}; do
     status_code=$(curl -sS -o /dev/null -w "%{http_code}" \
@@ -71,8 +71,8 @@ if command -v curl >/dev/null 2>&1; then
       -H "Content-Type: application/json" \
       -d "$bootstrap_payload" \
       "$bootstrap_url" || true)
-    if [[ "$status_code" == "401" || "$status_code" == "400" || "$status_code" == "403" ]]; then
-      echo "Reserve super admin bootstrap request accepted (HTTP $status_code)."
+    if [[ "$status_code" == "200" ]]; then
+      echo "Keycloak sync bootstrap completed (HTTP $status_code)."
       bootstrap_ok=1
       break
     fi
@@ -80,10 +80,10 @@ if command -v curl >/dev/null 2>&1; then
   done
 
   if [[ "$bootstrap_ok" -ne 1 ]]; then
-    echo "Warning: could not confirm reserve super admin bootstrap. Check functions logs." >&2
+    echo "Warning: could not confirm Keycloak sync bootstrap. Check functions logs." >&2
   fi
 else
-  echo "Warning: curl is not installed, skipping reserve super admin bootstrap request." >&2
+  echo "Warning: curl is not installed, skipping Keycloak sync bootstrap request." >&2
 fi
 
 docker compose -f "$compose_file" --env-file "$env_file" up -d --build web

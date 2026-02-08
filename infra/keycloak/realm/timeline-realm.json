@@ -25,6 +25,9 @@
       "directAccessGrantsEnabled": false,
       "serviceAccountsEnabled": false,
       "fullScopeAllowed": true,
+      "attributes": {
+        "post.logout.redirect.uris": "+"
+      },
       "rootUrl": "http://localhost:5173",
       "baseUrl": "http://localhost:5173",
       "redirectUris": [

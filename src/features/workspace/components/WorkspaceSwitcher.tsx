@@ -11,7 +11,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/shared/ui/dropdown-menu';
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/shared/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/shared/ui/dialog';
 import { Input } from '@/shared/ui/input';
 import { Label } from '@/shared/ui/label';
 import { useAuthStore } from '@/features/auth/store/authStore';
@@ -251,6 +251,9 @@ export const WorkspaceSwitcher: React.FC = () => {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{t`Create workspace`}</DialogTitle>
+            <DialogDescription className="sr-only">
+              {t`Enter workspace name and optionally configure a template.`}
+            </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleCreateWorkspace} className="space-y-4">
             <div className="space-y-2">

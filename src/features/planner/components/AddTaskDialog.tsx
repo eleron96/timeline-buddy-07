@@ -6,7 +6,7 @@ import { Input } from '@/shared/ui/input';
 import { Label } from '@/shared/ui/label';
 import { formatStatusLabel } from '@/shared/lib/statusLabels';
 import { formatProjectLabel } from '@/shared/lib/projectLabels';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/shared/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/shared/ui/dialog';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -330,6 +330,9 @@ export const AddTaskDialog: React.FC<AddTaskDialogProps> = ({
       <DialogContent className="sm:max-w-[520px] max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{t`Create new task`}</DialogTitle>
+          <DialogDescription className="sr-only">
+            {t`Fill out task fields and create a new task.`}
+          </DialogDescription>
         </DialogHeader>
         
         <form onSubmit={handleSubmit} className="space-y-3 mt-3">

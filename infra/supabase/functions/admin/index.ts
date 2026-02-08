@@ -1,16 +1,50 @@
 import { serve } from "https://deno.land/std@0.203.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
+import {
+  APP_REALM_ROLES,
+  type AppRealmRole,
+  deleteKeycloakUser,
+  ensureKeycloakReady,
+  ensureKeycloakUser,
+  ensureRealmRoles,
+  getUserRealmRoles,
+  getKeycloakConfig,
+  sendKeycloakExecuteActionsEmail,
+  setKeycloakUserPassword,
+  syncUserRealmRoles,
+} from "../_shared/keycloak.ts";
+import {
+  createSupabaseClients,
+  ensureKeycloakIdentityLink,
+  ensureProfileDisplayName,
+  ensureSupabaseUserByEmail,
+  findAuthUserByEmail,
+  findKeycloakIdentityForUser,
+  getProfileMap,
+  getRoleSnapshotMap,
+  listAllAuthUsers,
+  type RoleSnapshot,
+  type WorkspaceRole,
+} from "../_shared/supabaseAuth.ts";
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
 const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+
+const { supabaseAdmin } = createSupabaseClients(supabaseUrl, serviceRoleKey);
+
 const reserveAdminEmail = (Deno.env.get("RESERVE_ADMIN_EMAIL") ?? "").trim().toLowerCase();
 const reserveAdminPassword = Deno.env.get("RESERVE_ADMIN_PASSWORD") ?? "";
 
-const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
-  auth: { persistSession: false },
-});
+const keycloakConfig = getKeycloakConfig();
+const keycloakIssuer = `${keycloakConfig.baseUrl}/realms/${keycloakConfig.realm}`;
 
 let reserveAdminSynced = false;
+let keycloakMigrationDone = false;
+
+const workspaceRoleToRealmRole: Record<WorkspaceRole, AppRealmRole> = {
+  viewer: "app_workspace_viewer",
+  editor: "app_workspace_editor",
+  admin: "app_workspace_admin",
+};
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -44,117 +78,57 @@ const getAuthUser = async (req: Request) => {
 };
 
 const ensureSuperAdmin = async (userId: string) => {
-  const { data, error } = await supabaseAdmin
+  const { data: superAdminRow, error } = await supabaseAdmin
     .from("super_admins")
     .select("user_id")
     .eq("user_id", userId)
     .maybeSingle();
 
-  if (error || !data) return false;
-  return true;
-};
+  const inTable = Boolean(superAdminRow && !error);
 
-const findUserByEmail = async (email: string) => {
-  const target = email.trim().toLowerCase();
-  if (!target) return { user: null as { id?: string } | null };
-  const perPage = 1000;
-  let page = 1;
+  const keycloakReady = ensureKeycloakReady(keycloakConfig);
+  if ("error" in keycloakReady) {
+    return inTable;
+  }
 
-  while (page <= 50) {
-    const { data, error } = await supabaseAdmin.auth.admin.listUsers({ page, perPage });
-    if (error || !data) {
-      return { error: error?.message ?? "Failed to list users." };
+  const identityResult = await findKeycloakIdentityForUser(supabaseAdmin, userId);
+  if ("error" in identityResult || !identityResult.identity?.providerId) {
+    return inTable;
+  }
+
+  const keycloakRoles = await getUserRealmRoles(keycloakConfig, identityResult.identity.providerId);
+  if ("error" in keycloakRoles) {
+    return inTable;
+  }
+
+  const hasSuperAdminRole = (keycloakRoles.roles ?? []).some((role) => role.name === "app_super_admin");
+
+  if (hasSuperAdminRole) {
+    if (!inTable) {
+      await supabaseAdmin.from("super_admins").upsert({ user_id: userId });
     }
-
-    const match = data.users.find((user) => (user.email ?? "").toLowerCase() === target);
-    if (match) {
-      return { user: match };
-    }
-
-    if (data.users.length < perPage) {
-      break;
-    }
-    page += 1;
+    return true;
   }
 
-  return { user: null };
-};
-
-const ensureReserveAdminAccount = async () => {
-  if (!reserveAdminEmail || !reserveAdminPassword) {
-    return { error: "RESERVE_ADMIN_EMAIL or RESERVE_ADMIN_PASSWORD is not configured." };
+  if (inTable) {
+    await supabaseAdmin.from("super_admins").delete().eq("user_id", userId);
   }
 
-  let reserveUserId: string | null = null;
-  const existing = await findUserByEmail(reserveAdminEmail);
-  if ("error" in existing) {
-    return { error: existing.error };
-  }
-
-  if (existing.user?.id) {
-    reserveUserId = existing.user.id;
-  } else {
-    const createResult = await supabaseAdmin.auth.admin.createUser({
-      email: reserveAdminEmail,
-      password: reserveAdminPassword,
-      email_confirm: true,
-    });
-    if (createResult.error || !createResult.data?.user?.id) {
-      return { error: createResult.error?.message ?? "Failed to create reserve admin." };
-    }
-    reserveUserId = createResult.data.user.id;
-  }
-
-  if (!reserveUserId) {
-    return { error: "Failed to resolve reserve admin user." };
-  }
-
-  const updateResult = await supabaseAdmin.auth.admin.updateUserById(reserveUserId, {
-    password: reserveAdminPassword,
-  });
-  if (updateResult.error) {
-    return { error: updateResult.error.message };
-  }
-
-  const { error: membershipDelete } = await supabaseAdmin
-    .from("workspace_members")
-    .delete()
-    .eq("user_id", reserveUserId);
-  if (membershipDelete) {
-    return { error: membershipDelete.message };
-  }
-
-  const { error: superAdminInsertError } = await supabaseAdmin
-    .from("super_admins")
-    .upsert({ user_id: reserveUserId });
-  if (superAdminInsertError) {
-    return { error: superAdminInsertError.message };
-  }
-
-  return { userId: reserveUserId, email: reserveAdminEmail };
-};
-
-const ensureReserveAdminOnce = async () => {
-  if (reserveAdminSynced) return;
-  if (!reserveAdminEmail || !reserveAdminPassword) return;
-
-  const result = await ensureReserveAdminAccount();
-  if ("error" in result) {
-    console.error("Reserve admin setup failed:", result.error);
-    return;
-  }
-
-  reserveAdminSynced = true;
+  return false;
 };
 
 const listSuperAdminIds = async () => {
   const { data, error } = await supabaseAdmin
     .from("super_admins")
     .select("user_id");
+
   if (error) {
     return { error: error.message, userIds: [] as string[] };
   }
-  return { userIds: (data ?? []).map((row) => row.user_id) };
+
+  return {
+    userIds: (data ?? []).map((row) => row.user_id),
+  };
 };
 
 const ensureSuperAdminUser = async (userId: string) => {
@@ -167,65 +141,386 @@ const ensureSuperAdminUser = async (userId: string) => {
   return true;
 };
 
-const removeUserFromWorkspaces = async (userId: string) => {
-  const { error } = await supabaseAdmin
-    .from("workspace_members")
-    .delete()
-    .eq("user_id", userId);
-  if (error) {
-    return { error: error.message };
+const buildDesiredRealmRoles = (snapshot: RoleSnapshot | undefined) => {
+  const roles = new Set<AppRealmRole>();
+  if (!snapshot) return Array.from(roles);
+
+  if (snapshot.isSuperAdmin) {
+    roles.add("app_super_admin");
   }
-  return {};
+
+  snapshot.workspaceRoles.forEach((role) => {
+    const mapped = workspaceRoleToRealmRole[role];
+    if (mapped) roles.add(mapped);
+  });
+
+  return Array.from(roles);
 };
 
-const handleUsersList = async (payload: { page?: number; perPage?: number; search?: string; loadAll?: boolean }) => {
-  const page = payload.page && payload.page > 0 ? payload.page : 1;
-  const perPage = payload.perPage && payload.perPage > 0 ? payload.perPage : 200;
+const resolveLinkedUserByEmail = async (
+  email: string,
+  displayName?: string | null,
+  options?: { sendSetupEmail?: boolean },
+) => {
+  const normalizedEmail = email.trim().toLowerCase();
+  if (!normalizedEmail) {
+    return { error: "Email is required." };
+  }
+
+  const keycloakReady = ensureKeycloakReady(keycloakConfig);
+  if ("error" in keycloakReady) {
+    return { error: keycloakReady.error };
+  }
+
+  const ensuredRoles = await ensureRealmRoles(keycloakConfig, APP_REALM_ROLES);
+  if ("error" in ensuredRoles) {
+    return { error: ensuredRoles.error };
+  }
+
+  const keycloakResult = await ensureKeycloakUser(keycloakConfig, {
+    email: normalizedEmail,
+    displayName,
+    enabled: true,
+    emailVerified: true,
+    requiredActions: ["UPDATE_PASSWORD"],
+  });
+
+  if ("error" in keycloakResult || !keycloakResult.user) {
+    return { error: "error" in keycloakResult ? keycloakResult.error : "Failed to resolve Keycloak user." };
+  }
+
+  const authResult = await ensureSupabaseUserByEmail(supabaseAdmin, normalizedEmail);
+  if ("error" in authResult || !authResult.user) {
+    return { error: "error" in authResult ? authResult.error : "Failed to resolve Supabase user." };
+  }
+
+  const identityResult = await ensureKeycloakIdentityLink(
+    supabaseAdmin,
+    {
+      supabaseUserId: authResult.user.id,
+      email: normalizedEmail,
+      displayName,
+      keycloakUserId: keycloakResult.user.id,
+      issuer: keycloakIssuer,
+    },
+  );
+
+  if ("error" in identityResult) {
+    return identityResult;
+  }
+
+  if (displayName !== undefined) {
+    const displayNameResult = await ensureProfileDisplayName(supabaseAdmin, authResult.user.id, displayName);
+    if ("error" in displayNameResult) {
+      return displayNameResult;
+    }
+  }
+
+  let warning: string | null = null;
+  if (options?.sendSetupEmail && keycloakResult.created) {
+    const setupResult = await sendKeycloakExecuteActionsEmail(keycloakConfig, keycloakResult.user.id, ["UPDATE_PASSWORD"]);
+    if ("error" in setupResult) {
+      warning = `User created, but Keycloak setup email failed: ${setupResult.error}`;
+    }
+  }
+
+  return {
+    userId: authResult.user.id,
+    email: normalizedEmail,
+    keycloakUserId: keycloakResult.user.id,
+    keycloakCreated: keycloakResult.created,
+    supabaseCreated: authResult.created,
+    warning,
+  };
+};
+
+const syncUserRoles = async (userId: string, keycloakUserId?: string | null) => {
+  const keycloakReady = ensureKeycloakReady(keycloakConfig);
+  if ("error" in keycloakReady) {
+    return { error: keycloakReady.error };
+  }
+
+  const snapshotResult = await getRoleSnapshotMap(supabaseAdmin, [userId]);
+  if ("error" in snapshotResult) {
+    return { error: snapshotResult.error };
+  }
+
+  let resolvedKeycloakUserId = keycloakUserId ?? null;
+  if (!resolvedKeycloakUserId) {
+    const identityResult = await findKeycloakIdentityForUser(supabaseAdmin, userId);
+    if ("error" in identityResult) {
+      return { error: identityResult.error };
+    }
+    resolvedKeycloakUserId = identityResult.identity?.providerId ?? null;
+  }
+
+  if (!resolvedKeycloakUserId) {
+    const authUserResult = await supabaseAdmin.auth.admin.getUserById(userId);
+    if (authUserResult.error || !authUserResult.data.user?.email) {
+      return { error: authUserResult.error?.message ?? "Failed to resolve user for role sync." };
+    }
+
+    const profileResult = await getProfileMap(supabaseAdmin, [userId]);
+    if ("error" in profileResult) {
+      return { error: profileResult.error };
+    }
+
+    const linked = await resolveLinkedUserByEmail(
+      authUserResult.data.user.email,
+      profileResult.profiles.get(userId)?.displayName ?? null,
+    );
+    if ("error" in linked) {
+      return { error: linked.error };
+    }
+    resolvedKeycloakUserId = linked.keycloakUserId;
+  }
+
+  const desiredRoles = buildDesiredRealmRoles(snapshotResult.roleMap.get(userId));
+  const syncResult = await syncUserRealmRoles(
+    keycloakConfig,
+    resolvedKeycloakUserId,
+    desiredRoles,
+    APP_REALM_ROLES,
+  );
+
+  if ("error" in syncResult) {
+    return { error: syncResult.error };
+  }
+
+  return {
+    added: syncResult.added,
+    removed: syncResult.removed,
+  };
+};
+
+const syncAllUsersToKeycloak = async () => {
+  const keycloakReady = ensureKeycloakReady(keycloakConfig);
+  if ("error" in keycloakReady) {
+    return {
+      fatalError: keycloakReady.error,
+      summary: {
+        processed: 0,
+        createdKeycloakUsers: 0,
+        createdSupabaseUsers: 0,
+        roleAssignmentsUpdated: 0,
+        warnings: [] as string[],
+        errors: [] as string[],
+      },
+    };
+  }
+
+  const ensureRolesResult = await ensureRealmRoles(keycloakConfig, APP_REALM_ROLES);
+  if ("error" in ensureRolesResult) {
+    return {
+      fatalError: ensureRolesResult.error,
+      summary: {
+        processed: 0,
+        createdKeycloakUsers: 0,
+        createdSupabaseUsers: 0,
+        roleAssignmentsUpdated: 0,
+        warnings: [] as string[],
+        errors: [] as string[],
+      },
+    };
+  }
+
+  const listed = await listAllAuthUsers(supabaseAdmin);
+  if ("error" in listed) {
+    return {
+      fatalError: listed.error,
+      summary: {
+        processed: 0,
+        createdKeycloakUsers: 0,
+        createdSupabaseUsers: 0,
+        roleAssignmentsUpdated: 0,
+        warnings: [] as string[],
+        errors: [] as string[],
+      },
+    };
+  }
+
+  const users = listed.users.filter((user) => Boolean(user.email?.trim()));
+  const profileResult = await getProfileMap(supabaseAdmin, users.map((user) => user.id));
+  if ("error" in profileResult) {
+    return {
+      fatalError: profileResult.error,
+      summary: {
+        processed: 0,
+        createdKeycloakUsers: 0,
+        createdSupabaseUsers: 0,
+        roleAssignmentsUpdated: 0,
+        warnings: [] as string[],
+        errors: [] as string[],
+      },
+    };
+  }
+
+  const roleMapResult = await getRoleSnapshotMap(supabaseAdmin, users.map((user) => user.id));
+  if ("error" in roleMapResult) {
+    return {
+      fatalError: roleMapResult.error,
+      summary: {
+        processed: 0,
+        createdKeycloakUsers: 0,
+        createdSupabaseUsers: 0,
+        roleAssignmentsUpdated: 0,
+        warnings: [] as string[],
+        errors: [] as string[],
+      },
+    };
+  }
+
+  const summary = {
+    processed: 0,
+    createdKeycloakUsers: 0,
+    createdSupabaseUsers: 0,
+    roleAssignmentsUpdated: 0,
+    warnings: [] as string[],
+    errors: [] as string[],
+  };
+
+  for (const user of users) {
+    if (!user.email) continue;
+
+    const profile = profileResult.profiles.get(user.id);
+    const linked = await resolveLinkedUserByEmail(user.email, profile?.displayName ?? null);
+
+    if ("error" in linked) {
+      summary.errors.push(`User ${user.id}: ${linked.error}`);
+      continue;
+    }
+
+    summary.processed += 1;
+    if (linked.keycloakCreated) {
+      summary.createdKeycloakUsers += 1;
+    }
+    if (linked.supabaseCreated) {
+      summary.createdSupabaseUsers += 1;
+    }
+    if (linked.warning) {
+      summary.warnings.push(`User ${linked.email}: ${linked.warning}`);
+    }
+
+    const desiredRoles = buildDesiredRealmRoles(roleMapResult.roleMap.get(user.id));
+    const syncResult = await syncUserRealmRoles(
+      keycloakConfig,
+      linked.keycloakUserId,
+      desiredRoles,
+      APP_REALM_ROLES,
+    );
+
+    if ("error" in syncResult) {
+      summary.errors.push(`Role sync failed for ${linked.email}: ${syncResult.error}`);
+      continue;
+    }
+
+    if ((syncResult.added?.length ?? 0) + (syncResult.removed?.length ?? 0) > 0) {
+      summary.roleAssignmentsUpdated += 1;
+    }
+  }
+
+  return { summary };
+};
+
+const ensureReserveAdminAccount = async () => {
+  if (!reserveAdminEmail || !reserveAdminPassword) {
+    return { error: "RESERVE_ADMIN_EMAIL or RESERVE_ADMIN_PASSWORD is not configured." };
+  }
+
+  const linked = await resolveLinkedUserByEmail(
+    reserveAdminEmail,
+    "Reserve super admin",
+    { sendSetupEmail: false },
+  );
+  if ("error" in linked) {
+    return { error: linked.error };
+  }
+
+  const passwordResult = await setKeycloakUserPassword(
+    keycloakConfig,
+    linked.keycloakUserId,
+    reserveAdminPassword,
+    false,
+  );
+  if ("error" in passwordResult) {
+    return { error: passwordResult.error };
+  }
+
+  const { error: membershipDelete } = await supabaseAdmin
+    .from("workspace_members")
+    .delete()
+    .eq("user_id", linked.userId);
+  if (membershipDelete) {
+    return { error: membershipDelete.message };
+  }
+
+  const { error: superAdminInsertError } = await supabaseAdmin
+    .from("super_admins")
+    .upsert({ user_id: linked.userId });
+  if (superAdminInsertError) {
+    return { error: superAdminInsertError.message };
+  }
+
+  const roleSyncResult = await syncUserRoles(linked.userId, linked.keycloakUserId);
+  if ("error" in roleSyncResult) {
+    return { error: roleSyncResult.error };
+  }
+
+  return {
+    userId: linked.userId,
+    email: reserveAdminEmail,
+    keycloakUserId: linked.keycloakUserId,
+  };
+};
+
+const ensureReserveAdminOnce = async () => {
+  if (reserveAdminSynced) return { ready: true };
+  if (!reserveAdminEmail || !reserveAdminPassword) return { ready: true };
+
+  const result = await ensureReserveAdminAccount();
+  if ("error" in result) {
+    console.error("Reserve admin setup failed:", result.error);
+    return { error: result.error };
+  }
+
+  reserveAdminSynced = true;
+  return { ready: true };
+};
+
+const ensureKeycloakMigrationOnce = async () => {
+  if (keycloakMigrationDone) return { ready: true };
+
+  const result = await syncAllUsersToKeycloak();
+
+  if ("fatalError" in result && result.fatalError) {
+    console.error("Keycloak migration failed:", result.fatalError);
+    return { error: result.fatalError };
+  }
+
+  if (result.summary.errors.length > 0) {
+    console.error("Keycloak migration completed with errors:", result.summary.errors);
+  }
+
+  keycloakMigrationDone = true;
+  return {
+    ready: true,
+    summary: result.summary,
+  };
+};
+
+const handleUsersList = async (payload: { search?: string }) => {
   const search = payload.search?.trim().toLowerCase() ?? "";
-  const shouldScanAll = Boolean(payload.loadAll || search);
-  const maxPages = 50;
-  const effectivePerPage = shouldScanAll ? Math.min(perPage, 1000) : perPage;
 
-  let users: Array<{
-    id: string;
-    email?: string | null;
-    created_at?: string | null;
-    last_sign_in_at?: string | null;
-  }> = [];
-  let total = 0;
-
-  if (shouldScanAll) {
-    let currentPage = 1;
-    while (currentPage <= maxPages) {
-      const { data, error } = await supabaseAdmin.auth.admin.listUsers({
-        page: currentPage,
-        perPage: effectivePerPage,
-      });
-      if (error || !data) {
-        return jsonResponse({ error: error?.message ?? "Failed to load users." }, 400);
-      }
-      users = users.concat(data.users);
-      total = data.total ?? users.length;
-      if (data.users.length < effectivePerPage) break;
-      currentPage += 1;
-    }
-  } else {
-    const { data, error } = await supabaseAdmin.auth.admin.listUsers({
-      page,
-      perPage: effectivePerPage,
-    });
-    if (error || !data) {
-      return jsonResponse({ error: error?.message ?? "Failed to load users." }, 400);
-    }
-    users = data.users;
-    total = data.total ?? users.length;
+  const listed = await listAllAuthUsers(supabaseAdmin);
+  if ("error" in listed) {
+    return jsonResponse({ error: listed.error }, 400);
   }
 
   const { userIds: superAdminIds } = await listSuperAdminIds();
   const superAdminSet = new Set(superAdminIds);
 
   if (reserveAdminEmail) {
-    const reserveUser = await findUserByEmail(reserveAdminEmail);
+    const reserveUser = await findAuthUserByEmail(supabaseAdmin, reserveAdminEmail);
     if ("error" in reserveUser) {
       return jsonResponse({ error: reserveUser.error }, 400);
     }
@@ -234,14 +529,14 @@ const handleUsersList = async (payload: { page?: number; perPage?: number; searc
     }
   }
 
-  const visibleUsers = users.filter((user) => !superAdminSet.has(user.id));
+  const visibleUsers = listed.users.filter((user) => !superAdminSet.has(user.id));
   const userIds = visibleUsers.map((user) => user.id);
 
   if (userIds.length === 0) {
     return jsonResponse({ users: [], total: 0 });
   }
 
-  const [{ data: profiles }, { data: memberships }] = await Promise.all([
+  const [{ data: profiles }, { data: memberships, error: membershipsError }] = await Promise.all([
     supabaseAdmin
       .from("profiles")
       .select("id, display_name, email")
@@ -251,6 +546,10 @@ const handleUsersList = async (payload: { page?: number; perPage?: number; searc
       .select("user_id, role, workspace_id, workspaces(id, name)")
       .in("user_id", userIds),
   ]);
+
+  if (membershipsError) {
+    return jsonResponse({ error: membershipsError.message }, 400);
+  }
 
   const profileMap = new Map(
     (profiles ?? []).map((profile) => [profile.id, profile]),
@@ -293,141 +592,99 @@ const handleUsersList = async (payload: { page?: number; perPage?: number; searc
     });
   }
 
-  return jsonResponse({ users: result, total: search ? result.length : total });
+  return jsonResponse({ users: result, total: result.length });
 };
 
-const handleUsersCreate = async (payload: { email?: string; password?: string; displayName?: string; superAdmin?: boolean }) => {
+const handleUsersCreate = async (payload: { email?: string; displayName?: string }) => {
   const email = payload.email?.trim().toLowerCase() ?? "";
-  const password = payload.password?.trim() ?? "";
-  if (!email || !password) {
-    return jsonResponse({ error: "email and password are required" }, 400);
-  }
-  if (password.length < 6) {
-    return jsonResponse({ error: "Password must be at least 6 characters." }, 400);
+  if (!email) {
+    return jsonResponse({ error: "email is required" }, 400);
   }
 
-  const createResult = await supabaseAdmin.auth.admin.createUser({
-    email,
-    password,
-    email_confirm: true,
-  });
-  if (createResult.error || !createResult.data?.user?.id) {
-    return jsonResponse({ error: createResult.error?.message ?? "Failed to create user." }, 400);
+  const linked = await resolveLinkedUserByEmail(email, payload.displayName, { sendSetupEmail: true });
+  if ("error" in linked) {
+    return jsonResponse({ error: linked.error }, 400);
   }
 
-  const userId = createResult.data.user.id;
-  const displayName = payload.displayName?.trim();
-  if (displayName) {
-    await supabaseAdmin
-      .from("profiles")
-      .update({ display_name: displayName })
-      .eq("id", userId);
-  }
-
-  if (payload.superAdmin) {
-    const { error: superAdminError } = await supabaseAdmin
-      .from("super_admins")
-      .upsert({ user_id: userId });
-    if (superAdminError) {
-      return jsonResponse({ error: superAdminError.message }, 400);
-    }
-    const result = await removeUserFromWorkspaces(userId);
-    if ("error" in result) {
-      return jsonResponse({ error: result.error }, 400);
-    }
+  const roleSyncResult = await syncUserRoles(linked.userId, linked.keycloakUserId);
+  if ("error" in roleSyncResult) {
+    return jsonResponse({ error: roleSyncResult.error }, 400);
   }
 
   return jsonResponse({
     user: {
-      id: userId,
+      id: linked.userId,
       email,
-      displayName: displayName ?? null,
+      displayName: payload.displayName?.trim() || null,
     },
+    warning: linked.warning,
   });
 };
 
-const handleUsersUpdate = async (payload: { userId?: string; email?: string; password?: string; displayName?: string; superAdmin?: boolean }) => {
+const handleUsersUpdate = async (payload: { userId?: string; email?: string; displayName?: string; superAdmin?: boolean }) => {
   const userId = payload.userId?.trim() ?? "";
   if (!userId) {
     return jsonResponse({ error: "userId is required" }, 400);
   }
 
-  const email = payload.email?.trim().toLowerCase();
-  const password = payload.password?.trim();
-  const displayName = payload.displayName?.trim();
+  const authUserResult = await supabaseAdmin.auth.admin.getUserById(userId);
+  if (authUserResult.error || !authUserResult.data.user) {
+    return jsonResponse({ error: authUserResult.error?.message ?? "User not found." }, 400);
+  }
 
-  if (email || password) {
+  const currentEmail = (authUserResult.data.user.email ?? "").trim().toLowerCase();
+  const nextEmail = payload.email?.trim().toLowerCase();
+  const finalEmail = nextEmail && nextEmail.length > 0 ? nextEmail : currentEmail;
+
+  if (nextEmail && nextEmail !== currentEmail) {
     const updateResult = await supabaseAdmin.auth.admin.updateUserById(userId, {
-      ...(email ? { email, email_confirm: true } : {}),
-      ...(password ? { password } : {}),
+      email: nextEmail,
+      email_confirm: true,
     });
+
     if (updateResult.error) {
       return jsonResponse({ error: updateResult.error.message }, 400);
     }
   }
 
-  if (displayName !== undefined || email !== undefined) {
-    const profileUpdates: Record<string, string | null> = {};
-    if (displayName !== undefined) {
-      profileUpdates.display_name = displayName.length > 0 ? displayName : null;
-    }
-    if (email !== undefined) {
-      profileUpdates.email = email;
-    }
-    if (Object.keys(profileUpdates).length > 0) {
-      const { error } = await supabaseAdmin
-        .from("profiles")
-        .update(profileUpdates)
-        .eq("id", userId);
-      if (error) {
-        return jsonResponse({ error: error.message }, 400);
-      }
+  if (payload.displayName !== undefined) {
+    const profileResult = await ensureProfileDisplayName(supabaseAdmin, userId, payload.displayName);
+    if ("error" in profileResult) {
+      return jsonResponse({ error: profileResult.error }, 400);
     }
   }
 
-  if (payload.superAdmin !== undefined) {
-    if (payload.superAdmin) {
-      const { error } = await supabaseAdmin
-        .from("super_admins")
-        .upsert({ user_id: userId });
-      if (error) {
-        return jsonResponse({ error: error.message }, 400);
-      }
-      const result = await removeUserFromWorkspaces(userId);
-      if ("error" in result) {
-        return jsonResponse({ error: result.error }, 400);
-      }
-    } else {
-      const { error } = await supabaseAdmin
-        .from("super_admins")
-        .delete()
-        .eq("user_id", userId);
-      if (error) {
-        return jsonResponse({ error: error.message }, 400);
-      }
+  let keycloakUserId: string | null = null;
+  if (finalEmail) {
+    const profileMap = await getProfileMap(supabaseAdmin, [userId]);
+    if ("error" in profileMap) {
+      return jsonResponse({ error: profileMap.error }, 400);
     }
+
+    const linked = await resolveLinkedUserByEmail(
+      finalEmail,
+      payload.displayName ?? profileMap.profiles.get(userId)?.displayName ?? null,
+    );
+    if ("error" in linked) {
+      return jsonResponse({ error: linked.error }, 400);
+    }
+    keycloakUserId = linked.keycloakUserId;
+  }
+
+  if (payload.superAdmin !== undefined) {
+    return jsonResponse({ error: "Manage super admin role in Keycloak (realm role app_super_admin)." }, 400);
+  }
+
+  const roleSync = await syncUserRoles(userId, keycloakUserId);
+  if ("error" in roleSync) {
+    return jsonResponse({ error: roleSync.error }, 400);
   }
 
   return jsonResponse({ success: true });
 };
 
-const handleUsersResetPassword = async (payload: { userId?: string; password?: string }) => {
-  const userId = payload.userId?.trim() ?? "";
-  const password = payload.password?.trim() ?? "";
-
-  if (!userId || !password) {
-    return jsonResponse({ error: "userId and password are required" }, 400);
-  }
-  if (password.length < 6) {
-    return jsonResponse({ error: "Password must be at least 6 characters." }, 400);
-  }
-
-  const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(userId, { password });
-  if (updateError) {
-    return jsonResponse({ error: updateError.message }, 400);
-  }
-
-  return jsonResponse({ success: true });
+const handleUsersResetPassword = async () => {
+  return jsonResponse({ error: "Password reset is managed in Keycloak admin console." }, 400);
 };
 
 const handleUsersDelete = async (payload: { userId?: string }, currentUserId: string) => {
@@ -444,7 +701,7 @@ const handleUsersDelete = async (payload: { userId?: string }, currentUserId: st
   }
 
   if (reserveAdminEmail) {
-    const reserveUser = await findUserByEmail(reserveAdminEmail);
+    const reserveUser = await findAuthUserByEmail(supabaseAdmin, reserveAdminEmail);
     if ("error" in reserveUser) {
       return jsonResponse({ error: reserveUser.error }, 400);
     }
@@ -453,9 +710,21 @@ const handleUsersDelete = async (payload: { userId?: string }, currentUserId: st
     }
   }
 
+  const identityResult = await findKeycloakIdentityForUser(supabaseAdmin, userId);
+  if ("error" in identityResult) {
+    return jsonResponse({ error: identityResult.error }, 400);
+  }
+
   const { error: deleteError } = await supabaseAdmin.auth.admin.deleteUser(userId);
   if (deleteError) {
     return jsonResponse({ error: deleteError.message }, 400);
+  }
+
+  if (identityResult.identity?.providerId) {
+    const keycloakDeleteResult = await deleteKeycloakUser(keycloakConfig, identityResult.identity.providerId);
+    if ("error" in keycloakDeleteResult) {
+      console.error(`Failed to delete Keycloak user ${identityResult.identity.providerId}:`, keycloakDeleteResult.error);
+    }
   }
 
   return jsonResponse({ success: true });
@@ -569,6 +838,7 @@ const handleSuperAdminsList = async () => {
   if (userIds.length === 0) {
     return jsonResponse({ superAdmins: [] });
   }
+
   const { data: profiles } = await supabaseAdmin
     .from("profiles")
     .select("id, email, display_name")
@@ -591,98 +861,25 @@ const handleSuperAdminsList = async () => {
   return jsonResponse({ superAdmins: result });
 };
 
-const handleSuperAdminsCreate = async (payload: { email?: string; password?: string; displayName?: string }) => {
-  const email = payload.email?.trim().toLowerCase() ?? "";
-  const password = payload.password?.trim() ?? "";
-  if (!email || !password) {
-    return jsonResponse({ error: "email and password are required" }, 400);
-  }
-  if (password.length < 6) {
-    return jsonResponse({ error: "Password must be at least 6 characters." }, 400);
-  }
+const handleSuperAdminsCreate = async () => {
+  return jsonResponse({ error: "Super admin assignment is managed in Keycloak." }, 400);
+};
 
-  let userId: string | null = null;
-  const existing = await findUserByEmail(email);
-  if ("error" in existing) {
-    return jsonResponse({ error: existing.error }, 400);
-  }
+const handleSuperAdminsDelete = async () => {
+  return jsonResponse({ error: "Super admin assignment is managed in Keycloak." }, 400);
+};
 
-  if (existing.user?.id) {
-    userId = existing.user.id;
-    const updateResult = await supabaseAdmin.auth.admin.updateUserById(userId, { password });
-    if (updateResult.error) {
-      return jsonResponse({ error: updateResult.error.message }, 400);
-    }
-  } else {
-    const createResult = await supabaseAdmin.auth.admin.createUser({
-      email,
-      password,
-      email_confirm: true,
-    });
-    if (createResult.error || !createResult.data?.user?.id) {
-      return jsonResponse({ error: createResult.error?.message ?? "Failed to create super admin." }, 400);
-    }
-    userId = createResult.data.user.id;
-  }
+const handleKeycloakSync = async () => {
+  const result = await syncAllUsersToKeycloak();
 
-  if (!userId) {
-    return jsonResponse({ error: "Failed to resolve super admin user." }, 400);
-  }
-
-  const displayName = payload.displayName?.trim();
-  if (displayName) {
-    await supabaseAdmin
-      .from("profiles")
-      .update({ display_name: displayName })
-      .eq("id", userId);
-  }
-
-  const { error: superAdminInsertError } = await supabaseAdmin
-    .from("super_admins")
-    .upsert({ user_id: userId });
-  if (superAdminInsertError) {
-    return jsonResponse({ error: superAdminInsertError.message }, 400);
-  }
-
-  const result = await removeUserFromWorkspaces(userId);
-  if ("error" in result) {
-    return jsonResponse({ error: result.error }, 400);
+  if ("fatalError" in result && result.fatalError) {
+    return jsonResponse({ error: result.fatalError }, 400);
   }
 
   return jsonResponse({
     success: true,
-    user: { id: userId, email, displayName: displayName ?? null },
+    ...result.summary,
   });
-};
-
-const handleSuperAdminsDelete = async (payload: { userId?: string }, currentUserId: string) => {
-  const userId = payload.userId?.trim() ?? "";
-  if (!userId) {
-    return jsonResponse({ error: "userId is required" }, 400);
-  }
-  if (userId === currentUserId) {
-    return jsonResponse({ error: "You cannot remove yourself." }, 400);
-  }
-
-  if (reserveAdminEmail) {
-    const reserveUser = await findUserByEmail(reserveAdminEmail);
-    if ("error" in reserveUser) {
-      return jsonResponse({ error: reserveUser.error }, 400);
-    }
-    if (reserveUser.user?.id && reserveUser.user.id === userId) {
-      return jsonResponse({ error: "Cannot remove reserve admin account." }, 400);
-    }
-  }
-
-  const { error } = await supabaseAdmin
-    .from("super_admins")
-    .delete()
-    .eq("user_id", userId);
-  if (error) {
-    return jsonResponse({ error: error.message }, 400);
-  }
-
-  return jsonResponse({ success: true });
 };
 
 export const handler = async (req: Request) => {
@@ -698,7 +895,32 @@ export const handler = async (req: Request) => {
     return jsonResponse({ error: "Missing Supabase env vars" }, 500);
   }
 
+  const { data: payload, error } = await readJson<{ action?: string } & Record<string, unknown>>(req);
+  if (error) {
+    return jsonResponse({ error }, 400);
+  }
+
+  const action = payload.action ?? "";
+
+  if (action === "bootstrap.sync") {
+    const reserveResult = await ensureReserveAdminOnce();
+    if ("error" in reserveResult) {
+      return jsonResponse({ error: reserveResult.error }, 503);
+    }
+
+    const migrationResult = await ensureKeycloakMigrationOnce();
+    if ("error" in migrationResult) {
+      return jsonResponse({ error: migrationResult.error }, 503);
+    }
+
+    return jsonResponse({
+      success: true,
+      ...(migrationResult.summary ?? {}),
+    });
+  }
+
   await ensureReserveAdminOnce();
+  await ensureKeycloakMigrationOnce();
 
   const authResult = await getAuthUser(req);
   if ("error" in authResult) {
@@ -710,21 +932,15 @@ export const handler = async (req: Request) => {
     return jsonResponse({ error: "Forbidden" }, 403);
   }
 
-  const { data: payload, error } = await readJson<{ action?: string } & Record<string, unknown>>(req);
-  if (error) {
-    return jsonResponse({ error }, 400);
-  }
-
-  const action = payload.action ?? "";
   switch (action) {
     case "users.list":
-      return handleUsersList(payload as { page?: number; perPage?: number; search?: string });
+      return handleUsersList(payload as { search?: string });
     case "users.create":
-      return handleUsersCreate(payload as { email?: string; password?: string; displayName?: string; superAdmin?: boolean });
+      return handleUsersCreate(payload as { email?: string; displayName?: string });
     case "users.update":
-      return handleUsersUpdate(payload as { userId?: string; email?: string; password?: string; displayName?: string; superAdmin?: boolean });
+      return handleUsersUpdate(payload as { userId?: string; email?: string; displayName?: string; superAdmin?: boolean });
     case "users.resetPassword":
-      return handleUsersResetPassword(payload as { userId?: string; password?: string });
+      return handleUsersResetPassword();
     case "users.delete":
       return handleUsersDelete(payload as { userId?: string }, authResult.user.id);
     case "workspaces.list":
@@ -736,9 +952,11 @@ export const handler = async (req: Request) => {
     case "superAdmins.list":
       return handleSuperAdminsList();
     case "superAdmins.create":
-      return handleSuperAdminsCreate(payload as { email?: string; password?: string; displayName?: string });
+      return handleSuperAdminsCreate();
     case "superAdmins.delete":
-      return handleSuperAdminsDelete(payload as { userId?: string }, authResult.user.id);
+      return handleSuperAdminsDelete();
+    case "keycloak.sync":
+      return handleKeycloakSync();
     default:
       return jsonResponse({ error: "Unknown action" }, 400);
   }

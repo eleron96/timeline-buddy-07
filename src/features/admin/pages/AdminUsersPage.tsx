@@ -3,7 +3,6 @@ import {
   useAuthStore,
   AdminUser,
   AdminWorkspace,
-  SuperAdminUser,
   BackupEntry,
 } from '@/features/auth/store/authStore';
 import { Button } from '@/shared/ui/button';
@@ -33,16 +32,6 @@ const formatDate = (value: string | null | undefined, locale: Locale) => {
   if (Number.isNaN(date.getTime())) return '—';
   const language = locale === 'ru' ? 'ru-RU' : 'en-US';
   return date.toLocaleString(language);
-};
-
-const generatePassword = () => {
-  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
-  const length = 10;
-  let result = '';
-  for (let i = 0; i < length; i += 1) {
-    result += alphabet[Math.floor(Math.random() * alphabet.length)];
-  }
-  return result;
 };
 
 const formatWorkspaceSummary = (workspaces: AdminUser['workspaces']) => {
@@ -81,7 +70,6 @@ const AdminUsersPage: React.FC = () => {
     fetchAdminUsers,
     createAdminUser,
     updateAdminUser,
-    resetUserPassword,
     deleteAdminUser,
     adminWorkspaces,
     adminWorkspacesLoading,
@@ -89,12 +77,7 @@ const AdminUsersPage: React.FC = () => {
     fetchAdminWorkspaces,
     updateAdminWorkspace,
     deleteAdminWorkspace,
-    superAdmins,
-    superAdminsLoading,
-    superAdminsError,
-    fetchSuperAdmins,
-    createSuperAdmin,
-    deleteSuperAdmin,
+    syncKeycloakUsers,
     backups,
     backupsLoading,
     backupsError,
@@ -109,7 +92,7 @@ const AdminUsersPage: React.FC = () => {
   } = useAuthStore();
   const locale = useLocaleStore((state) => state.locale);
 
-  const [tab, setTab] = useState<'users' | 'workspaces' | 'superAdmins' | 'backups'>('users');
+  const [tab, setTab] = useState<'users' | 'workspaces' | 'backups'>('users');
   const [userSearch, setUserSearch] = useState('');
   const [workspaceSearch, setWorkspaceSearch] = useState('');
   const [workspacesDialogOpen, setWorkspacesDialogOpen] = useState(false);
@@ -119,18 +102,9 @@ const AdminUsersPage: React.FC = () => {
   const [userDialogMode, setUserDialogMode] = useState<'create' | 'edit'>('create');
   const [userFormEmail, setUserFormEmail] = useState('');
   const [userFormDisplayName, setUserFormDisplayName] = useState('');
-  const [userFormPassword, setUserFormPassword] = useState('');
   const [userFormError, setUserFormError] = useState('');
   const [userFormSubmitting, setUserFormSubmitting] = useState(false);
   const [userFormTarget, setUserFormTarget] = useState<AdminUser | null>(null);
-
-  const [resetOpen, setResetOpen] = useState(false);
-  const [resetTarget, setResetTarget] = useState<AdminUser | null>(null);
-  const [newPassword, setNewPassword] = useState('');
-  const [lastResetPasswords, setLastResetPasswords] = useState<Record<string, string>>({});
-  const [resetSubmitting, setResetSubmitting] = useState(false);
-  const [resetError, setResetError] = useState('');
-  const [resetSuccess, setResetSuccess] = useState('');
 
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<AdminUser | null>(null);
@@ -147,18 +121,6 @@ const AdminUsersPage: React.FC = () => {
   const [workspaceDeleteTarget, setWorkspaceDeleteTarget] = useState<AdminWorkspace | null>(null);
   const [workspaceDeleteError, setWorkspaceDeleteError] = useState('');
   const [workspaceDeleteSubmitting, setWorkspaceDeleteSubmitting] = useState(false);
-
-  const [superAdminDialogOpen, setSuperAdminDialogOpen] = useState(false);
-  const [superAdminEmail, setSuperAdminEmail] = useState('');
-  const [superAdminPassword, setSuperAdminPassword] = useState('');
-  const [superAdminDisplayName, setSuperAdminDisplayName] = useState('');
-  const [superAdminDialogError, setSuperAdminDialogError] = useState('');
-  const [superAdminDialogSubmitting, setSuperAdminDialogSubmitting] = useState(false);
-
-  const [superAdminDeleteOpen, setSuperAdminDeleteOpen] = useState(false);
-  const [superAdminDeleteTarget, setSuperAdminDeleteTarget] = useState<SuperAdminUser | null>(null);
-  const [superAdminDeleteError, setSuperAdminDeleteError] = useState('');
-  const [superAdminDeleteSubmitting, setSuperAdminDeleteSubmitting] = useState(false);
 
   const [backupCreateSubmitting, setBackupCreateSubmitting] = useState(false);
   const [backupCreateError, setBackupCreateError] = useState('');
@@ -178,14 +140,15 @@ const AdminUsersPage: React.FC = () => {
   const [backupDeleteSubmitting, setBackupDeleteSubmitting] = useState(false);
   const [backupDeleteError, setBackupDeleteError] = useState('');
   const backupUploadInputRef = useRef<HTMLInputElement | null>(null);
+  const [syncSubmitting, setSyncSubmitting] = useState(false);
+  const [syncError, setSyncError] = useState('');
 
   useEffect(() => {
     if (!isSuperAdmin) return;
     fetchAdminUsers();
     fetchAdminWorkspaces();
-    fetchSuperAdmins();
     fetchBackups();
-  }, [fetchAdminUsers, fetchAdminWorkspaces, fetchBackups, fetchSuperAdmins, isSuperAdmin]);
+  }, [fetchAdminUsers, fetchAdminWorkspaces, fetchBackups, isSuperAdmin]);
 
   const filteredUsers = useMemo(() => {
     const query = userSearch.trim().toLowerCase();
@@ -217,7 +180,6 @@ const AdminUsersPage: React.FC = () => {
     setUserFormTarget(null);
     setUserFormEmail('');
     setUserFormDisplayName('');
-    setUserFormPassword('');
     setUserFormError('');
     setUserDialogOpen(true);
   };
@@ -227,7 +189,6 @@ const AdminUsersPage: React.FC = () => {
     setUserFormTarget(target);
     setUserFormEmail(target.email ?? '');
     setUserFormDisplayName(target.displayName ?? '');
-    setUserFormPassword('');
     setUserFormError('');
     setUserDialogOpen(true);
   };
@@ -244,24 +205,21 @@ const AdminUsersPage: React.FC = () => {
       return;
     }
 
-    if (userDialogMode === 'create' && !userFormPassword.trim()) {
-      setUserFormError('Password is required.');
-      return;
-    }
-
     setUserFormSubmitting(true);
     setUserFormError('');
 
     if (userDialogMode === 'create') {
       const result = await createAdminUser({
         email,
-        password: userFormPassword,
         displayName: userFormDisplayName.trim() || undefined,
       });
       if (result.error) {
         setUserFormError(result.error);
         setUserFormSubmitting(false);
         return;
+      }
+      if (result.warning) {
+        setSyncError(result.warning);
       }
     } else if (userFormTarget) {
       const result = await updateAdminUser({
@@ -279,30 +237,6 @@ const AdminUsersPage: React.FC = () => {
     await fetchAdminUsers(userSearch.trim());
     setUserFormSubmitting(false);
     setUserDialogOpen(false);
-  };
-
-  const handleOpenReset = (target: AdminUser) => {
-    setResetTarget(target);
-    setNewPassword(lastResetPasswords[target.id] ?? generatePassword());
-    setResetError('');
-    setResetSuccess('');
-    setResetOpen(true);
-  };
-
-  const handleResetPassword = async () => {
-    if (!resetTarget) return;
-    setResetError('');
-    setResetSuccess('');
-    setResetSubmitting(true);
-    const result = await resetUserPassword(resetTarget.id, newPassword);
-    if (result.error) {
-      setResetError(result.error);
-      setResetSubmitting(false);
-      return;
-    }
-    setLastResetPasswords((prev) => ({ ...prev, [resetTarget.id]: newPassword }));
-    setResetSuccess(t`Password updated. Share it with the user.`);
-    setResetSubmitting(false);
   };
 
   const handleOpenDelete = (target: AdminUser) => {
@@ -376,58 +310,6 @@ const AdminUsersPage: React.FC = () => {
     setWorkspaceDeleteTarget(null);
   };
 
-  const openSuperAdminDialog = () => {
-    setSuperAdminEmail('');
-    setSuperAdminPassword('');
-    setSuperAdminDisplayName('');
-    setSuperAdminDialogError('');
-    setSuperAdminDialogOpen(true);
-  };
-
-  const handleCreateSuperAdmin = async () => {
-    if (!superAdminEmail.trim() || !superAdminPassword.trim()) {
-      setSuperAdminDialogError('Email and password are required.');
-      return;
-    }
-    setSuperAdminDialogSubmitting(true);
-    setSuperAdminDialogError('');
-    const result = await createSuperAdmin({
-      email: superAdminEmail,
-      password: superAdminPassword,
-      displayName: superAdminDisplayName.trim() || undefined,
-    });
-    if (result.error) {
-      setSuperAdminDialogError(result.error);
-      setSuperAdminDialogSubmitting(false);
-      return;
-    }
-    await fetchSuperAdmins();
-    setSuperAdminDialogSubmitting(false);
-    setSuperAdminDialogOpen(false);
-  };
-
-  const openSuperAdminDelete = (target: SuperAdminUser) => {
-    setSuperAdminDeleteTarget(target);
-    setSuperAdminDeleteError('');
-    setSuperAdminDeleteOpen(true);
-  };
-
-  const handleDeleteSuperAdmin = async () => {
-    if (!superAdminDeleteTarget) return;
-    setSuperAdminDeleteSubmitting(true);
-    setSuperAdminDeleteError('');
-    const result = await deleteSuperAdmin(superAdminDeleteTarget.userId);
-    if (result.error) {
-      setSuperAdminDeleteError(result.error);
-      setSuperAdminDeleteSubmitting(false);
-      return;
-    }
-    await fetchSuperAdmins();
-    setSuperAdminDeleteSubmitting(false);
-    setSuperAdminDeleteOpen(false);
-    setSuperAdminDeleteTarget(null);
-  };
-
   const handleCreateBackup = async () => {
     setBackupCreateSubmitting(true);
     setBackupCreateError('');
@@ -440,6 +322,22 @@ const AdminUsersPage: React.FC = () => {
     }
     await fetchBackups();
     setBackupCreateSubmitting(false);
+  };
+
+  const handleSyncKeycloak = async () => {
+    setSyncSubmitting(true);
+    setSyncError('');
+    const result = await syncKeycloakUsers();
+    if (result.error) {
+      setSyncError(result.error);
+      setSyncSubmitting(false);
+      return;
+    }
+    await Promise.all([
+      fetchAdminUsers(userSearch.trim()),
+      fetchAdminWorkspaces(),
+    ]);
+    setSyncSubmitting(false);
   };
 
   const openBackupUploadDialog = () => {
@@ -573,7 +471,7 @@ const AdminUsersPage: React.FC = () => {
       <div className="mx-auto w-full max-w-6xl space-y-6">
         <Card>
           <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <CardTitle>Super admin console</CardTitle>
+            <CardTitle>Admin console</CardTitle>
             <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center sm:justify-end">
               <Button type="button" variant="outline" onClick={() => signOut()}>
                 {t`Sign out`}
@@ -581,11 +479,16 @@ const AdminUsersPage: React.FC = () => {
             </div>
           </CardHeader>
           <CardContent>
+            {syncError && (
+              <Alert variant="destructive" className="mb-4">
+                <AlertTitle>{t`Error`}</AlertTitle>
+                <AlertDescription>{syncError}</AlertDescription>
+              </Alert>
+            )}
             <Tabs value={tab} onValueChange={(value) => setTab(value as typeof tab)}>
               <TabsList className="flex flex-wrap w-full h-auto items-start justify-start gap-2 mb-4">
                 <TabsTrigger value="users">Users</TabsTrigger>
                 <TabsTrigger value="workspaces">Workspaces</TabsTrigger>
-                <TabsTrigger value="superAdmins">Super admins</TabsTrigger>
                 <TabsTrigger value="backups">Backups</TabsTrigger>
               </TabsList>
 
@@ -598,6 +501,9 @@ const AdminUsersPage: React.FC = () => {
                   />
                   <Button type="button" variant="outline" onClick={() => fetchAdminUsers(userSearch.trim())}>
                     Refresh
+                  </Button>
+                  <Button type="button" variant="outline" onClick={handleSyncKeycloak} disabled={syncSubmitting}>
+                    Sync Keycloak
                   </Button>
                   <Button type="button" onClick={openCreateUser}>
                     Create user
@@ -669,14 +575,6 @@ const AdminUsersPage: React.FC = () => {
                                       onClick={() => openEditUser(item)}
                                     >
                                       Edit
-                                    </Button>
-                                    <Button
-                                      size="sm"
-                                      variant="outline"
-                                      onClick={() => handleOpenReset(item)}
-                                      disabled={isSelf}
-                                    >
-                                      Reset password
                                     </Button>
                                     <Button
                                       size="sm"
@@ -769,72 +667,6 @@ const AdminUsersPage: React.FC = () => {
                                     Delete
                                   </Button>
                                 </div>
-                              </TableCell>
-                            </TableRow>
-                          ))
-                        )}
-                      </TableBody>
-                    </Table>
-                  </div>
-                )}
-              </TabsContent>
-
-              <TabsContent value="superAdmins" className="space-y-4">
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                  <Button type="button" onClick={openSuperAdminDialog}>
-                    Add super admin
-                  </Button>
-                  <Button type="button" variant="outline" onClick={() => fetchSuperAdmins()}>
-                    Refresh
-                  </Button>
-                </div>
-
-                {superAdminsError && (
-                  <Alert variant="destructive">
-                    <AlertTitle>{t`Error`}</AlertTitle>
-                    <AlertDescription>{superAdminsError}</AlertDescription>
-                  </Alert>
-                )}
-
-                {superAdminsLoading ? (
-                  <div className="py-6 text-sm text-muted-foreground">{t`Loading super admins...`}</div>
-                ) : (
-                  <div className="rounded-md border">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Email</TableHead>
-                          <TableHead>ID</TableHead>
-                          <TableHead>Display name</TableHead>
-                          <TableHead>Created</TableHead>
-                          <TableHead className="text-right">Actions</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {superAdmins.length === 0 ? (
-                          <TableRow>
-                            <TableCell colSpan={5} className="text-sm text-muted-foreground">
-                              No super admins.
-                            </TableCell>
-                          </TableRow>
-                        ) : (
-                          superAdmins.map((item) => (
-                            <TableRow key={item.userId}>
-                              <TableCell className="font-medium">{item.email ?? '—'}</TableCell>
-                              <TableCell className="text-xs text-muted-foreground">{item.userId}</TableCell>
-                              <TableCell className="text-sm text-muted-foreground">
-                                {item.displayName ?? '—'}
-                              </TableCell>
-                              <TableCell className="text-xs">{formatDate(item.createdAt, locale)}</TableCell>
-                              <TableCell className="text-right">
-                                <Button
-                                  size="sm"
-                                  variant="destructive"
-                                  onClick={() => openSuperAdminDelete(item)}
-                                  disabled={item.userId === user.id}
-                                >
-                                  Remove
-                                </Button>
                               </TableCell>
                             </TableRow>
                           ))
@@ -993,12 +825,9 @@ const AdminUsersPage: React.FC = () => {
               onChange={(event) => setUserFormDisplayName(event.target.value)}
             />
             {userDialogMode === 'create' && (
-              <Input
-                type="password"
-                placeholder="Password"
-                value={userFormPassword}
-                onChange={(event) => setUserFormPassword(event.target.value)}
-              />
+              <div className="text-xs text-muted-foreground">
+                {t`Password setup is managed in Keycloak.`}
+              </div>
             )}
             {userFormError && (
               <div className="text-sm text-destructive">{userFormError}</div>
@@ -1062,46 +891,6 @@ const AdminUsersPage: React.FC = () => {
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setWorkspacesDialogOpen(false)}>
               Close
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={resetOpen} onOpenChange={setResetOpen}>
-        <DialogContent className="sm:max-w-[420px]">
-          <DialogHeader>
-            <DialogTitle>Reset password</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3">
-            <div className="text-sm text-muted-foreground">
-              {t`New password for`} <span className="font-medium text-foreground">{resetTarget?.email ?? '—'}</span>
-            </div>
-            <Input
-              type="password"
-              value={newPassword}
-              onChange={(event) => setNewPassword(event.target.value)}
-              placeholder={t`New password`}
-            />
-            <Button type="button" variant="outline" onClick={() => setNewPassword(generatePassword())}>
-              {t`Generate`}
-            </Button>
-            {resetError && (
-              <div className="text-sm text-destructive">{resetError}</div>
-            )}
-            {resetSuccess && (
-              <div className="text-sm text-emerald-600">{resetSuccess}</div>
-            )}
-          </div>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setResetOpen(false)}>
-              Close
-            </Button>
-            <Button
-              type="button"
-              onClick={handleResetPassword}
-              disabled={resetSubmitting || !newPassword.trim()}
-            >
-              Update password
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1180,69 +969,6 @@ const AdminUsersPage: React.FC = () => {
               disabled={workspaceDeleteSubmitting}
             >
               Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      <Dialog open={superAdminDialogOpen} onOpenChange={setSuperAdminDialogOpen}>
-        <DialogContent className="sm:max-w-[420px]">
-          <DialogHeader>
-            <DialogTitle>Add super admin</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3">
-            <Input
-              placeholder="Email"
-              value={superAdminEmail}
-              onChange={(event) => setSuperAdminEmail(event.target.value)}
-            />
-            <Input
-              type="password"
-              placeholder="Password"
-              value={superAdminPassword}
-              onChange={(event) => setSuperAdminPassword(event.target.value)}
-            />
-            <Input
-              placeholder="Display name"
-              value={superAdminDisplayName}
-              onChange={(event) => setSuperAdminDisplayName(event.target.value)}
-            />
-            {superAdminDialogError && (
-              <div className="text-sm text-destructive">{superAdminDialogError}</div>
-            )}
-          </div>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setSuperAdminDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button type="button" onClick={handleCreateSuperAdmin} disabled={superAdminDialogSubmitting}>
-              Create
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <AlertDialog open={superAdminDeleteOpen} onOpenChange={setSuperAdminDeleteOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Remove super admin?</AlertDialogTitle>
-            <AlertDialogDescription>
-              {t`The super admin will lose access to the admin panel. The account will remain.`}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          {superAdminDeleteError && (
-            <div className="text-sm text-destructive">{superAdminDeleteError}</div>
-          )}
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={(event) => {
-                event.preventDefault();
-                void handleDeleteSuperAdmin();
-              }}
-              disabled={superAdminDeleteSubmitting}
-            >
-              Remove
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
