@@ -150,6 +150,7 @@ npm run dev:compose
 - `RESEND_API_KEY`, `RESEND_FROM` — отправка инвайтов через Resend.
 - `RESERVE_ADMIN_EMAIL`, `RESERVE_ADMIN_PASSWORD` — резервный супер‑админ.
 - `GOTRUE_EXTERNAL_KEYCLOAK_URL` — URL realm Keycloak (должен быть доступен браузеру и контейнеру `auth`).
+- `GOTRUE_EXTERNAL_KEYCLOAK_REDIRECT_URI` — callback URL в Supabase Auth (обычно `http://localhost:8080/auth/v1/callback`).
 - `GOTRUE_EXTERNAL_KEYCLOAK_CLIENT_ID`, `GOTRUE_EXTERNAL_KEYCLOAK_SECRET` — OIDC client Supabase в Keycloak.
 - `KEYCLOAK_ADMIN`, `KEYCLOAK_ADMIN_PASSWORD` — логин/пароль админки Keycloak.
 - `KEYCLOAK_DB_NAME`, `KEYCLOAK_DB_USER`, `KEYCLOAK_DB_PASSWORD` — БД Keycloak.

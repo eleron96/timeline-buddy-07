@@ -92,6 +92,7 @@ services:
       GOTRUE_EXTERNAL_KEYCLOAK_CLIENT_ID: ${GOTRUE_EXTERNAL_KEYCLOAK_CLIENT_ID:-timeline-supabase}
       GOTRUE_EXTERNAL_KEYCLOAK_SECRET: ${GOTRUE_EXTERNAL_KEYCLOAK_SECRET:-timeline-supabase-dev-secret-change-me}
       GOTRUE_EXTERNAL_KEYCLOAK_URL: ${GOTRUE_EXTERNAL_KEYCLOAK_URL:-http://host.docker.internal:8081/realms/timeline}
+      GOTRUE_EXTERNAL_KEYCLOAK_REDIRECT_URI: ${GOTRUE_EXTERNAL_KEYCLOAK_REDIRECT_URI:-http://localhost:8080/auth/v1/callback}
 
   rest:
     image: postgrest/postgrest:v12.2.3
