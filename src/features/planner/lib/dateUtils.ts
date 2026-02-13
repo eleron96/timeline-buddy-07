@@ -20,6 +20,8 @@ import {
 } from 'date-fns';
 import type { Locale as DateFnsLocale } from 'date-fns';
 import { ViewMode } from '@/features/planner/types/planner';
+import type { Locale as UiLocale } from '@/shared/lib/locale';
+import { formatWeekdayLabel } from '@/shared/lib/dateFnsLocale';
 
 export const DAY_WIDTH = 120; // pixels per day in day view
 export const WEEK_DAY_WIDTH = 48; // pixels per day in week view
@@ -113,16 +115,20 @@ export const formatDayHeader = (
   date: Date,
   viewMode: ViewMode,
   dateLocale?: DateFnsLocale,
+  uiLocale: UiLocale = 'en',
 ): { day: string; date: string } => {
-  const formatOptions = dateLocale ? { locale: dateLocale } : undefined;
+  const day = viewMode === 'day'
+    ? formatWeekdayLabel(date, uiLocale, { style: 'abbreviated', dateLocale })
+    : formatWeekdayLabel(date, uiLocale, { style: 'narrow', dateLocale });
+
   if (viewMode === 'day') {
     return {
-      day: format(date, 'EEE', formatOptions),
+      day,
       date: format(date, 'd'),
     };
   }
   return {
-    day: format(date, 'EEEEE', formatOptions),
+    day,
     date: format(date, 'd'),
   };
 };

@@ -47,7 +47,7 @@ import {
 import { getBarPalette, getPeriodRange } from '@/features/dashboard/lib/dashboardUtils';
 import { t } from '@lingui/macro';
 import { useLocaleStore } from '@/shared/store/localeStore';
-import { resolveDateFnsLocale } from '@/shared/lib/dateFnsLocale';
+import { formatWeekdayLabel, resolveDateFnsLocale } from '@/shared/lib/dateFnsLocale';
 
 const filterLabels: Record<DashboardStatusFilter, string> = {
   all: t`All statuses`,
@@ -339,8 +339,9 @@ export const DashboardWidgetCard: React.FC<DashboardWidgetCardProps> = ({
     ? endOfWeek(monthEnd, { weekStartsOn: 1 })
     : endOfWeek(addWeeks(calendarStart, 4), { weekStartsOn: 1 });
   const calendarDays = eachDayOfInterval({ start: calendarStart, end: calendarEnd });
+  const weekdayLabelStyle: 'narrow' | 'short' = isSmall ? 'narrow' : 'short';
   const weekdayLabels = Array.from({ length: 7 }, (_, index) => (
-    format(addDays(calendarStart, index), isSmall ? 'EEEEE' : 'EE', { locale: dateLocale })
+    formatWeekdayLabel(addDays(calendarStart, index), locale, { style: weekdayLabelStyle, dateLocale })
   ));
   const calendarLabel = milestoneCalendarMode === 'month'
     ? format(monthStart, 'LLLL yyyy', { locale: dateLocale })

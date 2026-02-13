@@ -11,7 +11,7 @@ import { Milestone } from '@/features/planner/types/planner';
 import { ArrowDown, ArrowUp } from 'lucide-react';
 import { t } from '@lingui/macro';
 import { useLocaleStore } from '@/shared/store/localeStore';
-import { resolveDateFnsLocale } from '@/shared/lib/dateFnsLocale';
+import { formatWeekdayLabel, resolveDateFnsLocale } from '@/shared/lib/dateFnsLocale';
 import {
   addDays,
   addMonths,
@@ -78,9 +78,9 @@ export const CalendarTimeline: React.FC = () => {
   const weekdayLabels = useMemo(() => {
     const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 });
     return Array.from({ length: 7 }, (_, index) => (
-      format(addDays(weekStart, index), 'EEEEE', { locale: dateLocale })
+      formatWeekdayLabel(addDays(weekStart, index), locale, { style: 'narrow', dateLocale })
     ));
-  }, [dateLocale]);
+  }, [dateLocale, locale]);
   const fallbackHolidayLabel = t`Non-working day`;
 
   const holidayCountryCode = useMemo(() => {

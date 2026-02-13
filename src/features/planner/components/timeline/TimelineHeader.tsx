@@ -104,7 +104,7 @@ export const TimelineHeader: React.FC<TimelineHeaderProps> = ({
       {/* Day row */}
       <div className="flex h-14">
         {visibleDays.map((day, index) => {
-          const { day: dayName, date } = formatDayHeader(day, viewMode, dateLocale);
+          const { day: dayName, date } = formatDayHeader(day, viewMode, dateLocale, locale);
           const today = isToday(day);
           const weekend = isWeekend(day);
           const dayKey = format(day, 'yyyy-MM-dd');
