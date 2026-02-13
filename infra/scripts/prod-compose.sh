@@ -202,9 +202,6 @@ else
   echo "Warning: curl is not installed, skipping Keycloak sync bootstrap request." >&2
 fi
 
-docker compose -f "$compose_file" --env-file "$env_file" up -d --build web oauth2-proxy
-
-release_timestamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 current_version="0.0.0"
 if [[ -f "$version_file" ]]; then
   current_version="$(tr -d '[:space:]' < "$version_file")"
@@ -219,6 +216,14 @@ if ! release_version="$(increment_patch_version "$current_version")"; then
 fi
 printf "%s\n" "$release_version" > "$version_file"
 echo "Release version updated: $current_version -> $release_version"
+
+if ! docker compose -f "$compose_file" --env-file "$env_file" up -d --build web oauth2-proxy; then
+  printf "%s\n" "$current_version" > "$version_file"
+  echo "Web deployment failed, VERSION rolled back to $current_version" >&2
+  exit 1
+fi
+
+release_timestamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 release_commit="n/a"
 if command -v git >/dev/null 2>&1 && git rev-parse --is-inside-work-tree >/dev/null 2>&1; then

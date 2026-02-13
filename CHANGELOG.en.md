@@ -28,6 +28,7 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 ### Infrastructure
 - `infra/scripts/prod-compose.sh` now treats each remote deployment as a release: it auto-bumps patch version in `VERSION` and appends a new record to `infra/releases.log`.
 - Added `infra/scripts/deploy-remote.sh` (and `make deploy-remote`) for remote deployment with synchronization of `VERSION` and `infra/releases.log` back to the local repository.
+- Fixed release step ordering in `prod-compose.sh`: version is bumped before web build and rolled back on build failure, so UI version matches the deployed release version.
 
 ## [0.1.0] - 2026-02-13
 ### Added
