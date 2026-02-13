@@ -96,6 +96,7 @@ make up-prod
 - применяет Liquibase миграции,
 - собирает frontend образ (`infra/web/Dockerfile`) и запускает `web + oauth2-proxy`,
 - считает каждый production deployment релизом: автоматически повышает patch-версию в `VERSION`,
+- автоматически переносит записи из `Unreleased` в `CHANGELOG.md` и `CHANGELOG.en.md` под новую версию,
 - добавляет запись о релизе в `infra/releases.log`.
 
 Остановка/логи:
@@ -114,7 +115,7 @@ make deploy-remote
 Скрипт `infra/scripts/deploy-remote.sh`:
 - синхронизирует код на удалённый сервер,
 - запускает `infra/scripts/prod-compose.sh` на сервере,
-- подтягивает обратно `VERSION` и `infra/releases.log` в локальный репозиторий.
+- подтягивает обратно `VERSION`, `CHANGELOG.md`, `CHANGELOG.en.md` и `infra/releases.log` в локальный репозиторий.
 
 ## Обязательные переменные для production
 

@@ -29,6 +29,8 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 - `infra/scripts/prod-compose.sh` теперь считает каждый удалённый деплой релизом: автоматически повышает patch-версию в `VERSION` и добавляет запись в `infra/releases.log`.
 - Добавили `infra/scripts/deploy-remote.sh` (и цель `make deploy-remote`) для удалённого деплоя с синхронизацией `VERSION` и `infra/releases.log` обратно в локальный репозиторий.
 - Исправили порядок релизных шагов в `prod-compose.sh`: версия повышается до сборки web и откатывается при ошибке, поэтому версия в UI совпадает с версией релиза.
+- Автоматизировали выпуск changelog при релизе: записи из `Unreleased` теперь переносятся в новую версию в `CHANGELOG.md` и `CHANGELOG.en.md`.
+- В `deploy-remote.sh` добавили синхронизацию changelog-файлов обратно в локальный репозиторий после удалённого деплоя.
 
 ## [0.1.0] - 2026-02-13
 ### Added

@@ -8,6 +8,9 @@ compose_file="infra/docker-compose.prod.yml"
 env_file=".env"
 version_file="VERSION"
 release_log_file="infra/releases.log"
+changelog_ru_file="CHANGELOG.md"
+changelog_en_file="CHANGELOG.en.md"
+release_backup_dir=""
 
 if ! command -v docker >/dev/null 2>&1; then
   echo "Docker is required. Please install Docker." >&2
@@ -76,6 +79,93 @@ increment_patch_version() {
   local patch="${BASH_REMATCH[3]}"
 
   echo "${major}.${minor}.$((patch + 1))"
+}
+
+restore_release_artifacts() {
+  local restore_version="$1"
+  printf "%s\n" "$restore_version" > "$version_file"
+  if [[ -n "$release_backup_dir" ]]; then
+    if [[ -f "$release_backup_dir/CHANGELOG.md" ]]; then
+      cp "$release_backup_dir/CHANGELOG.md" "$changelog_ru_file"
+    fi
+    if [[ -f "$release_backup_dir/CHANGELOG.en.md" ]]; then
+      cp "$release_backup_dir/CHANGELOG.en.md" "$changelog_en_file"
+    fi
+  fi
+}
+
+finalize_changelog_release() {
+  local file="$1"
+  local release_version="$2"
+  local release_date="$3"
+  local empty_message="$4"
+
+  if [[ ! -f "$file" ]]; then
+    return 0
+  fi
+
+  local unreleased_line
+  unreleased_line="$(grep -nE '^## \[Unreleased\]' "$file" | head -n1 | cut -d: -f1 || true)"
+  if [[ -z "$unreleased_line" ]]; then
+    echo "Warning: $file has no [Unreleased] section; skipping release rotation." >&2
+    return 0
+  fi
+
+  local next_release_line
+  next_release_line="$(awk -v start="$unreleased_line" 'NR > start && /^## \[/ { print NR; exit }' "$file" || true)"
+
+  local tmp_out tmp_unreleased tmp_trimmed tmp_rest
+  tmp_out="$(mktemp)"
+  tmp_unreleased="$(mktemp)"
+  tmp_trimmed="$(mktemp)"
+  tmp_rest="$(mktemp)"
+
+  sed -n "1,${unreleased_line}p" "$file" > "$tmp_out"
+
+  if [[ -n "$next_release_line" ]]; then
+    if (( next_release_line > unreleased_line + 1 )); then
+      sed -n "$((unreleased_line + 1)),$((next_release_line - 1))p" "$file" > "$tmp_unreleased"
+    else
+      : > "$tmp_unreleased"
+    fi
+    sed -n "${next_release_line},\$p" "$file" > "$tmp_rest"
+  else
+    sed -n "$((unreleased_line + 1)),\$p" "$file" > "$tmp_unreleased"
+    : > "$tmp_rest"
+  fi
+
+  awk '
+    {
+      lines[NR] = $0
+      if ($0 ~ /[^[:space:]]/) {
+        if (first == 0) first = NR
+        last = NR
+      }
+    }
+    END {
+      if (first == 0) exit
+      for (i = first; i <= last; i++) print lines[i]
+    }
+  ' "$tmp_unreleased" > "$tmp_trimmed"
+
+  {
+    printf "\n"
+    printf "## [%s] - %s\n" "$release_version" "$release_date"
+    if [[ -s "$tmp_trimmed" ]]; then
+      cat "$tmp_trimmed"
+      printf "\n"
+    else
+      printf "### Changed\n"
+      printf -- "- %s\n" "$empty_message"
+      printf "\n"
+    fi
+    if [[ -s "$tmp_rest" ]]; then
+      cat "$tmp_rest"
+    fi
+  } >> "$tmp_out"
+
+  mv "$tmp_out" "$file"
+  rm -f "$tmp_unreleased" "$tmp_trimmed" "$tmp_rest"
 }
 
 POSTGRES_USER="$(get_env_value POSTGRES_USER)"
@@ -214,14 +304,39 @@ if ! release_version="$(increment_patch_version "$current_version")"; then
   echo "Invalid VERSION format: '$current_version'. Expected X.Y.Z." >&2
   exit 1
 fi
+
+release_backup_dir="$(mktemp -d)"
+if [[ -f "$changelog_ru_file" ]]; then
+  cp "$changelog_ru_file" "$release_backup_dir/CHANGELOG.md"
+fi
+if [[ -f "$changelog_en_file" ]]; then
+  cp "$changelog_en_file" "$release_backup_dir/CHANGELOG.en.md"
+fi
+
 printf "%s\n" "$release_version" > "$version_file"
 echo "Release version updated: $current_version -> $release_version"
+release_date="$(date -u +%Y-%m-%d)"
+
+if ! finalize_changelog_release "$changelog_ru_file" "$release_version" "$release_date" "Нет зафиксированных изменений."; then
+  restore_release_artifacts "$current_version"
+  rm -rf "$release_backup_dir"
+  echo "Failed to rotate $changelog_ru_file for release $release_version" >&2
+  exit 1
+fi
+if ! finalize_changelog_release "$changelog_en_file" "$release_version" "$release_date" "No documented changes."; then
+  restore_release_artifacts "$current_version"
+  rm -rf "$release_backup_dir"
+  echo "Failed to rotate $changelog_en_file for release $release_version" >&2
+  exit 1
+fi
 
 if ! docker compose -f "$compose_file" --env-file "$env_file" up -d --build web oauth2-proxy; then
-  printf "%s\n" "$current_version" > "$version_file"
+  restore_release_artifacts "$current_version"
+  rm -rf "$release_backup_dir"
   echo "Web deployment failed, VERSION rolled back to $current_version" >&2
   exit 1
 fi
+rm -rf "$release_backup_dir"
 
 release_timestamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 

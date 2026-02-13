@@ -19,5 +19,7 @@ ssh "$host" "cd '${remote_dir}' && bash infra/scripts/prod-compose.sh"
 
 scp "${host}:${remote_dir}/VERSION" "${root_dir}/VERSION"
 scp "${host}:${remote_dir}/infra/releases.log" "${root_dir}/infra/releases.log"
+scp "${host}:${remote_dir}/CHANGELOG.md" "${root_dir}/CHANGELOG.md"
+scp "${host}:${remote_dir}/CHANGELOG.en.md" "${root_dir}/CHANGELOG.en.md"
 
-echo "Deployment finished. Synced VERSION and infra/releases.log from server."
+echo "Deployment finished. Synced VERSION, CHANGELOGs and infra/releases.log from server."
