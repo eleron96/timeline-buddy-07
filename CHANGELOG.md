@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [0.1.4] - 2026-02-13
 ### Changed
 - Обновили создание виджетов на дашборде: поля в модальном окне больше не «режутся» по краям, фокус и контент отображаются полностью.
 - Улучшили логику сетки дашборда: виджеты больше не могут накладываться друг на друга при перетаскивании/изменении размера.
