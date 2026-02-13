@@ -60,25 +60,19 @@ const parseSectionByHeader = (
   locale: Locale,
 ): ReleaseNotesSection[] => {
   const lines = raw.split('\n');
-  let inSection = false;
+  const startIndex = lines.findIndex((rawLine) => sectionHeaderPattern.test(rawLine.trim()));
+  if (startIndex === -1) return [];
+
   const collected: string[] = [];
 
-  lines.forEach((rawLine) => {
-    const line = rawLine.trimEnd();
-    if (!inSection) {
-      if (sectionHeaderPattern.test(line.trim())) {
-        inSection = true;
-      }
-      return;
-    }
-
+  for (let index = startIndex + 1; index < lines.length; index += 1) {
+    const line = lines[index].trimEnd();
     if (VERSION_HEADER_PATTERN.test(line.trim())) {
-      inSection = false;
-      return;
+      break;
     }
 
     collected.push(line.trim());
-  });
+  }
 
   return parseSectionBody(collected, locale);
 };

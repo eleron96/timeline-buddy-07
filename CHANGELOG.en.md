@@ -6,6 +6,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Changed
+- Improved authentication page load speed: Keycloak static resources are now compressed at the edge and cached by the browser.
+
+### Fixed
+- Fixed the “Latest changes” modal: it now shows only the current release block without pulling older versions.
 
 ## [0.1.5] - 2026-02-13
 ### Fixed
