@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [0.1.15] - 2026-02-13
 ### Fixed
 - Для русского интерфейса зафиксированы единые сокращения дней недели во всех календарных представлениях: `Пн`, `Вт`, `Ср`, `Чт`, `Пт`, `Сб`, `Вс`.
 
