@@ -6,6 +6,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Changed
+- На таймлайне в левом списке пользователей количество задач теперь считается как количество уникальных задач без дублей повторяющихся серий.
+- В разделе `Members -> Задачи` счётчики задач у участников теперь сразу приходят в нужном формате, без промежуточного показа “всех задач”.
 
 ## [0.1.11] - 2026-02-13
 ### Added

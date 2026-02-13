@@ -122,14 +122,8 @@ type MilestoneRow = {
   title: string;
 };
 
-type DashboardTaskCountRow = {
+type AssigneeUniqueTaskCountRow = {
   assignee_id: string | null;
-  assignee_name: string | null;
-  project_id: string | null;
-  project_name: string | null;
-  status_id: string | null;
-  status_name: string | null;
-  status_is_final: boolean | null;
   total: number | string | null;
 };
 
@@ -449,7 +443,7 @@ export const usePlannerStore = create<PlannerStore>()(
         const shouldFetchCounts = assigneeCountsDate !== today || assigneeCountsWorkspaceId !== workspaceId;
 
         const countsPromise = shouldFetchCounts
-          ? supabase.rpc('dashboard_task_counts', {
+          ? supabase.rpc('assignee_unique_task_counts', {
             p_workspace_id: workspaceId,
             p_start_date: today,
             p_end_date: countsEnd,
@@ -598,10 +592,10 @@ export const usePlannerStore = create<PlannerStore>()(
             console.error(countsRes.error);
           } else {
             const totals: Record<string, number> = {};
-            (countsRes.data as DashboardTaskCountRow[] | null | undefined ?? []).forEach((row) => {
+            ((countsRes.data as AssigneeUniqueTaskCountRow[] | null | undefined) ?? []).forEach((row) => {
               if (!row.assignee_id) return;
               const value = typeof row.total === 'string' ? Number(row.total) : (row.total ?? 0);
-              totals[row.assignee_id] = (totals[row.assignee_id] ?? 0) + value;
+              totals[row.assignee_id] = value;
             });
             nextAssigneeCounts = totals;
             nextAssigneeCountsDate = today;

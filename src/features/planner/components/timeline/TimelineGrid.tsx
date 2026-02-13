@@ -30,6 +30,14 @@ interface TimelineGridProps {
   }) => void;
 }
 
+const countUniqueTaskUnits = (tasks: Task[]) => {
+  const units = new Set<string>();
+  tasks.forEach((task) => {
+    units.add(task.repeatId ? `r:${task.repeatId}` : `t:${task.id}`);
+  });
+  return units.size;
+};
+
 export const TimelineGrid: React.FC<TimelineGridProps> = ({ onCreateTask }) => {
   const { 
     tasks,
@@ -723,7 +731,7 @@ export const TimelineGrid: React.FC<TimelineGridProps> = ({ onCreateTask }) => {
                 </span>
                 <span className="ml-auto text-xs text-muted-foreground">
                   {groupMode === 'assignee' && row.id !== 'unassigned'
-                    ? (assigneeTaskCounts[row.id] ?? row.tasks.length)
+                    ? (assigneeTaskCounts[row.id] ?? countUniqueTaskUnits(row.tasks))
                     : row.tasks.length}
                 </span>
               </div>

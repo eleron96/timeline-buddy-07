@@ -23,7 +23,7 @@ import { t } from '@lingui/macro';
 import { formatStatusLabel } from '@/shared/lib/statusLabels';
 import { formatProjectLabel } from '@/shared/lib/projectLabels';
 import { cn } from '@/shared/lib/classNames';
-import { differenceInCalendarDays, format, parseISO } from 'date-fns';
+import { addYears, differenceInCalendarDays, format, parseISO } from 'date-fns';
 import { Settings, User, RefreshCcw, ArrowDownAZ, ArrowDownZA, Layers, Plus } from 'lucide-react';
 import { Task } from '@/features/planner/types/planner';
 import { WorkspaceMembersPanel } from '@/features/workspace/components/WorkspaceMembersPanel';
@@ -47,11 +47,9 @@ type TaskRow = {
   repeat_id: string | null;
 };
 
-type TaskCountRow = {
-  id: string;
+type AssigneeUniqueTaskCountRow = {
   assignee_id: string | null;
-  assignee_ids: string[] | null;
-  repeat_id: string | null;
+  total: number | string | null;
 };
 
 type MemberGroup = {
@@ -208,8 +206,6 @@ const MembersPage = () => {
     tags,
     loadWorkspaceData,
     refreshMemberGroups,
-    assigneeTaskCounts,
-    assigneeCountsDate,
     deleteTasks,
     setHighlightedTaskId,
     setViewMode,
@@ -524,32 +520,23 @@ const MembersPage = () => {
   const refreshMemberTaskCounts = useCallback(async () => {
     if (!currentWorkspaceId) return;
     const today = format(new Date(), 'yyyy-MM-dd');
-    const { data, error } = await supabase
-      .from('tasks')
-      .select('id, assignee_id, assignee_ids, repeat_id')
-      .eq('workspace_id', currentWorkspaceId)
-      .gte('end_date', today);
+    const countsEnd = format(addYears(parseISO(today), 10), 'yyyy-MM-dd');
+    const { data, error } = await supabase.rpc('assignee_unique_task_counts', {
+      p_workspace_id: currentWorkspaceId,
+      p_start_date: today,
+      p_end_date: countsEnd,
+    });
 
     if (error) {
       console.error(error);
       return;
     }
 
-    const unitsByAssignee = new Map<string, Set<string>>();
-    ((data ?? []) as TaskCountRow[]).forEach((row) => {
-      const assigneeIds = normalizeAssigneeIds(row.assignee_ids, row.assignee_id);
-      if (assigneeIds.length === 0) return;
-      const unitKey = row.repeat_id ? `r:${row.repeat_id}` : `t:${row.id}`;
-      assigneeIds.forEach((assigneeId) => {
-        const current = unitsByAssignee.get(assigneeId) ?? new Set<string>();
-        current.add(unitKey);
-        unitsByAssignee.set(assigneeId, current);
-      });
-    });
-
     const nextCounts: Record<string, number> = {};
-    unitsByAssignee.forEach((units, assigneeId) => {
-      nextCounts[assigneeId] = units.size;
+    ((data ?? []) as AssigneeUniqueTaskCountRow[]).forEach((row) => {
+      if (!row.assignee_id) return;
+      const value = typeof row.total === 'string' ? Number(row.total) : (row.total ?? 0);
+      nextCounts[row.assignee_id] = value;
     });
     setMemberTaskCounts(nextCounts);
     setMemberTaskCountsDate(today);
@@ -1144,10 +1131,9 @@ const MembersPage = () => {
                             </div>
                           )}
                           {group.members.map((assignee) => {
-                            const fallbackCount = assigneeCountsDate ? (assigneeTaskCounts[assignee.id] ?? 0) : null;
                             const count = memberTaskCountsDate
                               ? (memberTaskCounts[assignee.id] ?? 0)
-                              : fallbackCount;
+                              : null;
                             return (
                               <button
                                 key={assignee.id}
@@ -1191,10 +1177,9 @@ const MembersPage = () => {
                             </div>
                           )}
                           {group.members.map((assignee) => {
-                            const fallbackCount = assigneeCountsDate ? (assigneeTaskCounts[assignee.id] ?? 0) : null;
                             const count = memberTaskCountsDate
                               ? (memberTaskCounts[assignee.id] ?? 0)
-                              : fallbackCount;
+                              : null;
                             return (
                               <button
                                 key={assignee.id}
@@ -1427,7 +1412,7 @@ const MembersPage = () => {
                     <div>{scopeToggle}</div>
                   </div>
                   <div className="text-xs text-muted-foreground">
-                    {memberTaskCountsDate || assigneeCountsDate ? t`Tasks from today` : t`Tasks count loading...`}
+                    {memberTaskCountsDate ? t`Tasks from today` : t`Tasks count loading...`}
                   </div>
                 </div>
               </div>
