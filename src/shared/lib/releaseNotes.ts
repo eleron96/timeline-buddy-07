@@ -14,6 +14,7 @@ const VERSION_HEADER_PATTERN = /^##\s+\[[^\]]+\]/i;
 const RELEASE_HEADER_PATTERN = /^##\s+\[(?!Unreleased\])[^\]]+\]/i;
 const SECTION_HEADER_PATTERN = /^###\s+/;
 const ITEM_PATTERN = /^\s*-\s+/;
+const IGNORED_SECTION_TITLES = new Set(['infrastructure', 'инфраструктура']);
 
 const normalizeVersion = (raw: string) => {
   const normalized = raw.trim();
@@ -29,6 +30,10 @@ const parseSectionBody = (lines: string[], locale: Locale): ReleaseNotesSection[
 
   const flushSection = () => {
     if (!currentItems.length) return;
+    if (IGNORED_SECTION_TITLES.has(currentTitle.trim().toLowerCase())) {
+      currentItems = [];
+      return;
+    }
     sections.push({ title: currentTitle, items: currentItems });
     currentItems = [];
   };

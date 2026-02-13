@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Fixed
+- In English UI, widget creation now fully translates `Type` and `Period`, including all option values inside those selectors.
+- In widget advanced filters, all rule parts are translated (fields, operators, and rule-group match modes).
+- The “latest changes” modal now hides technical sections and shows only user-facing product updates.
 
 ## [0.1.4] - 2026-02-13
 ### Changed
@@ -17,22 +21,12 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 ### Added
 - Added milestone creation on timeline by double-clicking a date (in day header and milestone row).
 - If multiple milestones share the same date, timeline shows all dots and tooltip displays the full list for that day.
-- Added baseline release tracking:
-  - version in `VERSION`,
-  - human-readable changelog in `CHANGELOG.md` and `CHANGELOG.en.md`,
-  - technical deployment log in `infra/releases.log` (timestamp, version, backup, environment).
 - Added app version in account settings: a small clickable version label at the bottom opens a modal with latest changes.
 
 ### Fixed
 - Extended interface localization (including widget creation and timeline task form/details) so key fields and actions are no longer left in English.
 - Fixed dashboard grid collision: a small widget can no longer be placed on top of a large one (strict no-overlap during drag/resize).
-
-### Infrastructure
-- `infra/scripts/prod-compose.sh` now treats each remote deployment as a release: it auto-bumps patch version in `VERSION` and appends a new record to `infra/releases.log`.
-- Added `infra/scripts/deploy-remote.sh` (and `make deploy-remote`) for remote deployment with synchronization of `VERSION` and `infra/releases.log` back to the local repository.
-- Fixed release step ordering in `prod-compose.sh`: version is bumped before web build and rolled back on build failure, so UI version matches the deployed release version.
-- Automated changelog release flow: entries from `Unreleased` are now moved into the new version section in both `CHANGELOG.md` and `CHANGELOG.en.md`.
-- `deploy-remote.sh` now also syncs changelog files back to the local repository after remote deployment.
+- Fixed version display: the version shown in UI now always matches the deployed release.
 
 ## [0.1.0] - 2026-02-13
 ### Added

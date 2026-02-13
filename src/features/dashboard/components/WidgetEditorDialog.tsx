@@ -40,67 +40,7 @@ interface WidgetEditorDialogProps {
 type PrimaryWidgetType = 'kpi' | 'chart' | 'milestone';
 type ChartWidgetType = Extract<DashboardWidgetType, 'bar' | 'line' | 'area' | 'pie'>;
 
-const periodOptions: Array<{ value: DashboardPeriod; label: string }> = [
-  { value: 'day', label: t`Day` },
-  { value: 'week', label: t`Week` },
-  { value: 'month', label: t`Month` },
-];
-
-const primaryTypeOptions: Array<{ value: PrimaryWidgetType; label: string }> = [
-  { value: 'kpi', label: t`Text value` },
-  { value: 'chart', label: t`Chart` },
-  { value: 'milestone', label: t`Milestones` },
-];
-
-const chartStyleOptions: Array<{ value: ChartWidgetType; label: string }> = [
-  { value: 'bar', label: t`Bar chart` },
-  { value: 'line', label: t`Line chart` },
-  { value: 'area', label: t`Area chart` },
-  { value: 'pie', label: t`Pie chart (Donut)` },
-];
-
-const chartPaletteLabels: Record<DashboardBarPalette, string> = {
-  'pastel-sky': t`Pastel sky`,
-  'pastel-dawn': t`Pastel dawn`,
-  'pastel-mint': t`Pastel mint`,
-  mono: t`Monochrome`,
-  checker: t`Checkerboard`,
-};
-
-const groupByOptions: Array<{ value: DashboardGroupBy; label: string }> = [
-  { value: 'assignee', label: t`By user` },
-  { value: 'status', label: t`By status` },
-  { value: 'project', label: t`By project` },
-];
-
-const filterFieldOptions: Array<{ value: DashboardFilterField; label: string }> = [
-  { value: 'assignee', label: t`User` },
-  { value: 'group', label: t`Group` },
-  { value: 'status', label: t`Status` },
-  { value: 'project', label: t`Project` },
-];
-
 const UNASSIGNED_FILTER_VALUE = '__unassigned__';
-
-const filterOperatorOptions: Array<{ value: DashboardFilterOperator; label: string }> = [
-  { value: 'eq', label: t`Equals` },
-  { value: 'neq', label: t`Not equals` },
-];
-
-const groupMatchOptions: Array<{ value: DashboardFilterGroup['match']; label: string }> = [
-  { value: 'and', label: t`Match all rules (AND)` },
-  { value: 'or', label: t`Match any rule (OR)` },
-];
-
-const milestoneViewOptions: Array<{ value: DashboardMilestoneView; label: string }> = [
-  { value: 'list', label: t`List` },
-  { value: 'calendar', label: t`Calendar (month)` },
-];
-
-const milestoneCalendarModeOptions: Array<{ value: DashboardMilestoneCalendarMode; label: string }> = [
-  { value: 'month', label: t`Current month` },
-  { value: 'rolling', label: t`Month from current week` },
-];
 
 export const WidgetEditorDialog: React.FC<WidgetEditorDialogProps> = ({
   open,
@@ -112,6 +52,57 @@ export const WidgetEditorDialog: React.FC<WidgetEditorDialogProps> = ({
   initialWidget,
   onSave,
 }) => {
+  const periodOptions: Array<{ value: DashboardPeriod; label: string }> = [
+    { value: 'day', label: t`Day` },
+    { value: 'week', label: t`Week` },
+    { value: 'month', label: t`Month` },
+  ];
+  const primaryTypeOptions: Array<{ value: PrimaryWidgetType; label: string }> = [
+    { value: 'kpi', label: t`Text value` },
+    { value: 'chart', label: t`Chart` },
+    { value: 'milestone', label: t`Milestones` },
+  ];
+  const chartStyleOptions: Array<{ value: ChartWidgetType; label: string }> = [
+    { value: 'bar', label: t`Bar chart` },
+    { value: 'line', label: t`Line chart` },
+    { value: 'area', label: t`Area chart` },
+    { value: 'pie', label: t`Pie chart (Donut)` },
+  ];
+  const chartPaletteLabels: Record<DashboardBarPalette, string> = {
+    'pastel-sky': t`Pastel sky`,
+    'pastel-dawn': t`Pastel dawn`,
+    'pastel-mint': t`Pastel mint`,
+    mono: t`Monochrome`,
+    checker: t`Checkerboard`,
+  };
+  const groupByOptions: Array<{ value: DashboardGroupBy; label: string }> = [
+    { value: 'assignee', label: t`By user` },
+    { value: 'status', label: t`By status` },
+    { value: 'project', label: t`By project` },
+  ];
+  const filterFieldOptions: Array<{ value: DashboardFilterField; label: string }> = [
+    { value: 'assignee', label: t`User` },
+    { value: 'group', label: t`Group` },
+    { value: 'status', label: t`Status` },
+    { value: 'project', label: t`Project` },
+  ];
+  const filterOperatorOptions: Array<{ value: DashboardFilterOperator; label: string }> = [
+    { value: 'eq', label: t`Equals` },
+    { value: 'neq', label: t`Not equals` },
+  ];
+  const groupMatchOptions: Array<{ value: DashboardFilterGroup['match']; label: string }> = [
+    { value: 'and', label: t`Match all rules (AND)` },
+    { value: 'or', label: t`Match any rule (OR)` },
+  ];
+  const milestoneViewOptions: Array<{ value: DashboardMilestoneView; label: string }> = [
+    { value: 'list', label: t`List` },
+    { value: 'calendar', label: t`Calendar (month)` },
+  ];
+  const milestoneCalendarModeOptions: Array<{ value: DashboardMilestoneCalendarMode; label: string }> = [
+    { value: 'month', label: t`Current month` },
+    { value: 'rolling', label: t`Month from current week` },
+  ];
+
   const [widgetId, setWidgetId] = useState('');
   const [title, setTitle] = useState('');
   const [primaryType, setPrimaryType] = useState<PrimaryWidgetType>('kpi');
