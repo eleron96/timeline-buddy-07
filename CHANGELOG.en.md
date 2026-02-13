@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [0.1.5] - 2026-02-13
 ### Fixed
 - In English UI, widget creation now fully translates `Type` and `Period`, including all option values inside those selectors.
 - In widget advanced filters, all rule parts are translated (fields, operators, and rule-group match modes).

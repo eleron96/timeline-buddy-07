@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [0.1.5] - 2026-02-13
 ### Fixed
 - В английском интерфейсе при создании виджета полностью переведены разделы `Type` и `Period`, включая варианты выбора внутри них.
 - В расширенных фильтрах создания виджета переведены все элементы правил (поля, операторы и режимы группировки правил).
