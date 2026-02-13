@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { usePlannerStore } from '@/features/planner/store/plannerStore';
 import { useAuthStore } from '@/features/auth/store/authStore';
@@ -6,6 +6,7 @@ import { WorkspaceSwitcher } from '@/features/workspace/components/WorkspaceSwit
 import { WorkspaceNav } from '@/features/workspace/components/WorkspaceNav';
 import { SettingsPanel } from '@/features/workspace/components/SettingsPanel';
 import { AccountSettingsDialog } from '@/features/auth/components/AccountSettingsDialog';
+import { InviteNotifications } from '@/features/auth/components/InviteNotifications';
 import { Button } from '@/shared/ui/button';
 import { Input } from '@/shared/ui/input';
 import { Label } from '@/shared/ui/label';
@@ -26,12 +27,13 @@ import {
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/shared/ui/table';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/shared/ui/dialog';
 import { ColorPicker } from '@/shared/ui/color-picker';
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/shared/ui/resizable';
 import { supabase } from '@/shared/lib/supabaseClient';
 import { formatStatusLabel } from '@/shared/lib/statusLabels';
 import { formatProjectLabel } from '@/shared/lib/projectLabels';
 import { sortProjectsByTracking } from '@/shared/lib/projectSorting';
 import { compareNames } from '@/shared/lib/nameSorting';
-import { format, parseISO } from 'date-fns';
+import { differenceInCalendarDays, format, parseISO } from 'date-fns';
 import {
   ArrowDownAZ,
   ArrowDownZA,
@@ -77,6 +79,16 @@ type TaskRow = {
   tag_ids: string[] | null;
   description: string | null;
   repeat_id: string | null;
+};
+
+type DisplayTaskRow = {
+  key: string;
+  task: Task;
+  repeatMeta: {
+    label: string;
+    remaining: number;
+    total: number;
+  } | null;
 };
 
 const normalizeAssigneeIds = (assigneeIds: string[] | null | undefined, legacyId: string | null | undefined) => {
@@ -130,6 +142,19 @@ const sanitizeDescription = (value: string) => (
     ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|data:image\/)|[^a-z]|[a-z+.-]+(?:[^a-z+.-:]|$))/i,
   })
 );
+
+const inferRepeatLabel = (tasks: Task[]) => {
+  if (tasks.length < 2) return 'Повторяющаяся';
+  const sorted = [...tasks].sort((left, right) => left.startDate.localeCompare(right.startDate));
+  const first = parseISO(sorted[0].startDate);
+  const second = parseISO(sorted[1].startDate);
+  const diffDays = Math.abs(differenceInCalendarDays(second, first));
+  if (diffDays === 1) return 'Ежедневная';
+  if (diffDays === 7) return 'Еженедельная';
+  if (diffDays >= 28 && diffDays <= 31) return 'Ежемесячная';
+  if (diffDays >= 364 && diffDays <= 366) return 'Ежегодная';
+  return 'Повторяющаяся';
+};
 
 const CustomerCombobox: React.FC<{
   value: string | null;
@@ -257,13 +282,13 @@ const ProjectsPage = () => {
   const [customerSearch, setCustomerSearch] = useState('');
   const [statusFilterIds, setStatusFilterIds] = useState<string[]>([]);
   const [assigneeFilterIds, setAssigneeFilterIds] = useState<string[]>([]);
-  const [groupFilterIds, setGroupFilterIds] = useState<string[]>([]);
   const [customerFilterIds, setCustomerFilterIds] = useState<string[]>([]);
   const [nameSort, setNameSort] = useState<'asc' | 'desc'>('asc');
   const [groupByCustomer, setGroupByCustomer] = useState(false);
   const [mode, setMode] = useState<'projects' | 'customers'>('projects');
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
   const [createProjectOpen, setCreateProjectOpen] = useState(false);
+  const [createProjectConfirmOpen, setCreateProjectConfirmOpen] = useState(false);
   const [projectSettingsOpen, setProjectSettingsOpen] = useState(false);
   const [projectSettingsTarget, setProjectSettingsTarget] = useState<Project | null>(null);
   const [newProjectName, setNewProjectName] = useState('');
@@ -274,6 +299,7 @@ const ProjectsPage = () => {
   const [projectSettingsCode, setProjectSettingsCode] = useState('');
   const [projectSettingsColor, setProjectSettingsColor] = useState('#3b82f6');
   const [projectSettingsCustomerId, setProjectSettingsCustomerId] = useState<string | null>(null);
+  const [projectSettingsConfirmOpen, setProjectSettingsConfirmOpen] = useState(false);
   const [newCustomerName, setNewCustomerName] = useState('');
   const [createCustomerOpen, setCreateCustomerOpen] = useState(false);
   const [editingCustomerId, setEditingCustomerId] = useState<string | null>(null);
@@ -292,8 +318,6 @@ const ProjectsPage = () => {
     customers,
     statuses,
     assignees,
-    memberGroups,
-    memberGroupAssignments,
     taskTypes,
     tags,
     loadWorkspaceData,
@@ -313,20 +337,56 @@ const ProjectsPage = () => {
 
   const {
     user,
-    profileDisplayName,
     currentWorkspaceId,
     currentWorkspaceRole,
     isSuperAdmin,
   } = useAuthStore();
 
   const canEdit = currentWorkspaceRole === 'editor' || currentWorkspaceRole === 'admin';
-  const userLabel = profileDisplayName || user?.email || user?.id || '';
+  const projectsViewPrefsStorageKey = currentWorkspaceId
+    ? `projects-view-prefs-${currentWorkspaceId}`
+    : user?.id
+      ? `projects-view-prefs-user-${user.id}`
+      : 'projects-view-prefs';
+  const projectsViewPrefsHydratedRef = useRef(false);
 
   useEffect(() => {
     if (currentWorkspaceId) {
       loadWorkspaceData(currentWorkspaceId);
     }
   }, [currentWorkspaceId, loadWorkspaceData]);
+
+  useEffect(() => {
+    projectsViewPrefsHydratedRef.current = false;
+    if (typeof window === 'undefined') return;
+    const saved = window.localStorage.getItem(projectsViewPrefsStorageKey);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved) as Partial<{
+          nameSort: 'asc' | 'desc';
+          groupByCustomer: boolean;
+        }>;
+        if (parsed.nameSort === 'asc' || parsed.nameSort === 'desc') {
+          setNameSort(parsed.nameSort);
+        }
+        if (typeof parsed.groupByCustomer === 'boolean') {
+          setGroupByCustomer(parsed.groupByCustomer);
+        }
+      } catch {
+        // Ignore invalid localStorage payload and keep defaults.
+      }
+    }
+    projectsViewPrefsHydratedRef.current = true;
+  }, [projectsViewPrefsStorageKey]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (!projectsViewPrefsHydratedRef.current) return;
+    window.localStorage.setItem(projectsViewPrefsStorageKey, JSON.stringify({
+      nameSort,
+      groupByCustomer,
+    }));
+  }, [groupByCustomer, nameSort, projectsViewPrefsStorageKey]);
 
   const activeProjects = useMemo(
     () => sortProjectsByTracking(
@@ -370,18 +430,6 @@ const ProjectsPage = () => {
     () => new Map(assignees.map((assignee) => [assignee.id, assignee])),
     [assignees],
   );
-  const assigneeGroupMap = useMemo(() => {
-    const groupByUserId = new Map(memberGroupAssignments.map((assignment) => [assignment.userId, assignment.groupId]));
-    const map = new Map<string, string>();
-    assignees.forEach((assignee) => {
-      if (!assignee.userId) return;
-      const groupId = groupByUserId.get(assignee.userId);
-      if (groupId) {
-        map.set(assignee.id, groupId);
-      }
-    });
-    return map;
-  }, [assignees, memberGroupAssignments]);
   const taskTypeById = useMemo(
     () => new Map(taskTypes.map((type) => [type.id, type])),
     [taskTypes],
@@ -553,16 +601,51 @@ const ProjectsPage = () => {
       if (assigneeFilterIds.length > 0) {
         if (!task.assigneeIds.some((id) => assigneeFilterIds.includes(id))) return false;
       }
-      if (groupFilterIds.length > 0) {
-        const matchesGroup = task.assigneeIds.some((id) => {
-          const groupId = assigneeGroupMap.get(id);
-          return groupId ? groupFilterIds.includes(groupId) : false;
-        });
-        if (!matchesGroup) return false;
-      }
       return true;
     })
-  ), [assigneeFilterIds, projectTasks, search, statusFilterIds, groupFilterIds, assigneeGroupMap]);
+  ), [assigneeFilterIds, projectTasks, search, statusFilterIds]);
+
+  const displayTaskRows = useMemo<DisplayTaskRow[]>(() => {
+    const repeatBuckets = new Map<string, Task[]>();
+    const rows: DisplayTaskRow[] = [];
+
+    filteredTasks.forEach((task) => {
+      if (!task.repeatId) {
+        rows.push({
+          key: task.id,
+          task,
+          repeatMeta: null,
+        });
+        return;
+      }
+      const bucket = repeatBuckets.get(task.repeatId) ?? [];
+      bucket.push(task);
+      repeatBuckets.set(task.repeatId, bucket);
+    });
+
+    repeatBuckets.forEach((tasks, repeatId) => {
+      const sorted = [...tasks].sort((left, right) => left.startDate.localeCompare(right.startDate));
+      rows.push({
+        key: `repeat:${repeatId}`,
+        task: sorted[0],
+        repeatMeta: {
+          label: inferRepeatLabel(sorted),
+          remaining: Math.max(0, sorted.length - 1),
+          total: sorted.length,
+        },
+      });
+    });
+
+    rows.sort((left, right) => {
+      const byStart = left.task.startDate.localeCompare(right.task.startDate);
+      if (byStart !== 0) return byStart;
+      const byEnd = left.task.endDate.localeCompare(right.task.endDate);
+      if (byEnd !== 0) return byEnd;
+      return left.task.title.localeCompare(right.task.title);
+    });
+
+    return rows;
+  }, [filteredTasks]);
 
   const statusFilterLabel = statusFilterIds.length === 0
     ? t`All statuses`
@@ -571,10 +654,6 @@ const ProjectsPage = () => {
   const assigneeFilterLabel = assigneeFilterIds.length === 0
     ? t`All assignees`
     : t`${assigneeFilterIds.length} selected`;
-
-  const groupFilterLabel = groupFilterIds.length === 0
-    ? t`All groups`
-    : t`${groupFilterIds.length} selected`;
 
   const customerFilterLabel = customerFilterIds.length === 0
     ? t`All`
@@ -616,14 +695,6 @@ const ProjectsPage = () => {
       current.includes(assigneeId)
         ? current.filter((id) => id !== assigneeId)
         : [...current, assigneeId]
-    ));
-  };
-
-  const handleToggleGroup = (groupId: string) => {
-    setGroupFilterIds((current) => (
-      current.includes(groupId)
-        ? current.filter((id) => id !== groupId)
-        : [...current, groupId]
     ));
   };
 
@@ -780,6 +851,49 @@ const ProjectsPage = () => {
     updateProject,
   ]);
 
+  const projectSettingsHasUnsavedChanges = useMemo(() => {
+    if (!projectSettingsTarget) return false;
+    const nextName = projectSettingsName.trim();
+    const nextCode = projectSettingsCode.trim();
+    const normalizedCode = nextCode ? nextCode : null;
+
+    if (nextName !== projectSettingsTarget.name.trim()) return true;
+    if ((projectSettingsTarget.code ?? null) !== normalizedCode) return true;
+    if (projectSettingsColor !== projectSettingsTarget.color) return true;
+    if (projectSettingsCustomerId !== projectSettingsTarget.customerId) return true;
+
+    return false;
+  }, [
+    projectSettingsCode,
+    projectSettingsColor,
+    projectSettingsCustomerId,
+    projectSettingsName,
+    projectSettingsTarget,
+  ]);
+
+  const requestCloseProjectSettings = useCallback(() => {
+    if (projectSettingsHasUnsavedChanges) {
+      setProjectSettingsConfirmOpen(true);
+      return;
+    }
+    setProjectSettingsOpen(false);
+  }, [projectSettingsHasUnsavedChanges]);
+
+  const createProjectHasUnsavedChanges = useMemo(() => (
+    newProjectName.trim().length > 0
+    || newProjectCode.trim().length > 0
+    || newProjectColor !== '#3b82f6'
+    || newProjectCustomerId !== null
+  ), [newProjectCode, newProjectColor, newProjectCustomerId, newProjectName]);
+
+  const requestCloseCreateProject = useCallback(() => {
+    if (createProjectHasUnsavedChanges) {
+      setCreateProjectConfirmOpen(true);
+      return;
+    }
+    setCreateProjectOpen(false);
+  }, [createProjectHasUnsavedChanges]);
+
   const requestDeleteProject = useCallback((project: Project) => {
     if (!canEdit) return;
     setDeleteProjectTarget(project);
@@ -812,12 +926,14 @@ const ProjectsPage = () => {
   useEffect(() => {
     if (!createProjectOpen) {
       resetCreateProjectForm();
+      setCreateProjectConfirmOpen(false);
     }
   }, [createProjectOpen, resetCreateProjectForm]);
 
   useEffect(() => {
     if (!projectSettingsOpen) {
       setProjectSettingsTarget(null);
+      setProjectSettingsConfirmOpen(false);
     }
   }, [projectSettingsOpen]);
 
@@ -901,10 +1017,10 @@ const ProjectsPage = () => {
             <div className="flex items-center gap-2 min-w-0">
               <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: project.color }} />
               <div className="min-w-0 flex-1">
-                <div className="text-sm font-medium truncate">
+                <div className="text-sm font-medium leading-snug whitespace-normal break-words [overflow-wrap:anywhere] line-clamp-2">
                   {formatProjectLabel(project.name, project.code)}
                 </div>
-                <div className="text-xs text-muted-foreground truncate">
+                <div className="text-xs text-muted-foreground leading-snug whitespace-normal break-words [overflow-wrap:anywhere] line-clamp-2">
                   {customerName ?? t`No customer`}
                 </div>
               </div>
@@ -986,11 +1102,6 @@ const ProjectsPage = () => {
           <WorkspaceNav />
         </div>
         <div className="flex items-center gap-2">
-          {userLabel && (
-            <span className="max-w-[220px] truncate text-xs text-muted-foreground" title={userLabel}>
-              {userLabel}
-            </span>
-          )}
           {mode === 'customers' ? (
             <Button
               onClick={() => setCreateCustomerOpen(true)}
@@ -1021,6 +1132,7 @@ const ProjectsPage = () => {
           >
             <Settings className="h-4 w-4" />
           </Button>
+          <InviteNotifications />
           <Button
             variant="ghost"
             size="icon"
@@ -1032,8 +1144,14 @@ const ProjectsPage = () => {
         </div>
       </header>
 
-      <div className="flex flex-1 overflow-hidden">
-        <aside className="w-80 border-r border-border bg-card flex flex-col">
+      <div className="flex flex-1 min-h-0 overflow-hidden">
+        <ResizablePanelGroup
+          direction="horizontal"
+          autoSaveId="projects-layout-split"
+          className="flex-1 min-h-0"
+        >
+          <ResizablePanel defaultSize={28} minSize={18} maxSize={42} className="min-w-[260px]">
+            <aside className="h-full min-h-0 min-w-0 bg-card flex flex-col">
           <div className="px-4 py-3 border-b border-border">
             {modeToggle}
           </div>
@@ -1064,8 +1182,7 @@ const ProjectsPage = () => {
                   </div>
                 </div>
               </div>
-              <div className="flex-1 overflow-hidden">
-                <ScrollArea className="h-full px-4 py-3">
+              <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-4 py-3">
                   {sortedCustomers.length === 0 && (
                     <div className="text-sm text-muted-foreground">{t`No customers yet.`}</div>
                   )}
@@ -1096,7 +1213,9 @@ const ProjectsPage = () => {
                                 }`}
                               >
                                 <div className="min-w-0 flex-1">
-                                  <div className="text-sm font-medium truncate">{customer.name}</div>
+                                  <div className="text-sm font-medium leading-snug whitespace-normal break-words [overflow-wrap:anywhere] line-clamp-2">
+                                    {customer.name}
+                                  </div>
                                   <div className="text-xs text-muted-foreground">
                                     {t`${projectCount} projects`}
                                   </div>
@@ -1123,13 +1242,16 @@ const ProjectsPage = () => {
                       })}
                     </div>
                   )}
-                </ScrollArea>
               </div>
             </>
           )}
 
           {mode === 'projects' && (
-            <Tabs value={tab} onValueChange={(value) => setTab(value as 'active' | 'archived')} className="flex-1 flex flex-col">
+            <Tabs
+              value={tab}
+              onValueChange={(value) => setTab(value as 'active' | 'archived')}
+              className="flex min-h-0 flex-1 flex-col"
+            >
               <div className="px-4 py-3 border-b border-border">
                 <div className="grid grid-cols-[1fr_auto] items-center gap-2">
                   <Input
@@ -1212,27 +1334,29 @@ const ProjectsPage = () => {
                 <TabsTrigger value="active">{t`Active`}</TabsTrigger>
                 <TabsTrigger value="archived">{t`Archived`}</TabsTrigger>
               </TabsList>
-              <TabsContent value="active" className="flex-1 overflow-hidden">
-                <ScrollArea className="h-full px-4 py-3">
+              <TabsContent value="active" className="mt-0 flex-1 min-h-0 overflow-hidden">
+                <div className="h-full overflow-y-auto overflow-x-hidden px-4 py-3">
                   {activeProjects.length === 0 && (
                     <div className="text-sm text-muted-foreground">{t`No active projects.`}</div>
                   )}
                   {activeProjects.length > 0 && renderProjectGroups(filteredActiveProjects, false)}
-                </ScrollArea>
+                </div>
               </TabsContent>
-              <TabsContent value="archived" className="flex-1 overflow-hidden">
-                <ScrollArea className="h-full px-4 py-3">
+              <TabsContent value="archived" className="mt-0 flex-1 min-h-0 overflow-hidden">
+                <div className="h-full overflow-y-auto overflow-x-hidden px-4 py-3">
                   {archivedProjects.length === 0 && (
                     <div className="text-sm text-muted-foreground">{t`No archived projects.`}</div>
                   )}
                   {archivedProjects.length > 0 && renderProjectGroups(filteredArchivedProjects, true)}
-                </ScrollArea>
+                </div>
               </TabsContent>
             </Tabs>
           )}
-        </aside>
-
-        <section className="flex-1 overflow-hidden flex flex-col">
+            </aside>
+          </ResizablePanel>
+          <ResizableHandle withHandle className="bg-border/70" />
+          <ResizablePanel defaultSize={72} minSize={58}>
+            <section className="h-full min-h-0 min-w-0 overflow-hidden flex flex-col">
           {mode === 'projects' ? (
             <>
               {!selectedProject && (
@@ -1247,7 +1371,7 @@ const ProjectsPage = () => {
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div className="flex items-center gap-3">
                         <div>
-                          <div className="text-lg font-semibold">
+                          <div className="text-lg font-semibold break-words [overflow-wrap:anywhere]">
                             {formatProjectLabel(selectedProject.name, selectedProject.code)}
                           </div>
                           <div className="text-xs text-muted-foreground">
@@ -1326,37 +1450,12 @@ const ProjectsPage = () => {
                         </PopoverContent>
                       </Popover>
 
-                      <Popover>
-                        <PopoverTrigger asChild>
-                          <Button variant="outline">{groupFilterLabel}</Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-56 p-2" align="start">
-                          <ScrollArea className="max-h-48 pr-2">
-                            <div className="space-y-1">
-                              {memberGroups.length === 0 && (
-                                <div className="text-xs text-muted-foreground">{t`No groups created yet.`}</div>
-                              )}
-                              {memberGroups.map((group) => (
-                                <label key={group.id} className="flex items-center gap-2 py-1 cursor-pointer">
-                                  <Checkbox
-                                    checked={groupFilterIds.includes(group.id)}
-                                    onCheckedChange={() => handleToggleGroup(group.id)}
-                                  />
-                                  <span className="text-sm truncate">{group.name}</span>
-                                </label>
-                              ))}
-                            </div>
-                          </ScrollArea>
-                        </PopoverContent>
-                      </Popover>
-
                       <Button
                         variant="ghost"
                         onClick={() => {
                           setSearch('');
                           setStatusFilterIds([]);
                           setAssigneeFilterIds([]);
-                          setGroupFilterIds([]);
                         }}
                       >
                         {t`Clear filters`}
@@ -1383,7 +1482,7 @@ const ProjectsPage = () => {
                     )}
                     {!tasksLoading && !tasksError && (
                       <>
-                        {filteredTasks.length === 0 ? (
+                        {displayTaskRows.length === 0 ? (
                           <div className="text-sm text-muted-foreground">{t`No tasks match the current filters.`}</div>
                         ) : (
                           <Table>
@@ -1396,14 +1495,15 @@ const ProjectsPage = () => {
                               </TableRow>
                             </TableHeader>
                             <TableBody>
-                              {filteredTasks.map((task) => {
+                              {displayTaskRows.map((row) => {
+                                const { task } = row;
                                 const status = statusById.get(task.statusId);
                                 const assigneesList = task.assigneeIds
                                   .map((id) => assigneeById.get(id))
                                   .filter((assignee): assignee is NonNullable<typeof assignee> => Boolean(assignee));
                                 return (
                                   <TableRow
-                                    key={task.id}
+                                    key={row.key}
                                     role="button"
                                     tabIndex={0}
                                     className="cursor-pointer hover:bg-muted/40"
@@ -1415,7 +1515,23 @@ const ProjectsPage = () => {
                                       }
                                     }}
                                   >
-                                    <TableCell className="font-medium">{task.title}</TableCell>
+                                    <TableCell className="font-medium">
+                                      <div className="space-y-1">
+                                        <div>{task.title}</div>
+                                        {row.repeatMeta && (
+                                          <div className="flex flex-wrap items-center gap-2">
+                                            <Badge variant="outline" className="text-[10px]">
+                                              {row.repeatMeta.label}
+                                            </Badge>
+                                            <span className="text-xs text-muted-foreground">
+                                              {row.repeatMeta.remaining > 0
+                                                ? `Еще ${row.repeatMeta.remaining}`
+                                                : 'Последняя в серии'}
+                                            </span>
+                                          </div>
+                                        )}
+                                      </div>
+                                    </TableCell>
                                     <TableCell>
                                       <div className="flex items-center gap-2 text-sm">
                                         <span
@@ -1492,9 +1608,9 @@ const ProjectsPage = () => {
                       >
                         <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: project.color }} />
                         <div className="min-w-0 flex-1">
-                          <div className="text-sm font-medium truncate">
-                          {formatProjectLabel(project.name, project.code)}
-                        </div>
+                          <div className="text-sm font-medium leading-snug whitespace-normal break-words [overflow-wrap:anywhere] line-clamp-2">
+                            {formatProjectLabel(project.name, project.code)}
+                          </div>
                         {project.archived && (
                           <div className="text-[10px] text-muted-foreground">{t`Archived`}</div>
                         )}
@@ -1506,7 +1622,9 @@ const ProjectsPage = () => {
               </div>
             </div>
           )}
-        </section>
+            </section>
+          </ResizablePanel>
+        </ResizablePanelGroup>
       </div>
 
       <SettingsPanel open={showSettings} onOpenChange={setShowSettings} />
@@ -1623,7 +1741,16 @@ const ProjectsPage = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-      <Dialog open={createProjectOpen} onOpenChange={setCreateProjectOpen}>
+      <Dialog
+        open={createProjectOpen}
+        onOpenChange={(open) => {
+          if (open) {
+            setCreateProjectOpen(true);
+            return;
+          }
+          requestCloseCreateProject();
+        }}
+      >
         <DialogContent className="w-[95vw] max-w-xl">
           <DialogHeader>
             <DialogTitle>{t`New project`}</DialogTitle>
@@ -1668,7 +1795,7 @@ const ProjectsPage = () => {
               />
             </div>
             <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setCreateProjectOpen(false)}>
+              <Button variant="outline" onClick={requestCloseCreateProject}>
                 {t`Cancel`}
               </Button>
               <Button onClick={handleCreateProject} disabled={!canEdit || !newProjectName.trim()}>
@@ -1678,7 +1805,37 @@ const ProjectsPage = () => {
           </div>
         </DialogContent>
       </Dialog>
-      <Dialog open={projectSettingsOpen} onOpenChange={setProjectSettingsOpen}>
+      <AlertDialog open={createProjectConfirmOpen} onOpenChange={setCreateProjectConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t`Unsaved changes`}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t`You have unsaved changes. Close without saving?`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t`Keep editing`}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setCreateProjectConfirmOpen(false);
+                setCreateProjectOpen(false);
+              }}
+            >
+              {t`Discard`}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <Dialog
+        open={projectSettingsOpen}
+        onOpenChange={(open) => {
+          if (open) {
+            setProjectSettingsOpen(true);
+            return;
+          }
+          requestCloseProjectSettings();
+        }}
+      >
         <DialogContent className="w-[95vw] max-w-xl">
           <DialogHeader>
             <DialogTitle>{t`Edit project`}</DialogTitle>
@@ -1737,7 +1894,7 @@ const ProjectsPage = () => {
                 />
               </div>
               <div className="flex justify-end gap-2">
-                <Button variant="outline" onClick={() => setProjectSettingsOpen(false)}>
+                <Button variant="outline" onClick={requestCloseProjectSettings}>
                   {t`Cancel`}
                 </Button>
                 <Button
@@ -1751,6 +1908,27 @@ const ProjectsPage = () => {
           )}
         </DialogContent>
       </Dialog>
+      <AlertDialog open={projectSettingsConfirmOpen} onOpenChange={setProjectSettingsConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t`Unsaved changes`}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t`You have unsaved changes. Close without saving?`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t`Keep editing`}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setProjectSettingsConfirmOpen(false);
+                setProjectSettingsOpen(false);
+              }}
+            >
+              {t`Discard`}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <Dialog open={Boolean(selectedTaskId)} onOpenChange={(open) => !open && setSelectedTaskId(null)}>
         <DialogContent className="w-[95vw] max-w-2xl">
           <DialogHeader>

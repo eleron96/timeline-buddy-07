@@ -9,6 +9,7 @@ import {
   ContextMenuItem,
   ContextMenuTrigger,
 } from '@/shared/ui/context-menu';
+import { t } from '@lingui/macro';
 
 interface TimelineRowProps {
   rowId: string;
@@ -94,7 +95,7 @@ export const TimelineRow: React.FC<TimelineRowProps> = ({
               onCreateTask(contextDate, rowId);
             }}
           >
-            Create task
+            {t`Create task`}
           </ContextMenuItem>
         </ContextMenuContent>
       </ContextMenu>

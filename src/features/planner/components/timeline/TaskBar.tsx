@@ -9,6 +9,7 @@ import { formatProjectLabel } from '@/shared/lib/projectLabels';
 import { sortProjectsByTracking } from '@/shared/lib/projectSorting';
 import { calculateNewDates, calculateResizedDates, formatDateRange, TASK_HEIGHT, TASK_GAP } from '@/features/planner/lib/dateUtils';
 import { Ban, RotateCw } from 'lucide-react';
+import { t } from '@lingui/macro';
 import {
   ContextMenu,
   ContextMenuContent,
@@ -23,6 +24,7 @@ import {
   ContextMenuTrigger,
 } from '@/shared/ui/context-menu';
 import { Badge } from '@/shared/ui/badge';
+import { Checkbox } from '@/shared/ui/checkbox';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -41,6 +43,7 @@ interface TaskBarProps {
   visibleDays: Date[];
   lane: number;
   canEdit: boolean;
+  rowAssigneeId?: string | null;
 }
 
 const normalizeHex = (color: string) => {
@@ -86,10 +89,10 @@ const getBadgeStyle = (color?: string) => {
   return { backgroundColor: background, borderColor: border, color: text };
 };
 
-const priorityStyles: Record<TaskPriority, { className: string; label: string; color: string }> = {
-  low: { className: 'text-emerald-600', label: 'Low priority', color: '#16a34a' },
-  medium: { className: 'text-amber-500', label: 'Medium priority', color: '#f59e0b' },
-  high: { className: 'text-red-600', label: 'High priority', color: '#dc2626' },
+const priorityStyles: Record<TaskPriority, { className: string; color: string }> = {
+  low: { className: 'text-emerald-600', color: '#16a34a' },
+  medium: { className: 'text-amber-500', color: '#f59e0b' },
+  high: { className: 'text-red-600', color: '#dc2626' },
 };
 
 export const TaskBar: React.FC<TaskBarProps> = ({
@@ -99,6 +102,7 @@ export const TaskBar: React.FC<TaskBarProps> = ({
   visibleDays,
   lane,
   canEdit,
+  rowAssigneeId = null,
 }) => {
   const {
     tasks,
@@ -109,6 +113,7 @@ export const TaskBar: React.FC<TaskBarProps> = ({
     assignees,
     moveTask,
     updateTask,
+    removeAssigneeFromTask,
     deleteTask,
     deleteTaskSeries,
     duplicateTask,
@@ -116,6 +121,7 @@ export const TaskBar: React.FC<TaskBarProps> = ({
     selectedTaskId,
     highlightedTaskId,
     setHighlightedTaskId,
+    groupMode,
   } = usePlannerStore();
   
   const filteredAssignees = useFilteredAssignees(assignees);
@@ -127,6 +133,7 @@ export const TaskBar: React.FC<TaskBarProps> = ({
   const [isHovering, setIsHovering] = useState(false);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteForRowAssigneeOnly, setDeleteForRowAssigneeOnly] = useState(false);
   
   const barRef = useRef<HTMLDivElement>(null);
   
@@ -146,12 +153,26 @@ export const TaskBar: React.FC<TaskBarProps> = ({
   const status = statuses.find(s => s.id === task.statusId);
   const taskType = taskTypes.find(t => t.id === task.typeId);
   const assignedAssignees = filteredAssignees.filter((assignee) => task.assigneeIds.includes(assignee.id));
+  const scopedAssignee = useMemo(() => {
+    if (!rowAssigneeId) return null;
+    if (!task.assigneeIds.includes(rowAssigneeId)) return null;
+    return filteredAssignees.find((assignee) => assignee.id === rowAssigneeId) ?? null;
+  }, [filteredAssignees, rowAssigneeId, task.assigneeIds]);
+  const scopedDeleteAvailable = Boolean(scopedAssignee);
+  const scopedAssigneeName = scopedAssignee?.name ?? t`Unknown user`;
   const assigneeLabel = assignedAssignees.length === 0
-    ? 'Unassigned'
+    ? t`Unassigned`
     : assignedAssignees.map((assignee) => assignee.name).join(', ');
   const isSelected = selectedTaskId === task.id;
   const isHighlighted = highlightedTaskId === task.id;
-  const priorityMeta = task.priority ? priorityStyles[task.priority] : null;
+  const priorityLabels: Record<TaskPriority, string> = {
+    low: t`Low priority`,
+    medium: t`Medium priority`,
+    high: t`High priority`,
+  };
+  const priorityMeta = task.priority
+    ? { ...priorityStyles[task.priority], label: priorityLabels[task.priority] }
+    : null;
   const isCancelled = status
     ? (status.isCancelled
       ?? ['отменена', 'cancelled', 'canceled'].includes(stripStatusEmoji(status.name).trim().toLowerCase()))
@@ -160,6 +181,7 @@ export const TaskBar: React.FC<TaskBarProps> = ({
   const hasFutureRepeats = isRepeating
     ? tasks.some((item) => item.repeatId === task.repeatId && item.startDate > task.startDate)
     : false;
+  const noProjectDisabled = groupMode === 'project';
   
   const fallbackProjectColor = projects.length === 1 ? projects[0]?.color : undefined;
   const baseBgColor = project?.color || fallbackProjectColor || '#94a3b8';
@@ -307,12 +329,19 @@ export const TaskBar: React.FC<TaskBarProps> = ({
 
   const handleProjectChange = (projectId: string) => {
     if (!canEdit) return;
+    if (noProjectDisabled && projectId === 'none') return;
     const nextProjectId = projectId === 'none' ? null : projectId;
     if (nextProjectId === task.projectId) return;
     updateTask(task.id, { projectId: nextProjectId });
   };
 
   const projectValue = task.projectId ?? 'none';
+
+  useEffect(() => {
+    if (!deleteOpen) {
+      setDeleteForRowAssigneeOnly(false);
+    }
+  }, [deleteOpen, task.id]);
 
   return (
     <ContextMenu>
@@ -367,14 +396,14 @@ export const TaskBar: React.FC<TaskBarProps> = ({
                 </span>
               )}
               {isCancelled && (
-                <Ban className="h-3 w-3 text-red-500" aria-label="Cancelled" title="Cancelled" />
+                <Ban className="h-3 w-3 text-red-500" aria-label={t`Cancelled`} title={t`Cancelled`} />
               )}
               {isRepeating && (
                 <RotateCw
                   className="h-3 w-3 opacity-80"
                   style={{ color: textColor }}
-                  aria-label="Repeat"
-                  title="Repeat"
+                  aria-label={t`Repeat`}
+                  title={t`Repeat`}
                 />
               )}
               {priorityMeta && (
@@ -400,7 +429,7 @@ export const TaskBar: React.FC<TaskBarProps> = ({
               className="text-[11px] leading-tight truncate"
               style={{ color: secondaryTextColor }}
             >
-              {project ? formatProjectLabel(project.name, project.code) : 'No Project'}
+              {project ? formatProjectLabel(project.name, project.code) : t`No project`}
             </span>
           </div>
           
@@ -413,9 +442,9 @@ export const TaskBar: React.FC<TaskBarProps> = ({
       </ContextMenuTrigger>
       <ContextMenuContent>
         <ContextMenuSub>
-          <ContextMenuSubTrigger>Status</ContextMenuSubTrigger>
+          <ContextMenuSubTrigger>{t`Status`}</ContextMenuSubTrigger>
           <ContextMenuSubContent>
-            <ContextMenuLabel>Status</ContextMenuLabel>
+            <ContextMenuLabel>{t`Status`}</ContextMenuLabel>
             <ContextMenuSeparator />
             <ContextMenuRadioGroup value={task.statusId} onValueChange={handleStatusChange}>
               {statuses.map((item) => (
@@ -428,23 +457,23 @@ export const TaskBar: React.FC<TaskBarProps> = ({
           </ContextMenuSubContent>
         </ContextMenuSub>
         <ContextMenuItem onSelect={() => duplicateTask(task.id)} disabled={!canEdit}>
-          Duplicate task
+          {t`Duplicate task`}
         </ContextMenuItem>
         <ContextMenuSub>
-          <ContextMenuSubTrigger>Assign project</ContextMenuSubTrigger>
+          <ContextMenuSubTrigger>{t`Assign project`}</ContextMenuSubTrigger>
           <ContextMenuSubContent>
-            <ContextMenuLabel>Project</ContextMenuLabel>
+            <ContextMenuLabel>{t`Project`}</ContextMenuLabel>
             <ContextMenuSeparator />
             <ContextMenuRadioGroup value={projectValue} onValueChange={handleProjectChange}>
-              <ContextMenuRadioItem value="none" disabled={!canEdit}>
-                No Project
+              <ContextMenuRadioItem value="none" disabled={!canEdit || noProjectDisabled}>
+                {t`No project`}
               </ContextMenuRadioItem>
               {projectOptions.map((item) => (
                 <ContextMenuRadioItem key={item.id} value={item.id} disabled={!canEdit}>
                   <span className="mr-2 inline-flex h-2 w-2 rounded-full" style={{ backgroundColor: item.color }} />
                   {formatProjectLabel(item.name, item.code)}
                   {item.archived && (
-                    <span className="ml-1 text-[10px] text-muted-foreground">(archived)</span>
+                    <span className="ml-1 text-[10px] text-muted-foreground">({t`Archived`})</span>
                   )}
                 </ContextMenuRadioItem>
               ))}
@@ -453,7 +482,7 @@ export const TaskBar: React.FC<TaskBarProps> = ({
         </ContextMenuSub>
         <ContextMenuSeparator />
         <ContextMenuItem onSelect={() => setDeleteOpen(true)} disabled={!canEdit} className="text-destructive">
-          Delete task
+          {t`Delete task`}
         </ContextMenuItem>
       </ContextMenuContent>
       {showTooltip && typeof document !== 'undefined' && createPortal(
@@ -471,11 +500,11 @@ export const TaskBar: React.FC<TaskBarProps> = ({
             {isRepeating && (
               <div className="flex items-center gap-1 text-xs text-muted-foreground">
                 <RotateCw className="h-3 w-3" aria-hidden="true" />
-                <span>Repeat</span>
+                <span>{t`Repeat`}</span>
               </div>
             )}
             <div className="text-xs text-muted-foreground">
-              Assignees: <span className="text-foreground font-medium">{assigneeLabel}</span>
+              {t`Assignees`}: <span className="text-foreground font-medium">{assigneeLabel}</span>
             </div>
             <div className="flex flex-wrap gap-1">
               {status && (
@@ -496,47 +525,74 @@ export const TaskBar: React.FC<TaskBarProps> = ({
       <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>{isRepeating ? 'Delete repeated task?' : 'Delete task?'}</AlertDialogTitle>
+            <AlertDialogTitle>{isRepeating ? t`Delete repeated task?` : t`Delete task?`}</AlertDialogTitle>
             <AlertDialogDescription>
-              {isRepeating
-                ? `Delete only this task or this and ${hasFutureRepeats ? 'future' : 'subsequent'} repeats? Previous repeats stay.`
-                : `This will permanently delete "${task.title}".`}
+              {deleteForRowAssigneeOnly && scopedDeleteAvailable
+                ? (isRepeating
+                  ? t`Remove "${scopedAssigneeName}" from this task or from this and following repeats.`
+                  : t`Remove "${scopedAssigneeName}" from this task only.`)
+                : (isRepeating
+                  ? (hasFutureRepeats
+                    ? t`Delete only this task or this and future repeats? Previous repeats stay.`
+                    : t`Delete only this task or this and subsequent repeats? Previous repeats stay.`)
+                  : t`This will permanently delete "${task.title}".`)}
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {scopedDeleteAvailable && (
+            <label className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm">
+              <Checkbox
+                checked={deleteForRowAssigneeOnly}
+                onCheckedChange={(value) => setDeleteForRowAssigneeOnly(value === true)}
+              />
+              <span>{t`Only for ${scopedAssigneeName}`}</span>
+            </label>
+          )}
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>{t`Cancel`}</AlertDialogCancel>
             {isRepeating ? (
               <>
                 <AlertDialogAction
                   className="bg-muted text-foreground hover:bg-muted/80"
                   onClick={async () => {
                     if (!canEdit) return;
-                    await deleteTask(task.id);
+                    if (deleteForRowAssigneeOnly && scopedAssignee) {
+                      await removeAssigneeFromTask(task.id, scopedAssignee.id, 'single');
+                    } else {
+                      await deleteTask(task.id);
+                    }
                     setDeleteOpen(false);
                   }}
                 >
-                  Delete this
+                  {t`Delete this`}
                 </AlertDialogAction>
                 <AlertDialogAction
                   className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                   onClick={async () => {
                     if (!canEdit || !task.repeatId) return;
-                    await deleteTaskSeries(task.repeatId, task.startDate);
+                    if (deleteForRowAssigneeOnly && scopedAssignee) {
+                      await removeAssigneeFromTask(task.id, scopedAssignee.id, 'following');
+                    } else {
+                      await deleteTaskSeries(task.repeatId, task.startDate);
+                    }
                     setDeleteOpen(false);
                   }}
                 >
-                  Delete this & following
+                  {t`Delete this & following`}
                 </AlertDialogAction>
               </>
             ) : (
               <AlertDialogAction
                 onClick={async () => {
                   if (!canEdit) return;
-                  await deleteTask(task.id);
+                  if (deleteForRowAssigneeOnly && scopedAssignee) {
+                    await removeAssigneeFromTask(task.id, scopedAssignee.id, 'single');
+                  } else {
+                    await deleteTask(task.id);
+                  }
                   setDeleteOpen(false);
                 }}
               >
-                Delete
+                {t`Delete`}
               </AlertDialogAction>
             )}
           </AlertDialogFooter>

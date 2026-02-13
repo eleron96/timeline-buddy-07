@@ -13,6 +13,7 @@ const parsePositiveInt = (value: string | undefined, fallback: number) => {
 const MAX_FILE_BYTES = parsePositiveInt(Deno.env.get("TASK_MEDIA_MAX_FILE_BYTES"), 5 * 1024 * 1024);
 const USER_QUOTA_BYTES = parsePositiveInt(Deno.env.get("TASK_MEDIA_USER_QUOTA_BYTES"), 200 * 1024 * 1024);
 const WORKSPACE_QUOTA_BYTES = parsePositiveInt(Deno.env.get("TASK_MEDIA_WORKSPACE_QUOTA_BYTES"), 2 * 1024 * 1024 * 1024);
+const TOKEN_TTL_SECONDS = parsePositiveInt(Deno.env.get("TASK_MEDIA_TOKEN_TTL_SECONDS"), 7 * 24 * 60 * 60);
 
 const { supabaseAdmin } = createSupabaseClients(supabaseUrl, serviceRoleKey);
 
@@ -73,6 +74,17 @@ const sanitizeFileName = (value: string | null) => {
   return raw.slice(0, 180);
 };
 
+const buildAccessTokenExpiryIso = () => (
+  new Date(Date.now() + TOKEN_TTL_SECONDS * 1000).toISOString()
+);
+
+const parseTimestamp = (value: unknown) => {
+  if (typeof value !== "string") return null;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed;
+};
+
 const getAuthUser = async (req: Request) => {
   const authHeader = req.headers.get("Authorization") ?? "";
   const token = authHeader.replace("Bearer ", "");
@@ -114,6 +126,40 @@ const ensureWorkspaceAccess = async (workspaceId: string, userId: string) => {
   const isOwner = workspace.owner_id === userId;
   const isMember = Boolean(membership);
   if (!isOwner && !isMember) {
+    return { error: "Forbidden", status: 403 };
+  }
+
+  return {};
+};
+
+const ensureWorkspaceAdminAccess = async (workspaceId: string, userId: string) => {
+  const [{ data: workspace, error: workspaceError }, { data: membership, error: membershipError }] = await Promise.all([
+    supabaseAdmin
+      .from("workspaces")
+      .select("id, owner_id")
+      .eq("id", workspaceId)
+      .maybeSingle(),
+    supabaseAdmin
+      .from("workspace_members")
+      .select("role")
+      .eq("workspace_id", workspaceId)
+      .eq("user_id", userId)
+      .maybeSingle(),
+  ]);
+
+  if (workspaceError) {
+    return { error: workspaceError.message, status: 400 };
+  }
+  if (!workspace) {
+    return { error: "Workspace not found.", status: 404 };
+  }
+  if (membershipError) {
+    return { error: membershipError.message, status: 400 };
+  }
+
+  const isOwner = workspace.owner_id === userId;
+  const isAdmin = membership?.role === "admin";
+  if (!isOwner && !isAdmin) {
     return { error: "Forbidden", status: 403 };
   }
 
@@ -194,6 +240,7 @@ const handleUpload = async (req: Request) => {
 
   const accessToken = createRandomToken();
   const accessTokenHash = await sha256Hex(accessToken);
+  const accessTokenExpiresAt = buildAccessTokenExpiryIso();
   const fileName = sanitizeFileName(req.headers.get("x-file-name"));
   const bytea = `\\x${hexEncode(bytes)}`;
 
@@ -207,6 +254,7 @@ const handleUpload = async (req: Request) => {
       byte_size: bytes.byteLength,
       content: bytea,
       access_token_hash: accessTokenHash,
+      access_token_expires_at: accessTokenExpiresAt,
     })
     .select("id")
     .single();
@@ -218,6 +266,7 @@ const handleUpload = async (req: Request) => {
   return jsonResponse({
     id: data.id,
     token: accessToken,
+    expiresAt: accessTokenExpiresAt,
     byteSize: bytes.byteLength,
     userUsedBytes: userUsageResult.usedBytes + bytes.byteLength,
   });
@@ -231,7 +280,7 @@ const handleDownload = async (req: Request, mediaId: string) => {
 
   const { data, error } = await supabaseAdmin
     .from("task_media")
-    .select("id, mime_type, content, access_token_hash")
+    .select("id, mime_type, content, access_token_hash, access_token_expires_at, access_token_revoked_at")
     .eq("id", mediaId)
     .maybeSingle();
 
@@ -245,6 +294,15 @@ const handleDownload = async (req: Request, mediaId: string) => {
   const tokenHash = await sha256Hex(token);
   if (!constantTimeEqual(tokenHash, data.access_token_hash ?? "")) {
     return jsonResponse({ error: "Invalid token." }, 401);
+  }
+
+  if (data.access_token_revoked_at) {
+    return jsonResponse({ error: "Token revoked." }, 401);
+  }
+
+  const expiresAt = parseTimestamp(data.access_token_expires_at);
+  if (!expiresAt || expiresAt.getTime() <= Date.now()) {
+    return jsonResponse({ error: "Token expired." }, 401);
   }
 
   const content = typeof data.content === "string" ? data.content : "";
@@ -266,9 +324,56 @@ const handleDownload = async (req: Request, mediaId: string) => {
       ...corsHeaders,
       "Content-Type": data.mime_type || "application/octet-stream",
       "Content-Length": String(bytes.byteLength),
-      "Cache-Control": "public, max-age=31536000, immutable",
+      "Cache-Control": "private, no-store, max-age=0",
     },
   });
+};
+
+const handleRevoke = async (req: Request, mediaId: string) => {
+  if (!supabaseUrl || !serviceRoleKey) {
+    return jsonResponse({ error: "Missing Supabase env vars" }, 500);
+  }
+
+  const authResult = await getAuthUser(req);
+  if ("error" in authResult) {
+    return jsonResponse({ error: authResult.error }, authResult.status ?? 401);
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from("task_media")
+    .select("id, owner_id, workspace_id, access_token_revoked_at")
+    .eq("id", mediaId)
+    .maybeSingle();
+
+  if (error) {
+    return jsonResponse({ error: error.message }, 400);
+  }
+  if (!data) {
+    return jsonResponse({ error: "Image not found." }, 404);
+  }
+
+  if (data.owner_id !== authResult.user.id) {
+    const adminAccess = await ensureWorkspaceAdminAccess(data.workspace_id, authResult.user.id);
+    if ("error" in adminAccess) {
+      return jsonResponse({ error: adminAccess.error }, adminAccess.status ?? 403);
+    }
+  }
+
+  if (data.access_token_revoked_at) {
+    return jsonResponse({ success: true, revokedAt: data.access_token_revoked_at });
+  }
+
+  const revokedAt = new Date().toISOString();
+  const { error: revokeError } = await supabaseAdmin
+    .from("task_media")
+    .update({ access_token_revoked_at: revokedAt })
+    .eq("id", mediaId);
+
+  if (revokeError) {
+    return jsonResponse({ error: revokeError.message }, 400);
+  }
+
+  return jsonResponse({ success: true, revokedAt });
 };
 
 export const handler = async (req: Request) => {
@@ -278,7 +383,7 @@ export const handler = async (req: Request) => {
 
   const url = new URL(req.url);
   const path = url.pathname.replace(/^\/+/, "");
-  const [, mediaId] = path.split("/");
+  const [, mediaId, action] = path.split("/");
 
   if (req.method === "POST" && !mediaId) {
     return handleUpload(req);
@@ -286,6 +391,10 @@ export const handler = async (req: Request) => {
 
   if (req.method === "GET" && mediaId) {
     return handleDownload(req, mediaId);
+  }
+
+  if (req.method === "POST" && mediaId && action === "revoke") {
+    return handleRevoke(req, mediaId);
   }
 
   return jsonResponse({ error: "Method not allowed" }, 405);

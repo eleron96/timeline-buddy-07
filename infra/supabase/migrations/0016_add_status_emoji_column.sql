@@ -56,7 +56,7 @@ set statuses = coalesce((
       ),
       '{emoji}',
       to_jsonb(case
-        when item ? 'emoji' then nullif(item->>'emoji', '')
+        when jsonb_exists(item, 'emoji') then nullif(item->>'emoji', '')
         when (item->>'name') ~ '^📝' then '📝'
         when (item->>'name') ~ '^🚧' then '🚧'
         when (item->>'name') ~ '^✅' then '✅'

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Button } from '@/shared/ui/button';
 import { Input } from '@/shared/ui/input';
 import { Label } from '@/shared/ui/label';
@@ -28,6 +28,48 @@ type MemberGroup = {
 type MemberSortKey = 'member' | 'role' | 'group' | 'status';
 type MemberSortDirection = 'asc' | 'desc';
 
+type SentInvite = {
+  token: string;
+  workspaceId: string;
+  email: string;
+  status: 'pending' | 'accepted' | 'declined' | 'canceled' | 'expired';
+  isPending: boolean;
+  createdAt: string | null;
+};
+
+const sentInviteStatuses: ReadonlyArray<SentInvite['status']> = [
+  'pending',
+  'accepted',
+  'declined',
+  'canceled',
+  'expired',
+];
+
+const isSentInviteStatus = (value: unknown): value is SentInvite['status'] => (
+  typeof value === 'string' && sentInviteStatuses.includes(value as SentInvite['status'])
+);
+
+const parseInvokeErrorMessage = async (invokeError: { message: string }, response?: Response) => {
+  let message = invokeError.message;
+  if (!response) return message;
+
+  try {
+    const body = await response.clone().json();
+    if (body && typeof body === 'object' && typeof (body as { error?: string }).error === 'string') {
+      message = (body as { error: string }).error;
+    }
+  } catch (_error) {
+    try {
+      const text = await response.clone().text();
+      if (text) message = text;
+    } catch (_innerError) {
+      // Keep original invoke error.
+    }
+  }
+
+  return message;
+};
+
 export const WorkspaceMembersPanel: React.FC<WorkspaceMembersPanelProps> = ({
   active = true,
   showTitle = true,
@@ -35,6 +77,7 @@ export const WorkspaceMembersPanel: React.FC<WorkspaceMembersPanelProps> = ({
 }) => {
   const {
     user,
+    workspaces,
     members,
     membersLoading,
     fetchMembers,
@@ -52,8 +95,12 @@ export const WorkspaceMembersPanel: React.FC<WorkspaceMembersPanelProps> = ({
   const [error, setError] = useState('');
   const [warning, setWarning] = useState('');
   const [actionLink, setActionLink] = useState('');
+  const [inviteResult, setInviteResult] = useState<{ email: string; status: string } | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [cancelingToken, setCancelingToken] = useState<string | null>(null);
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [sentInvites, setSentInvites] = useState<SentInvite[]>([]);
+  const [sentInvitesLoading, setSentInvitesLoading] = useState(false);
   const [groups, setGroups] = useState<MemberGroup[]>([]);
   const [groupsLoading, setGroupsLoading] = useState(false);
   const [groupsError, setGroupsError] = useState('');
@@ -63,6 +110,12 @@ export const WorkspaceMembersPanel: React.FC<WorkspaceMembersPanelProps> = ({
 
   const isAdmin = currentWorkspaceRole === 'admin';
   const currentUserId = user?.id ?? null;
+  const currentWorkspace = useMemo(
+    () => workspaces.find((workspace) => workspace.id === currentWorkspaceId) ?? null,
+    [currentWorkspaceId, workspaces],
+  );
+  const isWorkspaceOwner = Boolean(currentUserId && currentWorkspace?.ownerId === currentUserId);
+  const canRemoveMembers = isWorkspaceOwner;
 
   useEffect(() => {
     if (active && currentWorkspaceId) {
@@ -96,6 +149,63 @@ export const WorkspaceMembersPanel: React.FC<WorkspaceMembersPanelProps> = ({
       isMounted = false;
     };
   }, [active, currentWorkspaceId]);
+
+  const loadSentInvites = useCallback(async () => {
+    if (!active || !isAdmin || !currentWorkspaceId) {
+      setSentInvites([]);
+      setSentInvitesLoading(false);
+      return;
+    }
+
+    setSentInvitesLoading(true);
+    const { data, error, response } = await supabase.functions.invoke('invite', {
+      body: { action: 'listSent', pendingOnly: true },
+    });
+
+    if (error) {
+      setError(await parseInvokeErrorMessage(error, response));
+      setSentInvitesLoading(false);
+      return;
+    }
+
+    const rows = Array.isArray((data as { invites?: unknown } | null)?.invites)
+      ? ((data as { invites: unknown[] }).invites ?? [])
+      : [];
+
+    const parsed = rows
+      .filter((row) => {
+        if (!row || typeof row !== 'object') return false;
+        const candidate = row as Partial<SentInvite>;
+        return (
+          typeof candidate.token === 'string'
+          && typeof candidate.workspaceId === 'string'
+          && isSentInviteStatus(candidate.status)
+        );
+      })
+      .map((row) => {
+        const candidate = row as Partial<SentInvite>;
+        return {
+          token: candidate.token as string,
+          workspaceId: candidate.workspaceId as string,
+          email: typeof candidate.email === 'string' ? candidate.email : '',
+          status: candidate.status as SentInvite['status'],
+          isPending: typeof candidate.isPending === 'boolean' ? candidate.isPending : candidate.status === 'pending',
+          createdAt: typeof candidate.createdAt === 'string' ? candidate.createdAt : null,
+        } satisfies SentInvite;
+      })
+      .filter((row) => row.workspaceId === currentWorkspaceId);
+
+    setSentInvites(parsed);
+    setSentInvitesLoading(false);
+  }, [active, currentWorkspaceId, isAdmin]);
+
+  useEffect(() => {
+    if (!active || !isAdmin || !currentWorkspaceId) {
+      setSentInvites([]);
+      return;
+    }
+    void loadSentInvites();
+  }, [active, currentWorkspaceId, isAdmin, loadSentInvites]);
 
   const assigneeByUserId = useMemo(() => {
     const map = new Map<string, typeof assignees[number]>();
@@ -160,16 +270,29 @@ export const WorkspaceMembersPanel: React.FC<WorkspaceMembersPanelProps> = ({
       : <ChevronDown className="h-3 w-3 text-foreground" />;
   };
 
+  const sentInvitesList = useMemo(
+    () => [...sentInvites]
+      .filter((invite) => invite.isPending)
+      .sort((left, right) => {
+      const leftCreatedAt = left.createdAt ? Date.parse(left.createdAt) : 0;
+      const rightCreatedAt = right.createdAt ? Date.parse(right.createdAt) : 0;
+      return rightCreatedAt - leftCreatedAt;
+      }),
+    [sentInvites],
+  );
+
   const handleInvite = async (event: React.FormEvent) => {
     event.preventDefault();
     setError('');
     setWarning('');
     setActionLink('');
+    setInviteResult(null);
     if (!email.trim()) return;
 
+    const invitedEmail = email.trim();
     setSubmitting(true);
     const result = await inviteMember(
-      email.trim(),
+      invitedEmail,
       role,
       inviteGroupId === 'none' ? null : inviteGroupId,
     );
@@ -182,13 +305,55 @@ export const WorkspaceMembersPanel: React.FC<WorkspaceMembersPanelProps> = ({
     if (result.actionLink) {
       setActionLink(result.actionLink);
     }
+    if (!result.error) {
+      setInviteResult({
+        email: result.inviteEmail ?? invitedEmail,
+        status: result.inviteStatus ?? 'pending',
+      });
+    }
     setSubmitting(false);
     if (!result.error) {
       setEmail('');
       setRole('viewer');
       setInviteGroupId('none');
       setInviteOpen(false);
+      void loadSentInvites();
     }
+  };
+
+  const handleCancelInvite = useCallback(async (token: string) => {
+    if (!isAdmin || !token) return;
+    setCancelingToken(token);
+    setError('');
+
+    const { error, response } = await supabase.functions.invoke('invite', {
+      body: { action: 'cancel', token },
+    });
+
+    if (error) {
+      setError(await parseInvokeErrorMessage(error, response));
+      setCancelingToken(null);
+      return;
+    }
+
+    await loadSentInvites();
+    setCancelingToken(null);
+  }, [isAdmin, loadSentInvites]);
+
+  const getInviteStatusLabel = (status: SentInvite['status']) => {
+    if (status === 'accepted') return t`Accepted`;
+    if (status === 'declined') return t`Declined`;
+    if (status === 'canceled') return t`Canceled`;
+    if (status === 'expired') return t`Expired`;
+    return t`Pending`;
+  };
+
+  const getInviteStatusClassName = (status: SentInvite['status']) => {
+    if (status === 'accepted') return 'bg-emerald-500/15 text-emerald-700 border-emerald-500/20';
+    if (status === 'declined' || status === 'canceled' || status === 'expired') {
+      return 'bg-muted text-muted-foreground border-border';
+    }
+    return 'bg-amber-500/15 text-amber-700 border-amber-500/20';
   };
 
   const handleRoleChange = async (userId: string, nextRole: WorkspaceRole) => {
@@ -209,7 +374,10 @@ export const WorkspaceMembersPanel: React.FC<WorkspaceMembersPanelProps> = ({
   };
 
   const handleRemove = async (userId: string) => {
-    if (!isAdmin) return;
+    if (!canRemoveMembers) {
+      setError(t`Access denied`);
+      return;
+    }
     if (currentUserId && userId === currentUserId) {
       setError(t`You cannot remove yourself.`);
       return;
@@ -310,8 +478,20 @@ export const WorkspaceMembersPanel: React.FC<WorkspaceMembersPanelProps> = ({
           </Popover>
         </div>
 
-        {(error || warning || actionLink) && (
+        {(error || warning || actionLink || inviteResult) && (
           <div className="space-y-2">
+            {inviteResult && (
+              <Alert>
+                <AlertTitle>{t`Invite created`}</AlertTitle>
+                <AlertDescription>
+                  <div>{t`Check your inbox`}</div>
+                  <div className="mt-1 text-xs">
+                    {inviteResult.email} - {inviteResult.status}
+                  </div>
+                </AlertDescription>
+              </Alert>
+            )}
+
             {error && (
               <Alert variant="destructive">
                 <AlertTitle>{t`Action failed`}</AlertTitle>
@@ -333,6 +513,48 @@ export const WorkspaceMembersPanel: React.FC<WorkspaceMembersPanelProps> = ({
                   {t`Copy this link if the email did not send:`} {actionLink}
                 </AlertDescription>
               </Alert>
+            )}
+          </div>
+        )}
+
+        {isAdmin && (
+          <div className="space-y-2 border-t pt-3">
+            <div className="text-xs font-semibold text-muted-foreground">{t`Sent invites`}</div>
+            {sentInvitesLoading ? (
+              <div className="text-xs text-muted-foreground">{t`Loading data...`}</div>
+            ) : sentInvitesList.length === 0 ? (
+              <div className="text-xs text-muted-foreground">{t`No invites sent yet.`}</div>
+            ) : (
+              <div className="space-y-2">
+                {sentInvitesList.map((invite) => {
+                  const displayEmail = invite.email.includes('@') ? invite.email : t`Unknown`;
+                  return (
+                  <div key={invite.token} className="flex items-center justify-between gap-2 rounded-md border px-2 py-1.5">
+                    <div className="min-w-0">
+                      <div className="truncate text-xs font-medium" title={displayEmail}>{displayEmail}</div>
+                      <div className="mt-1">
+                        <Badge
+                          variant="outline"
+                          className={cn('text-[10px] font-medium', getInviteStatusClassName(invite.status))}
+                        >
+                          {getInviteStatusLabel(invite.status)}
+                        </Badge>
+                      </div>
+                    </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-7 px-2 text-xs"
+                      disabled={cancelingToken === invite.token}
+                      onClick={() => void handleCancelInvite(invite.token)}
+                    >
+                      {t`Revoke`}
+                    </Button>
+                  </div>
+                  );
+                })}
+              </div>
             )}
           </div>
         )}
@@ -459,7 +681,7 @@ export const WorkspaceMembersPanel: React.FC<WorkspaceMembersPanelProps> = ({
                   variant="ghost"
                   size="sm"
                   onClick={() => handleRemove(member.userId)}
-                  disabled={!isAdmin || isSelf}
+                  disabled={!canRemoveMembers || isSelf}
                 >
                   {t`Remove`}
                 </Button>

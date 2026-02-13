@@ -7,6 +7,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/shared/ui/alert';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/shared/ui/select';
 import { useLocaleStore } from '@/shared/store/localeStore';
 import { localeLabels, type Locale } from '@/shared/lib/locale';
+import { setPendingLocale } from '@/features/auth/lib/pendingLocale';
 import { t } from '@lingui/macro';
 
 const AuthPage: React.FC = () => {
@@ -117,7 +118,9 @@ const AuthPage: React.FC = () => {
   };
 
   const handleLocaleChange = (value: string) => {
-    setLocale(value as Locale);
+    const nextLocale = value as Locale;
+    setLocale(nextLocale);
+    setPendingLocale(nextLocale);
   };
 
   const hideAuthCard = (silentOAuth || submitting) && !skipAutoOAuth && !user && !oauthError && !error;

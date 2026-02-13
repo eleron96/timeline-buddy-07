@@ -1,4 +1,5 @@
 export type TaskPriority = 'low' | 'medium' | 'high';
+export type RepeatTaskUpdateScope = 'single' | 'following' | 'all';
 
 export interface Task {
   id: string;
@@ -106,4 +107,5 @@ export interface PlannerState {
   filters: Filters;
   selectedTaskId: string | null;
   highlightedTaskId: string | null;
+  timelineAttentionDate: string | null;
 }

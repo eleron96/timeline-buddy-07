@@ -37,7 +37,7 @@ const App = () => {
             >
               <Routes>
                 <Route path="/auth" element={<AuthPage />} />
-                <Route path="/invite/:workspaceId" element={<InvitePage />} />
+                <Route path="/invite/:inviteToken" element={<InvitePage />} />
                 <Route
                   path="/admin/users"
                   element={(

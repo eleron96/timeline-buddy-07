@@ -28,6 +28,7 @@ export const TimelineControls: React.FC = () => {
   } = usePlannerStore();
   const hideUnassignedId = 'hide-unassigned-toggle';
   const showUnassigned = !filters.hideUnassigned;
+  const unassignedDisabled = viewMode === 'calendar' || groupMode === 'project';
   
   const handlePrev = () => {
     const date = parseISO(currentDate);
@@ -168,13 +169,13 @@ export const TimelineControls: React.FC = () => {
             id={hideUnassignedId}
             checked={showUnassigned}
             onCheckedChange={(value) => setFilters({ hideUnassigned: value !== true })}
-            disabled={viewMode === 'calendar'}
+            disabled={unassignedDisabled}
             className="scale-75 border-muted-foreground/40 data-[state=checked]:bg-muted-foreground/60 data-[state=checked]:border-muted-foreground/60 data-[state=checked]:text-white/90"
             aria-label={t`Show unassigned`}
           />
           <label
             htmlFor={hideUnassignedId}
-            className={cn('cursor-pointer', viewMode === 'calendar' && 'opacity-60 cursor-not-allowed')}
+            className={cn('cursor-pointer', unassignedDisabled && 'opacity-60 cursor-not-allowed')}
           >
             {t`Unassigned`}
           </label>

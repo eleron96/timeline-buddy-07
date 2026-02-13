@@ -159,6 +159,43 @@ const findAvailablePosition = (
   return { x: 0, y: maxY };
 };
 
+const findAvailablePositionFrom = (
+  layout: DashboardLayoutItem[],
+  size: Pick<DashboardLayoutItem, 'w' | 'h'>,
+  cols: number,
+  preferredX: number,
+  preferredY: number,
+) => {
+  const maxY = layout.reduce((acc, item) => Math.max(acc, item.y + item.h), 0);
+  const maxX = Math.max(cols - size.w, 0);
+  const startY = Math.max(0, preferredY);
+  const clampedPreferredX = clampNumber(preferredX, 0, maxX);
+  const xOrder = [
+    ...Array.from({ length: Math.max(maxX - clampedPreferredX + 1, 0) }, (_, index) => clampedPreferredX + index),
+    ...Array.from({ length: Math.max(clampedPreferredX, 0) }, (_, index) => index),
+  ];
+
+  for (let y = startY; y <= maxY + size.h; y += 1) {
+    for (const x of xOrder) {
+      const candidate: DashboardLayoutItem = { i: 'candidate', x, y, w: size.w, h: size.h };
+      if (!hasCollision(candidate, layout)) {
+        return { x, y };
+      }
+    }
+  }
+
+  for (let y = 0; y < startY; y += 1) {
+    for (const x of xOrder) {
+      const candidate: DashboardLayoutItem = { i: 'candidate', x, y, w: size.w, h: size.h };
+      if (!hasCollision(candidate, layout)) {
+        return { x, y };
+      }
+    }
+  }
+
+  return { x: clampedPreferredX, y: Math.max(startY, maxY) };
+};
+
 const getClosestWidgetSize = (
   w: number,
   h: number,
@@ -372,14 +409,14 @@ const normalizeLayouts = (layouts: DashboardLayouts, widgets: DashboardWidget[])
       return [...acc, item];
     }, currentLayout);
 
-    normalized[breakpoint] = layoutWithAll.map((item) => {
+    const resolvedLayout = layoutWithAll.reduce<DashboardLayoutItem[]>((acc, item) => {
       const widget = widgetMap.get(item.i) ?? null;
       const size = widget ? getWidgetLayoutSize(widget, cols) : getLayoutBoundsForSize(cols, 'small');
-      const w = clampNumber(Math.round(toFiniteNumber(item.w, size.w)), 1, cols);
-      const h = Math.max(1, Math.round(toFiniteNumber(item.h, size.h)));
+      const w = clampNumber(Math.round(toFiniteNumber(item.w, size.w)), size.minW, Math.min(size.maxW, cols));
+      const h = clampNumber(Math.round(toFiniteNumber(item.h, size.h)), size.minH, size.maxH);
       const x = clampNumber(Math.round(toFiniteNumber(item.x, 0)), 0, Math.max(cols - w, 0));
       const y = Math.max(0, Math.round(toFiniteNumber(item.y, 0)));
-      return {
+      let nextItem: DashboardLayoutItem = {
         ...item,
         x,
         y,
@@ -390,7 +427,14 @@ const normalizeLayouts = (layouts: DashboardLayouts, widgets: DashboardWidget[])
         maxW: size.maxW,
         maxH: size.maxH,
       };
-    });
+      if (hasCollision(nextItem, acc)) {
+        const position = findAvailablePositionFrom(acc, nextItem, cols, nextItem.x, nextItem.y);
+        nextItem = { ...nextItem, x: position.x, y: position.y };
+      }
+      return [...acc, nextItem];
+    }, []);
+
+    normalized[breakpoint] = resolvedLayout;
   });
 
   return normalized;

@@ -4,6 +4,7 @@ import { useFilteredAssignees } from '@/features/planner/hooks/useFilteredAssign
 import { Button } from '@/shared/ui/button';
 import { Checkbox } from '@/shared/ui/checkbox';
 import { ScrollArea } from '@/shared/ui/scroll-area';
+import { Input } from '@/shared/ui/input';
 import { formatStatusLabel } from '@/shared/lib/statusLabels';
 import { formatProjectLabel } from '@/shared/lib/projectLabels';
 import { sortProjectsByTracking } from '@/shared/lib/projectSorting';
@@ -80,6 +81,8 @@ interface FilterPanelProps {
   onToggle: () => void;
 }
 
+const normalizeQuery = (value: string) => value.trim().toLowerCase();
+
 export const FilterPanel: React.FC<FilterPanelProps> = ({ collapsed, onToggle }) => {
   const { 
     projects, 
@@ -105,6 +108,49 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({ collapsed, onToggle })
     [projects, trackedProjectIds],
   );
   const archivedProjectsCount = projects.length - activeProjects.length;
+  const [projectQuery, setProjectQuery] = useState('');
+  const [peopleQuery, setPeopleQuery] = useState('');
+  const [groupQuery, setGroupQuery] = useState('');
+  const [statusQuery, setStatusQuery] = useState('');
+  const [typeQuery, setTypeQuery] = useState('');
+  const [tagQuery, setTagQuery] = useState('');
+  const filteredProjects = useMemo(() => {
+    const query = normalizeQuery(projectQuery);
+    if (!query) return activeProjects;
+    return activeProjects.filter((project) => (
+      project.name.toLowerCase().includes(query)
+      || (project.code ?? '').toLowerCase().includes(query)
+      || formatProjectLabel(project.name, project.code).toLowerCase().includes(query)
+    ));
+  }, [activeProjects, projectQuery]);
+  const visibleAssignees = useMemo(() => {
+    const query = normalizeQuery(peopleQuery);
+    if (!query) return filteredAssignees;
+    return filteredAssignees.filter((assignee) => assignee.name.toLowerCase().includes(query));
+  }, [filteredAssignees, peopleQuery]);
+  const visibleGroups = useMemo(() => {
+    const query = normalizeQuery(groupQuery);
+    if (!query) return memberGroups;
+    return memberGroups.filter((group) => group.name.toLowerCase().includes(query));
+  }, [groupQuery, memberGroups]);
+  const visibleStatuses = useMemo(() => {
+    const query = normalizeQuery(statusQuery);
+    if (!query) return statuses;
+    return statuses.filter((status) => (
+      formatStatusLabel(status.name, status.emoji).toLowerCase().includes(query)
+      || status.name.toLowerCase().includes(query)
+    ));
+  }, [statusQuery, statuses]);
+  const visibleTaskTypes = useMemo(() => {
+    const query = normalizeQuery(typeQuery);
+    if (!query) return taskTypes;
+    return taskTypes.filter((type) => type.name.toLowerCase().includes(query));
+  }, [taskTypes, typeQuery]);
+  const visibleTags = useMemo(() => {
+    const query = normalizeQuery(tagQuery);
+    if (!query) return tags;
+    return tags.filter((tag) => tag.name.toLowerCase().includes(query));
+  }, [tagQuery, tags]);
   
   const hasActiveFilters = 
     filters.projectIds.length > 0 ||
@@ -174,7 +220,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({ collapsed, onToggle })
   }
   
   return (
-    <div className="w-64 border-r border-border bg-card flex flex-col h-full transition-all duration-200">
+    <div className="w-full border-r border-border bg-card flex flex-col h-full transition-all duration-200">
       <div className="flex items-center justify-between px-4 py-3 border-b border-border">
         <div className="flex items-center gap-2">
           <Filter className="w-4 h-4" />
@@ -208,10 +254,19 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({ collapsed, onToggle })
           icon={<FolderKanban className="w-4 h-4 text-muted-foreground" />}
           defaultOpen={false}
         >
+          <Input
+            className="h-7 text-xs"
+            placeholder={t`Search projects...`}
+            value={projectQuery}
+            onChange={(event) => setProjectQuery(event.target.value)}
+          />
           {activeProjects.length === 0 && (
             <div className="text-xs text-muted-foreground">{t`No active projects.`}</div>
           )}
-          {activeProjects.map(project => (
+          {activeProjects.length > 0 && filteredProjects.length === 0 && (
+            <div className="text-xs text-muted-foreground">{t`No matches.`}</div>
+          )}
+          {filteredProjects.map(project => (
             <label
               key={project.id}
               className="flex items-center gap-2 py-1 cursor-pointer"
@@ -224,7 +279,12 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({ collapsed, onToggle })
                 className="w-2.5 h-2.5 rounded-full flex-shrink-0"
                 style={{ backgroundColor: project.color }}
               />
-              <span className="text-sm truncate">{formatProjectLabel(project.name, project.code)}</span>
+              <div className="min-w-0">
+                <div className="text-sm leading-snug break-words line-clamp-2">{project.name}</div>
+                <div className="text-[11px] text-muted-foreground leading-snug break-words line-clamp-1">
+                  {project.code ?? t`No code`}
+                </div>
+              </div>
             </label>
           ))}
           {archivedProjectsCount > 0 && (
@@ -240,7 +300,17 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({ collapsed, onToggle })
           defaultOpen={false}
           disabled={isCalendarView}
         >
-          {filteredAssignees.map(assignee => (
+          <Input
+            className="h-7 text-xs"
+            placeholder={t`Search people...`}
+            value={peopleQuery}
+            onChange={(event) => setPeopleQuery(event.target.value)}
+            disabled={isCalendarView}
+          />
+          {filteredAssignees.length > 0 && visibleAssignees.length === 0 && (
+            <div className="text-xs text-muted-foreground">{t`No matches.`}</div>
+          )}
+          {visibleAssignees.map(assignee => (
             <label
               key={assignee.id}
               className={`flex items-center gap-2 py-1 ${
@@ -268,10 +338,20 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({ collapsed, onToggle })
           defaultOpen={false}
           disabled={isCalendarView}
         >
+          <Input
+            className="h-7 text-xs"
+            placeholder={t`Search groups...`}
+            value={groupQuery}
+            onChange={(event) => setGroupQuery(event.target.value)}
+            disabled={isCalendarView}
+          />
           {memberGroups.length === 0 && (
             <div className="text-xs text-muted-foreground">{t`No groups yet.`}</div>
           )}
-          {memberGroups.map((group) => (
+          {memberGroups.length > 0 && visibleGroups.length === 0 && (
+            <div className="text-xs text-muted-foreground">{t`No matches.`}</div>
+          )}
+          {visibleGroups.map((group) => (
             <label
               key={group.id}
               className={`flex items-center gap-2 py-1 ${
@@ -294,7 +374,17 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({ collapsed, onToggle })
           defaultOpen={false}
           disabled={isCalendarView}
         >
-          {statuses.map(status => (
+          <Input
+            className="h-7 text-xs"
+            placeholder={t`Search status...`}
+            value={statusQuery}
+            onChange={(event) => setStatusQuery(event.target.value)}
+            disabled={isCalendarView}
+          />
+          {statuses.length > 0 && visibleStatuses.length === 0 && (
+            <div className="text-xs text-muted-foreground">{t`No matches.`}</div>
+          )}
+          {visibleStatuses.map(status => (
             <label
               key={status.id}
               className={`flex items-center gap-2 py-1 ${
@@ -321,7 +411,17 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({ collapsed, onToggle })
           defaultOpen={false}
           disabled={isCalendarView}
         >
-          {taskTypes.map(type => (
+          <Input
+            className="h-7 text-xs"
+            placeholder={t`Search types...`}
+            value={typeQuery}
+            onChange={(event) => setTypeQuery(event.target.value)}
+            disabled={isCalendarView}
+          />
+          {taskTypes.length > 0 && visibleTaskTypes.length === 0 && (
+            <div className="text-xs text-muted-foreground">{t`No matches.`}</div>
+          )}
+          {visibleTaskTypes.map(type => (
             <label
               key={type.id}
               className={`flex items-center gap-2 py-1 ${
@@ -344,7 +444,17 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({ collapsed, onToggle })
           defaultOpen={false}
           disabled={isCalendarView}
         >
-          {tags.map(tag => (
+          <Input
+            className="h-7 text-xs"
+            placeholder={t`Search tags...`}
+            value={tagQuery}
+            onChange={(event) => setTagQuery(event.target.value)}
+            disabled={isCalendarView}
+          />
+          {tags.length > 0 && visibleTags.length === 0 && (
+            <div className="text-xs text-muted-foreground">{t`No matches.`}</div>
+          )}
+          {visibleTags.map(tag => (
             <label
               key={tag.id}
               className={`flex items-center gap-2 py-1 ${

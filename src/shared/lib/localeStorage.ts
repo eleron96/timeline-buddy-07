@@ -2,10 +2,14 @@ import { DEFAULT_LOCALE, isSupportedLocale, type Locale } from "@/shared/lib/loc
 
 const STORAGE_KEY = "ui-locale";
 
-export const getStoredLocale = (): Locale => {
-  if (typeof window === "undefined") return DEFAULT_LOCALE;
+export const getStoredLocalePreference = (): Locale | null => {
+  if (typeof window === "undefined") return null;
   const stored = window.localStorage.getItem(STORAGE_KEY);
-  return isSupportedLocale(stored) ? stored : DEFAULT_LOCALE;
+  return isSupportedLocale(stored) ? stored : null;
+};
+
+export const getStoredLocale = (): Locale => {
+  return getStoredLocalePreference() ?? DEFAULT_LOCALE;
 };
 
 export const setStoredLocale = (locale: Locale) => {

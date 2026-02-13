@@ -26,7 +26,7 @@ set statuses = coalesce((
     select
       item,
       case
-        when item ? 'is_cancelled' then coalesce((item->>'is_cancelled')::boolean, false)
+        when jsonb_exists(item, 'is_cancelled') then coalesce((item->>'is_cancelled')::boolean, false)
         when lower(item->>'name') in ('отмена', 'отменена', 'отменён', 'отменен', 'cancelled', 'canceled') then true
         when item->>'emoji' = '🚫' then true
         else false

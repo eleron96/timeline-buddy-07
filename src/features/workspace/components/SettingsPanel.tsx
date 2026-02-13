@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { usePlannerStore } from '@/features/planner/store/plannerStore';
 import { useAuthStore } from '@/features/auth/store/authStore';
 import { Button } from '@/shared/ui/button';
@@ -18,18 +18,26 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/shared/ui/alert-dialog';
-import { Plus, Trash2, Settings2, CheckCircle2, Ban } from 'lucide-react';
+import { Plus, Trash2, Settings2, CheckCircle2, Ban, Check, ChevronsUpDown } from 'lucide-react';
 import { supabase } from '@/shared/lib/supabaseClient';
 import { ColorPicker } from '@/shared/ui/color-picker';
 import { EmojiPicker } from '@/shared/ui/emoji-picker';
 import { splitStatusLabel, stripStatusEmoji } from '@/shared/lib/statusLabels';
 import { Textarea } from '@/shared/ui/textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/shared/ui/tooltip';
+import { Popover, PopoverContent, PopoverTrigger } from '@/shared/ui/popover';
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/shared/ui/command';
 import { t } from '@lingui/macro';
+import { cn } from '@/shared/lib/classNames';
 
 interface SettingsPanelProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+}
+
+interface HolidayCountryOption {
+  countryCode: string;
+  name: string;
 }
 
 const SectionCard: React.FC<{ title?: string; children: React.ReactNode }> = ({ title, children }) => (
@@ -82,6 +90,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ open, onOpenChange
     currentWorkspaceId,
     currentWorkspaceRole,
     updateWorkspaceName,
+    updateWorkspaceHolidayCountry,
     deleteWorkspace,
   } = useAuthStore();
 
@@ -98,6 +107,11 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ open, onOpenChange
   const isAdmin = currentWorkspaceRole === 'admin';
 
   const [workspaceName, setWorkspaceName] = useState('');
+  const [workspaceHolidayCountry, setWorkspaceHolidayCountry] = useState('RU');
+  const [holidayCountryOptions, setHolidayCountryOptions] = useState<HolidayCountryOption[]>([]);
+  const [holidayCountryLoading, setHolidayCountryLoading] = useState(false);
+  const [holidayCountryOpen, setHolidayCountryOpen] = useState(false);
+  const [holidayCountryQuery, setHolidayCountryQuery] = useState('');
   const [workspaceError, setWorkspaceError] = useState('');
   const [workspaceSaving, setWorkspaceSaving] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -110,11 +124,57 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ open, onOpenChange
   useEffect(() => {
     if (!open) return;
     setWorkspaceName(currentWorkspace?.name ?? '');
+    setWorkspaceHolidayCountry((currentWorkspace?.holidayCountry ?? 'RU').toUpperCase());
+    setHolidayCountryOpen(false);
+    setHolidayCountryQuery('');
     setWorkspaceError('');
     setTemplateApplyError('');
     setTemplateApplied(false);
     setDeleteConfirmValue('');
-  }, [open, currentWorkspace?.name]);
+  }, [open, currentWorkspace?.name, currentWorkspace?.holidayCountry]);
+
+  useEffect(() => {
+    if (!open) return;
+    let active = true;
+    const controller = new AbortController();
+
+    const loadHolidayCountries = async () => {
+      setHolidayCountryLoading(true);
+      try {
+        const response = await fetch('https://date.nager.at/api/v3/AvailableCountries', {
+          signal: controller.signal,
+        });
+        if (!response.ok) {
+          throw new Error(`Failed to load countries: ${response.status}`);
+        }
+        const data = await response.json() as Array<{ countryCode?: string; name?: string }>;
+        if (!active) return;
+        const normalized = data
+          .map((item) => ({
+            countryCode: (item.countryCode ?? '').toUpperCase(),
+            name: item.name ?? '',
+          }))
+          .filter((item) => /^[A-Z]{2}$/.test(item.countryCode))
+          .sort((left, right) => left.name.localeCompare(right.name));
+        setHolidayCountryOptions(normalized);
+      } catch (error) {
+        if ((error as { name?: string })?.name !== 'AbortError') {
+          console.error(error);
+        }
+      } finally {
+        if (active) {
+          setHolidayCountryLoading(false);
+        }
+      }
+    };
+
+    void loadHolidayCountries();
+
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [open]);
 
   const deleteConfirmName = currentWorkspace?.name ?? '';
   const canDeleteWorkspace = Boolean(
@@ -124,6 +184,40 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ open, onOpenChange
       && deleteConfirmValue.trim() === deleteConfirmName,
   );
   const generalDefaultSections = isAdmin ? ['name'] : ['access', 'name'];
+
+  const holidayCountryLabel = useMemo(() => {
+    const code = workspaceHolidayCountry.trim().toUpperCase();
+    if (!code) return t`Select country`;
+    const option = holidayCountryOptions.find((item) => item.countryCode === code);
+    return option ? `${code} - ${option.name}` : code;
+  }, [workspaceHolidayCountry, holidayCountryOptions]);
+
+  const filteredHolidayCountryOptions = useMemo(() => {
+    const query = holidayCountryQuery.trim().toLowerCase();
+    if (!query) return holidayCountryOptions.slice(0, 60);
+
+    const scored = holidayCountryOptions
+      .map((option) => {
+        const nameLower = option.name.toLowerCase();
+        const codeLower = option.countryCode.toLowerCase();
+        let score = 3;
+        if (codeLower === query || nameLower === query) {
+          score = 0;
+        } else if (codeLower.startsWith(query) || nameLower.startsWith(query)) {
+          score = 1;
+        } else if (codeLower.includes(query) || nameLower.includes(query)) {
+          score = 2;
+        }
+        return { option, score };
+      })
+      .filter((item) => item.score < 3)
+      .sort((left, right) => {
+        if (left.score !== right.score) return left.score - right.score;
+        return left.option.name.localeCompare(right.option.name);
+      });
+
+    return scored.map((item) => item.option).slice(0, 60);
+  }, [holidayCountryOptions, holidayCountryQuery]);
 
   const handleAddStatus = () => {
     if (!newStatusName.trim()) return;
@@ -158,6 +252,28 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ open, onOpenChange
     setWorkspaceError('');
     setWorkspaceSaving(true);
     const result = await updateWorkspaceName(currentWorkspaceId, workspaceName);
+    if (result.error) {
+      setWorkspaceError(result.error);
+      setWorkspaceSaving(false);
+      return;
+    }
+    setWorkspaceSaving(false);
+  };
+
+  const handleSaveWorkspaceHolidayCountry = async () => {
+    if (!currentWorkspaceId) {
+      setWorkspaceError(t`Workspace not selected.`);
+      return;
+    }
+    const normalized = workspaceHolidayCountry.trim().toUpperCase();
+    if (!/^[A-Z]{2}$/.test(normalized)) {
+      setWorkspaceError(t`Country code must contain 2 letters.`);
+      return;
+    }
+
+    setWorkspaceError('');
+    setWorkspaceSaving(true);
+    const result = await updateWorkspaceHolidayCountry(currentWorkspaceId, normalized);
     if (result.error) {
       setWorkspaceError(result.error);
       setWorkspaceSaving(false);
@@ -352,6 +468,95 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ open, onOpenChange
                           <Button
                             onClick={handleSaveWorkspaceName}
                             disabled={!isAdmin || !currentWorkspaceId || workspaceSaving || !workspaceName.trim()}
+                          >
+                            {t`Save`}
+                          </Button>
+                        </div>
+                      </AccordionContent>
+                    </SectionCard>
+                  </AccordionItem>
+
+                  <AccordionItem value="holidays" className="border-0">
+                    <SectionCard>
+                      <AccordionTrigger className="py-0 hover:no-underline">
+                        <span className="text-sm font-semibold">{t`Holiday calendar`}</span>
+                      </AccordionTrigger>
+                      <AccordionContent className="pt-1">
+                        <div className="space-y-2">
+                          <Label htmlFor="workspace-holiday-country">{t`Country code`}</Label>
+                          <Popover
+                            open={holidayCountryOpen}
+                            onOpenChange={(nextOpen) => {
+                              setHolidayCountryOpen(nextOpen);
+                              if (!nextOpen) {
+                                setHolidayCountryQuery('');
+                              }
+                            }}
+                          >
+                            <PopoverTrigger asChild>
+                              <Button
+                                id="workspace-holiday-country"
+                                type="button"
+                                variant="outline"
+                                role="combobox"
+                                className="w-full justify-between"
+                                disabled={!isAdmin || !currentWorkspaceId || workspaceSaving}
+                              >
+                                <span className="truncate">{holidayCountryLabel}</span>
+                                <ChevronsUpDown className="h-4 w-4 shrink-0 opacity-60" />
+                              </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start" side="bottom">
+                              <Command shouldFilter={false}>
+                                <CommandInput
+                                  placeholder={t`Search countries...`}
+                                  value={holidayCountryQuery}
+                                  onValueChange={setHolidayCountryQuery}
+                                />
+                                <CommandList>
+                                  <CommandEmpty>
+                                    {holidayCountryLoading ? t`Loading available countries...` : t`No countries found.`}
+                                  </CommandEmpty>
+                                  <CommandGroup>
+                                    {filteredHolidayCountryOptions.map((option) => {
+                                      const isSelected = option.countryCode === workspaceHolidayCountry;
+                                      return (
+                                        <CommandItem
+                                          key={option.countryCode}
+                                          onSelect={() => {
+                                            setWorkspaceHolidayCountry(option.countryCode);
+                                            setHolidayCountryOpen(false);
+                                            setHolidayCountryQuery('');
+                                          }}
+                                        >
+                                          <Check className={cn('mr-2 h-4 w-4', isSelected ? 'opacity-100' : 'opacity-0')} />
+                                          <span className="truncate">{option.name}</span>
+                                          <span className="ml-auto text-xs text-muted-foreground">{option.countryCode}</span>
+                                        </CommandItem>
+                                      );
+                                    })}
+                                  </CommandGroup>
+                                </CommandList>
+                              </Command>
+                            </PopoverContent>
+                          </Popover>
+                          <p className="text-xs text-muted-foreground">
+                            {holidayCountryLoading
+                              ? t`Loading available countries...`
+                              : t`Use ISO code (for example RU, US, DE).`}
+                          </p>
+                          {workspaceError && (
+                            <div className="text-sm text-destructive">{workspaceError}</div>
+                          )}
+                          <Button
+                            onClick={handleSaveWorkspaceHolidayCountry}
+                            disabled={
+                              !isAdmin
+                              || !currentWorkspaceId
+                              || workspaceSaving
+                              || !workspaceHolidayCountry.trim()
+                              || (workspaceHolidayCountry.trim().toUpperCase() === (currentWorkspace?.holidayCountry ?? 'RU').toUpperCase())
+                            }
                           >
                             {t`Save`}
                           </Button>

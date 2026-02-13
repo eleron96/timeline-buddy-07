@@ -4,7 +4,7 @@ import { useFilteredAssignees } from '@/features/planner/hooks/useFilteredAssign
 import { Button } from '@/shared/ui/button';
 import { Input } from '@/shared/ui/input';
 import { Label } from '@/shared/ui/label';
-import { formatStatusLabel } from '@/shared/lib/statusLabels';
+import { formatStatusLabel, stripStatusEmoji } from '@/shared/lib/statusLabels';
 import { formatProjectLabel } from '@/shared/lib/projectLabels';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/shared/ui/dialog';
 import {
@@ -32,6 +32,7 @@ import { useAuthStore } from '@/features/auth/store/authStore';
 import { endOfMonth, isSameMonth, isSameYear, parseISO } from 'date-fns';
 import { sortProjectsByTracking } from '@/shared/lib/projectSorting';
 import { t } from '@lingui/macro';
+import { Status } from '@/features/planner/types/planner';
 
 interface AddTaskDialogProps {
   open: boolean;
@@ -42,6 +43,33 @@ interface AddTaskDialogProps {
   initialAssigneeIds?: string[];
 }
 
+const resolveDefaultStatusId = (statuses: Status[]) => {
+  if (statuses.length === 0) return '';
+  const aliases = new Set([
+    'todo',
+    'todonew',
+    'to do',
+    'to-do',
+    'to_do',
+    'квыполнению',
+    'сделать',
+    'новая',
+  ]);
+
+  const normalize = (value: string) => stripStatusEmoji(value).trim().toLowerCase();
+  const compact = (value: string) => normalize(value).replace(/[\s\-_]+/g, '');
+
+  const preferred = statuses.find((status) => {
+    const normalized = normalize(status.name);
+    const packed = compact(status.name);
+    return aliases.has(normalized) || aliases.has(packed);
+  });
+  if (preferred) return preferred.id;
+
+  const firstOpen = statuses.find((status) => !status.isFinal && !status.isCancelled);
+  return firstOpen?.id ?? statuses[0]?.id ?? '';
+};
+
 export const AddTaskDialog: React.FC<AddTaskDialogProps> = ({
   open,
   onOpenChange,
@@ -50,7 +78,7 @@ export const AddTaskDialog: React.FC<AddTaskDialogProps> = ({
   initialProjectId,
   initialAssigneeIds,
 }) => {
-  const { projects, trackedProjectIds, assignees, statuses, taskTypes, tags, addTask, createRepeats } = usePlannerStore();
+  const { projects, trackedProjectIds, assignees, statuses, taskTypes, tags, groupMode, addTask, createRepeats } = usePlannerStore();
   const currentWorkspaceId = useAuthStore((state) => state.currentWorkspaceId);
   const filteredAssignees = useFilteredAssignees(assignees);
   const activeProjects = useMemo(
@@ -64,6 +92,10 @@ export const AddTaskDialog: React.FC<AddTaskDialogProps> = ({
     () => filteredAssignees.filter((assignee) => assignee.isActive),
     [filteredAssignees],
   );
+  const defaultStatusId = useMemo(() => {
+    return resolveDefaultStatusId(statuses);
+  }, [statuses]);
+  const noProjectDisabled = groupMode === 'project';
   
   const today = new Date();
   const defaultStart = format(today, 'yyyy-MM-dd');
@@ -81,7 +113,7 @@ export const AddTaskDialog: React.FC<AddTaskDialogProps> = ({
   const [projectId, setProjectId] = useState<string>('none');
   const [projectInitialized, setProjectInitialized] = useState(false);
   const [assigneeIds, setAssigneeIds] = useState<string[]>([]);
-  const [statusId, setStatusId] = useState(statuses[0]?.id || '');
+  const [statusId, setStatusId] = useState(defaultStatusId);
   const [typeId, setTypeId] = useState(taskTypes[0]?.id || '');
   const [priority, setPriority] = useState<TaskPriority | 'none'>('none');
   const [startDate, setStartDate] = useState(initialStart);
@@ -243,7 +275,7 @@ export const AddTaskDialog: React.FC<AddTaskDialogProps> = ({
     setProjectId(activeProjects[0]?.id || 'none');
     setProjectInitialized(false);
     setAssigneeIds([]);
-    setStatusId(statuses[0]?.id || '');
+    setStatusId(defaultStatusId);
     setTypeId(taskTypes[0]?.id || '');
     setPriority('none');
     setStartDate(defaultStart);
@@ -264,10 +296,10 @@ export const AddTaskDialog: React.FC<AddTaskDialogProps> = ({
   };
 
   useEffect(() => {
-    if (!statusId && statuses[0]?.id) {
-      setStatusId(statuses[0].id);
+    if (!statusId && defaultStatusId) {
+      setStatusId(defaultStatusId);
     }
-  }, [statusId, statuses]);
+  }, [defaultStatusId, statusId]);
 
   useEffect(() => {
     if (!open) {
@@ -280,9 +312,12 @@ export const AddTaskDialog: React.FC<AddTaskDialogProps> = ({
     if (projectInitialized) return;
     const nextStart = initialStartDate ?? defaultStart;
     const nextEnd = initialEndDate ?? nextStart;
-    const nextProjectId = initialProjectId === null
+    const initialProjectValue = initialProjectId === null
       ? 'none'
       : (initialProjectId ?? activeProjects[0]?.id ?? 'none');
+    const nextProjectId = noProjectDisabled && initialProjectValue === 'none'
+      ? (activeProjects[0]?.id ?? 'none')
+      : initialProjectValue;
     const nextAssignees = normalizeAssigneeSelection(initialAssigneeIds)
       .filter((id) => selectableAssignees.some((assignee) => assignee.id === id));
 
@@ -290,6 +325,7 @@ export const AddTaskDialog: React.FC<AddTaskDialogProps> = ({
     setEndDate(nextEnd);
     setProjectId(nextProjectId);
     setAssigneeIds(nextAssignees);
+    setStatusId(defaultStatusId);
     setRepeatFrequency('none');
     setRepeatEnds('never');
     repeatUntilAutoRef.current = true;
@@ -307,6 +343,8 @@ export const AddTaskDialog: React.FC<AddTaskDialogProps> = ({
     initialProjectId,
     initialStartDate,
     normalizeAssigneeSelection,
+    defaultStatusId,
+    noProjectDisabled,
     open,
     projectInitialized,
     selectableAssignees,
@@ -366,7 +404,7 @@ export const AddTaskDialog: React.FC<AddTaskDialogProps> = ({
                   <SelectValue placeholder={t`Select project`} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="none">{t`No project`}</SelectItem>
+                  <SelectItem value="none" disabled={noProjectDisabled}>{t`No project`}</SelectItem>
                   {activeProjects.map(p => (
                     <SelectItem key={p.id} value={p.id}>
                       <div className="flex items-center gap-2">

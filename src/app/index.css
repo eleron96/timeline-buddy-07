@@ -410,6 +410,10 @@
   animation: task-highlight-pulse 1.05s ease-out infinite;
 }
 
+.timeline-date-attention {
+  animation: task-highlight-pulse 1.05s ease-out infinite;
+}
+
 .task-highlight-mode .task-bar {
   opacity: 0.15;
   transition: opacity 0.2s ease;

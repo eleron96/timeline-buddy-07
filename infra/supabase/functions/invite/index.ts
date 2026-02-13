@@ -3,16 +3,14 @@ import {
   APP_REALM_ROLES,
   type AppRealmRole,
   ensureKeycloakReady,
-  ensureKeycloakUser,
-  ensureRealmRoles,
+  findKeycloakUserByEmail,
   getKeycloakConfig,
-  sendKeycloakExecuteActionsEmail,
   syncUserRealmRoles,
 } from "../_shared/keycloak.ts";
 import {
   createSupabaseClients,
   ensureKeycloakIdentityLink,
-  ensureSupabaseUserByEmail,
+  findAuthUserByEmail,
   getRoleSnapshotMap,
   type WorkspaceRole,
 } from "../_shared/supabaseAuth.ts";
@@ -20,6 +18,10 @@ import {
 const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
 const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const appUrl = (Deno.env.get("APP_URL") ?? "http://localhost:5173").replace(/\/+$/, "");
+const inviteTtlDays = Number(Deno.env.get("INVITE_TTL_DAYS") ?? "14");
+const inviteTtlMs = Number.isFinite(inviteTtlDays) && inviteTtlDays > 0
+  ? Math.floor(inviteTtlDays * 24 * 60 * 60 * 1000)
+  : 14 * 24 * 60 * 60 * 1000;
 
 const resendApiKey = Deno.env.get("RESEND_API_KEY") ?? "";
 const resendFrom = Deno.env.get("RESEND_FROM") ?? "Workspace <no-reply@example.com>";
@@ -40,6 +42,21 @@ const workspaceRoleToRealmRole: Record<WorkspaceRole, AppRealmRole> = {
   admin: "app_workspace_admin",
 };
 
+interface InvitePayload {
+  action?: "create" | "accept" | "list" | "decline" | "listSent" | "cancel";
+  workspaceId?: string;
+  email?: string;
+  role?: WorkspaceRole;
+  groupId?: string | null;
+  token?: string;
+  pendingOnly?: boolean;
+}
+
+interface AuthInviteUser {
+  id: string;
+  email?: string | null;
+}
+
 const jsonResponse = (body: Record<string, unknown>, status = 200) =>
   new Response(JSON.stringify(body), {
     status,
@@ -53,6 +70,9 @@ const readJson = async <T>(req: Request) => {
     return { error: "Invalid JSON body" };
   }
 };
+
+const normalizeEmail = (value: string) => value.trim().toLowerCase();
+const createInviteExpiryIso = () => new Date(Date.now() + inviteTtlMs).toISOString();
 
 const getAuthUser = async (req: Request) => {
   const authHeader = req.headers.get("Authorization") ?? "";
@@ -115,8 +135,8 @@ const buildDesiredRealmRoles = async (userId: string) => {
   return { roles: Array.from(roles) };
 };
 
-const ensureLinkedUserByEmail = async (email: string) => {
-  const normalizedEmail = email.trim().toLowerCase();
+const findExistingLinkedUserByEmail = async (email: string) => {
+  const normalizedEmail = normalizeEmail(email);
   if (!normalizedEmail) {
     return { error: "Email is required." };
   }
@@ -126,25 +146,18 @@ const ensureLinkedUserByEmail = async (email: string) => {
     return { error: keycloakReady.error };
   }
 
-  const rolesResult = await ensureRealmRoles(keycloakConfig, APP_REALM_ROLES);
-  if ("error" in rolesResult) {
-    return { error: rolesResult.error };
+  const keycloakResult = await findKeycloakUserByEmail(keycloakConfig, normalizedEmail);
+  if ("error" in keycloakResult) {
+    return { error: keycloakResult.error };
   }
 
-  const keycloakResult = await ensureKeycloakUser(keycloakConfig, {
-    email: normalizedEmail,
-    enabled: true,
-    emailVerified: true,
-    requiredActions: ["UPDATE_PASSWORD"],
-  });
-
-  if ("error" in keycloakResult || !keycloakResult.user) {
-    return { error: "error" in keycloakResult ? keycloakResult.error : "Failed to resolve Keycloak user." };
+  const authResult = await findAuthUserByEmail(supabaseAdmin, normalizedEmail);
+  if ("error" in authResult) {
+    return { error: authResult.error };
   }
 
-  const authResult = await ensureSupabaseUserByEmail(supabaseAdmin, normalizedEmail);
-  if ("error" in authResult || !authResult.user) {
-    return { error: "error" in authResult ? authResult.error : "Failed to resolve Supabase user." };
+  if (!keycloakResult.user || !authResult.user) {
+    return { missing: true };
   }
 
   const linkResult = await ensureKeycloakIdentityLink(
@@ -165,36 +178,30 @@ const ensureLinkedUserByEmail = async (email: string) => {
     userId: authResult.user.id,
     email: normalizedEmail,
     keycloakUserId: keycloakResult.user.id,
-    keycloakCreated: keycloakResult.created,
   };
 };
 
-const handleInvite = async (req: Request) => {
-  if (req.method !== "POST") {
-    return jsonResponse({ error: "Method not allowed" }, 405);
+const ensureWorkspaceAdmin = async (workspaceId: string, userId: string) => {
+  const { data: adminMembership, error: membershipError } = await supabaseAdmin
+    .from("workspace_members")
+    .select("role")
+    .eq("workspace_id", workspaceId)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (membershipError || adminMembership?.role !== "admin") {
+    return { error: "Forbidden" };
   }
 
-  if (!supabaseUrl || !serviceRoleKey) {
-    return jsonResponse({ error: "Missing Supabase env vars" }, 500);
-  }
+  return {};
+};
 
-  const authResult = await getAuthUser(req);
-  if ("error" in authResult) {
-    return jsonResponse({ error: authResult.error }, authResult.status ?? 401);
-  }
-
-  const { data: payload, error } = await readJson<{
-    workspaceId?: string;
-    email?: string;
-    role?: WorkspaceRole;
-    groupId?: string | null;
-  }>(req);
-  if (error) {
-    return jsonResponse({ error }, 400);
-  }
-
+const handleCreateInvite = async (
+  authUser: AuthInviteUser,
+  payload: InvitePayload,
+) => {
   const workspaceId = payload.workspaceId?.trim();
-  const email = payload.email?.trim().toLowerCase();
+  const email = payload.email ? normalizeEmail(payload.email) : "";
   const role = payload.role ?? "viewer";
   const groupId = payload.groupId?.trim() || null;
 
@@ -206,15 +213,9 @@ const handleInvite = async (req: Request) => {
     return jsonResponse({ error: "Invalid role" }, 400);
   }
 
-  const { data: adminMembership, error: membershipError } = await supabaseAdmin
-    .from("workspace_members")
-    .select("role")
-    .eq("workspace_id", workspaceId)
-    .eq("user_id", authResult.user.id)
-    .maybeSingle();
-
-  if (membershipError || adminMembership?.role !== "admin") {
-    return jsonResponse({ error: "Forbidden" }, 403);
+  const adminCheck = await ensureWorkspaceAdmin(workspaceId, authUser.id);
+  if ("error" in adminCheck) {
+    return jsonResponse({ error: adminCheck.error }, 403);
   }
 
   const { data: workspace } = await supabaseAdmin
@@ -236,44 +237,145 @@ const handleInvite = async (req: Request) => {
     }
   }
 
-  const linked = await ensureLinkedUserByEmail(email);
+  const linked = await findExistingLinkedUserByEmail(email);
   if ("error" in linked) {
     return jsonResponse({ error: linked.error }, 400);
   }
+  if ("missing" in linked && linked.missing) {
+    await supabaseAdmin
+      .from("workspace_invites")
+      .update({ revoked_at: new Date().toISOString(), revoked_reason: "canceled" })
+      .eq("workspace_id", workspaceId)
+      .eq("email_normalized", email)
+      .is("accepted_at", null)
+      .is("revoked_at", null);
 
-  const { error: membershipInsertError } = await supabaseAdmin
+    return jsonResponse({
+      error: "User with this email is not registered yet. Ask them to sign in first, then send invite again.",
+    }, 404);
+  }
+
+  const { data: existingMembership } = await supabaseAdmin
     .from("workspace_members")
-    .upsert({ workspace_id: workspaceId, user_id: linked.userId, role, group_id: groupId });
+    .select("workspace_id")
+    .eq("workspace_id", workspaceId)
+    .eq("user_id", linked.userId)
+    .maybeSingle();
 
-  if (membershipInsertError) {
-    return jsonResponse({ error: membershipInsertError.message }, 400);
-  }
-
-  const desiredRolesResult = await buildDesiredRealmRoles(linked.userId);
-  if ("error" in desiredRolesResult) {
-    return jsonResponse({ error: desiredRolesResult.error }, 400);
-  }
-
-  const roleSyncResult = await syncUserRealmRoles(
-    keycloakConfig,
-    linked.keycloakUserId,
-    desiredRolesResult.roles,
-    APP_REALM_ROLES,
-  );
-
-  if ("error" in roleSyncResult) {
-    return jsonResponse({ error: roleSyncResult.error }, 400);
+  if (existingMembership) {
+    return jsonResponse({
+      success: true,
+      warning: "User already has access to this workspace.",
+    });
   }
 
   const warnings: string[] = [];
-  if (linked.keycloakCreated) {
-    const actionsResult = await sendKeycloakExecuteActionsEmail(keycloakConfig, linked.keycloakUserId, ["UPDATE_PASSWORD"]);
-    if ("error" in actionsResult) {
-      warnings.push(`Keycloak setup email was not sent: ${actionsResult.error}`);
+
+  const nowIso = new Date().toISOString();
+  const expiresAt = createInviteExpiryIso();
+
+  const { error: revokeExpiredError } = await supabaseAdmin
+    .from("workspace_invites")
+    .update({ revoked_at: nowIso, revoked_reason: "expired" })
+    .eq("workspace_id", workspaceId)
+    .eq("email_normalized", email)
+    .is("accepted_at", null)
+    .is("revoked_at", null)
+    .lt("expires_at", nowIso);
+
+  if (revokeExpiredError) {
+    return jsonResponse({ error: revokeExpiredError.message }, 400);
+  }
+
+  const { data: existingInvite, error: existingInviteError } = await supabaseAdmin
+    .from("workspace_invites")
+    .select("id, token")
+    .eq("workspace_id", workspaceId)
+    .eq("email_normalized", email)
+    .is("accepted_at", null)
+    .is("revoked_at", null)
+    .gt("expires_at", nowIso)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (existingInviteError) {
+    return jsonResponse({ error: existingInviteError.message }, 400);
+  }
+
+  let inviteToken = "";
+  if (existingInvite?.id) {
+    const { error: inviteUpdateError } = await supabaseAdmin
+      .from("workspace_invites")
+      .update({
+        role,
+        group_id: groupId,
+        invited_by: authUser.id,
+        expires_at: expiresAt,
+      })
+      .eq("id", existingInvite.id);
+
+    if (inviteUpdateError) {
+      return jsonResponse({ error: inviteUpdateError.message }, 400);
+    }
+    inviteToken = existingInvite.token;
+  } else {
+    const { data: insertedInvite, error: inviteInsertError } = await supabaseAdmin
+      .from("workspace_invites")
+      .insert({
+        workspace_id: workspaceId,
+        email,
+        email_normalized: email,
+        role,
+        group_id: groupId,
+        invited_by: authUser.id,
+        expires_at: expiresAt,
+      })
+      .select("token")
+      .single();
+
+    if (inviteInsertError) {
+      const { data: racedInvite, error: racedInviteError } = await supabaseAdmin
+        .from("workspace_invites")
+        .select("id, token")
+        .eq("workspace_id", workspaceId)
+        .eq("email_normalized", email)
+        .is("accepted_at", null)
+        .is("revoked_at", null)
+        .gt("expires_at", nowIso)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (racedInviteError || !racedInvite?.id) {
+        return jsonResponse({ error: inviteInsertError.message }, 400);
+      }
+
+      const { error: racedUpdateError } = await supabaseAdmin
+        .from("workspace_invites")
+        .update({
+          role,
+          group_id: groupId,
+          invited_by: authUser.id,
+          expires_at: expiresAt,
+        })
+        .eq("id", racedInvite.id);
+
+      if (racedUpdateError) {
+        return jsonResponse({ error: racedUpdateError.message }, 400);
+      }
+
+      inviteToken = racedInvite.token;
+    } else {
+      inviteToken = insertedInvite?.token ?? "";
     }
   }
 
-  const inviteLink = `${appUrl}/invite/${workspaceId}`;
+  if (!inviteToken) {
+    return jsonResponse({ error: "Failed to generate invite token." }, 500);
+  }
+
+  const inviteLink = `${appUrl}/invite/${inviteToken}`;
   const workspaceName = workspace?.name ?? "workspace";
   const emailResult = await sendInviteEmail(email, workspaceName, inviteLink);
   if (!emailResult.sent && emailResult.warning) {
@@ -283,8 +385,462 @@ const handleInvite = async (req: Request) => {
   return jsonResponse({
     success: true,
     actionLink: inviteLink,
+    inviteEmail: email,
+    inviteStatus: "pending",
     warning: warnings.length > 0 ? warnings.join(" ") : undefined,
   });
+};
+
+const handleAcceptInvite = async (
+  authUser: AuthInviteUser,
+  payload: InvitePayload,
+) => {
+  const token = payload.token?.trim() ?? "";
+  if (!token) {
+    return jsonResponse({ error: "Invite token is required." }, 400);
+  }
+
+  const userEmail = normalizeEmail(authUser.email ?? "");
+  if (!userEmail) {
+    return jsonResponse({ error: "Authenticated user email is missing." }, 400);
+  }
+
+  const { data: invite, error: inviteError } = await supabaseAdmin
+    .from("workspace_invites")
+    .select("id, workspace_id, email_normalized, role, group_id, expires_at, accepted_at, revoked_at")
+    .eq("token", token)
+    .maybeSingle();
+
+  if (inviteError) {
+    return jsonResponse({ error: inviteError.message }, 400);
+  }
+
+  if (!invite) {
+    return jsonResponse({ error: "Invite not found." }, 404);
+  }
+
+  if (invite.revoked_at) {
+    return jsonResponse({ error: "Invite is no longer valid." }, 400);
+  }
+
+  if (invite.accepted_at) {
+    const { data: existingMembership } = await supabaseAdmin
+      .from("workspace_members")
+      .select("workspace_id")
+      .eq("workspace_id", invite.workspace_id)
+      .eq("user_id", authUser.id)
+      .maybeSingle();
+
+    if (existingMembership) {
+      return jsonResponse({ success: true, workspaceId: invite.workspace_id });
+    }
+    return jsonResponse({ error: "Invite already accepted." }, 400);
+  }
+
+  if (new Date(invite.expires_at).getTime() <= Date.now()) {
+    await supabaseAdmin
+      .from("workspace_invites")
+      .update({ revoked_at: new Date().toISOString(), revoked_reason: "expired" })
+      .eq("id", invite.id)
+      .is("revoked_at", null);
+    return jsonResponse({ error: "Invite expired." }, 400);
+  }
+
+  if (invite.email_normalized !== userEmail) {
+    return jsonResponse({ error: "This invite belongs to a different email." }, 403);
+  }
+
+  let resolvedGroupId = invite.group_id as string | null;
+  if (resolvedGroupId) {
+    const { data: group, error: groupError } = await supabaseAdmin
+      .from("member_groups")
+      .select("id")
+      .eq("id", resolvedGroupId)
+      .eq("workspace_id", invite.workspace_id)
+      .maybeSingle();
+    if (groupError || !group) {
+      resolvedGroupId = null;
+    }
+  }
+
+  const { error: membershipInsertError } = await supabaseAdmin
+    .from("workspace_members")
+    .upsert({
+      workspace_id: invite.workspace_id,
+      user_id: authUser.id,
+      role: invite.role as WorkspaceRole,
+      group_id: resolvedGroupId,
+    });
+
+  if (membershipInsertError) {
+    return jsonResponse({ error: membershipInsertError.message }, 400);
+  }
+
+  const { error: acceptedUpdateError } = await supabaseAdmin
+    .from("workspace_invites")
+    .update({ accepted_at: new Date().toISOString() })
+    .eq("id", invite.id)
+    .is("accepted_at", null);
+
+  if (acceptedUpdateError) {
+    return jsonResponse({ error: acceptedUpdateError.message }, 400);
+  }
+
+  const warnings: string[] = [];
+  const linkedSelf = await findExistingLinkedUserByEmail(userEmail);
+  if (
+    "error" in linkedSelf
+    || ("missing" in linkedSelf && linkedSelf.missing)
+    || linkedSelf.userId !== authUser.id
+  ) {
+    warnings.push("Role sync skipped for this invite acceptance.");
+  } else {
+    const desiredRolesResult = await buildDesiredRealmRoles(linkedSelf.userId);
+    if ("error" in desiredRolesResult) {
+      warnings.push(`Role sync skipped: ${desiredRolesResult.error}`);
+    } else {
+      const roleSyncResult = await syncUserRealmRoles(
+        keycloakConfig,
+        linkedSelf.keycloakUserId,
+        desiredRolesResult.roles,
+        APP_REALM_ROLES,
+      );
+      if ("error" in roleSyncResult) {
+        warnings.push(`Role sync skipped: ${roleSyncResult.error}`);
+      }
+    }
+  }
+
+  return jsonResponse({
+    success: true,
+    workspaceId: invite.workspace_id,
+    warning: warnings.length > 0 ? warnings.join(" ") : undefined,
+  });
+};
+
+const handleListInvites = async (authUser: AuthInviteUser) => {
+  const userEmail = normalizeEmail(authUser.email ?? "");
+  if (!userEmail) {
+    return jsonResponse({ error: "Authenticated user email is missing." }, 400);
+  }
+
+  const nowIso = new Date().toISOString();
+  const { error: revokeExpiredError } = await supabaseAdmin
+    .from("workspace_invites")
+    .update({ revoked_at: nowIso, revoked_reason: "expired" })
+    .eq("email_normalized", userEmail)
+    .is("accepted_at", null)
+    .is("revoked_at", null)
+    .lt("expires_at", nowIso);
+
+  if (revokeExpiredError) {
+    return jsonResponse({ error: revokeExpiredError.message }, 400);
+  }
+
+  const { data: inviteRows, error: invitesError } = await supabaseAdmin
+    .from("workspace_invites")
+    .select("token, workspace_id, role, created_at, expires_at, invited_by")
+    .eq("email_normalized", userEmail)
+    .is("accepted_at", null)
+    .is("revoked_at", null)
+    .gt("expires_at", nowIso)
+    .order("created_at", { ascending: false });
+
+  if (invitesError) {
+    return jsonResponse({ error: invitesError.message }, 400);
+  }
+
+  const workspaceIds = Array.from(
+    new Set(
+      (inviteRows ?? [])
+        .map((invite) => invite.workspace_id)
+        .filter((id): id is string => typeof id === "string" && id.length > 0),
+    ),
+  );
+
+  const inviterIds = Array.from(
+    new Set(
+      (inviteRows ?? [])
+        .map((invite) => invite.invited_by)
+        .filter((id): id is string => typeof id === "string" && id.length > 0),
+    ),
+  );
+
+  let workspaceNameMap = new Map<string, string>();
+  if (workspaceIds.length > 0) {
+    const { data: workspaceRows, error: workspaceError } = await supabaseAdmin
+      .from("workspaces")
+      .select("id, name")
+      .in("id", workspaceIds);
+    if (workspaceError) {
+      return jsonResponse({ error: workspaceError.message }, 400);
+    }
+    workspaceNameMap = new Map(
+      (workspaceRows ?? [])
+        .filter((row): row is { id: string; name: string } => typeof row.id === "string")
+        .map((row) => [row.id, row.name ?? "Workspace"]),
+    );
+  }
+
+  let inviterMap = new Map<string, { display_name: string | null; email: string | null }>();
+  if (inviterIds.length > 0) {
+    const { data: inviterRows, error: inviterError } = await supabaseAdmin
+      .from("profiles")
+      .select("id, display_name, email")
+      .in("id", inviterIds);
+    if (inviterError) {
+      return jsonResponse({ error: inviterError.message }, 400);
+    }
+    inviterMap = new Map(
+      (inviterRows ?? [])
+        .filter((row): row is { id: string; display_name: string | null; email: string | null } => (
+          typeof row.id === "string"
+        ))
+        .map((row) => [row.id, { display_name: row.display_name ?? null, email: row.email ?? null }]),
+    );
+  }
+
+  const invites = (inviteRows ?? []).map((invite) => {
+    const inviter = inviterMap.get(invite.invited_by);
+    return {
+      token: invite.token,
+      workspaceId: invite.workspace_id,
+      workspaceName: workspaceNameMap.get(invite.workspace_id) ?? "Workspace",
+      role: invite.role,
+      inviterDisplayName: inviter?.display_name ?? null,
+      inviterEmail: inviter?.email ?? null,
+      createdAt: invite.created_at,
+      expiresAt: invite.expires_at,
+    };
+  });
+
+  return jsonResponse({ success: true, invites });
+};
+
+const handleDeclineInvite = async (
+  authUser: AuthInviteUser,
+  payload: InvitePayload,
+) => {
+  const token = payload.token?.trim() ?? "";
+  if (!token) {
+    return jsonResponse({ error: "Invite token is required." }, 400);
+  }
+
+  const userEmail = normalizeEmail(authUser.email ?? "");
+  if (!userEmail) {
+    return jsonResponse({ error: "Authenticated user email is missing." }, 400);
+  }
+
+  const { data: invite, error: inviteError } = await supabaseAdmin
+    .from("workspace_invites")
+    .select("id, email_normalized, accepted_at, revoked_at")
+    .eq("token", token)
+    .maybeSingle();
+
+  if (inviteError) {
+    return jsonResponse({ error: inviteError.message }, 400);
+  }
+
+  if (!invite) {
+    return jsonResponse({ error: "Invite not found." }, 404);
+  }
+
+  if (invite.email_normalized !== userEmail) {
+    return jsonResponse({ error: "This invite belongs to a different email." }, 403);
+  }
+
+  if (invite.accepted_at) {
+    return jsonResponse({ error: "Invite already accepted." }, 400);
+  }
+
+  if (invite.revoked_at) {
+    return jsonResponse({ success: true });
+  }
+
+  const { error: revokeError } = await supabaseAdmin
+    .from("workspace_invites")
+    .update({ revoked_at: new Date().toISOString(), revoked_reason: "declined" })
+    .eq("id", invite.id)
+    .is("revoked_at", null);
+
+  if (revokeError) {
+    return jsonResponse({ error: revokeError.message }, 400);
+  }
+
+  return jsonResponse({ success: true });
+};
+
+const handleListSentInvites = async (authUser: AuthInviteUser, payload: InvitePayload) => {
+  const nowIso = new Date().toISOString();
+  const createdSinceIso = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+  const pendingOnly = payload.pendingOnly === true;
+
+  const query = supabaseAdmin
+    .from("workspace_invites")
+    .select("token, workspace_id, email, role, created_at, expires_at, accepted_at, revoked_at, revoked_reason")
+    .eq("invited_by", authUser.id)
+    .gte("created_at", createdSinceIso)
+    .order("created_at", { ascending: false });
+
+  const { data: inviteRows, error: invitesError } = await (pendingOnly
+    ? query
+      .is("accepted_at", null)
+      .is("revoked_at", null)
+      .gt("expires_at", nowIso)
+    : query);
+
+  if (invitesError) {
+    return jsonResponse({ error: invitesError.message }, 400);
+  }
+
+  const workspaceIds = Array.from(
+    new Set(
+      (inviteRows ?? [])
+        .map((invite) => invite.workspace_id)
+        .filter((id): id is string => typeof id === "string" && id.length > 0),
+    ),
+  );
+
+  let workspaceNameMap = new Map<string, string>();
+  if (workspaceIds.length > 0) {
+    const { data: workspaceRows, error: workspaceError } = await supabaseAdmin
+      .from("workspaces")
+      .select("id, name")
+      .in("id", workspaceIds);
+    if (workspaceError) {
+      return jsonResponse({ error: workspaceError.message }, 400);
+    }
+    workspaceNameMap = new Map(
+      (workspaceRows ?? [])
+        .filter((row): row is { id: string; name: string } => typeof row.id === "string")
+        .map((row) => [row.id, row.name ?? "Workspace"]),
+    );
+  }
+
+  const invites = (inviteRows ?? []).map((invite) => {
+    const revokedReason = typeof invite.revoked_reason === "string" ? invite.revoked_reason : null;
+    let status: "pending" | "accepted" | "declined" | "canceled" | "expired" = "pending";
+    let respondedAt: string | null = null;
+
+    if (invite.accepted_at) {
+      status = "accepted";
+      respondedAt = invite.accepted_at;
+    } else if (invite.revoked_at) {
+      status = revokedReason === "declined"
+        ? "declined"
+        : revokedReason === "expired"
+          ? "expired"
+          : "canceled";
+      respondedAt = invite.revoked_at;
+    } else if (new Date(invite.expires_at).getTime() <= Date.now()) {
+      status = "expired";
+      respondedAt = invite.expires_at;
+    }
+
+    const isPending = status === "pending" && invite.expires_at > nowIso;
+
+    return {
+      token: invite.token,
+      workspaceId: invite.workspace_id,
+      workspaceName: workspaceNameMap.get(invite.workspace_id) ?? "Workspace",
+      email: invite.email,
+      role: invite.role,
+      status,
+      isPending,
+      createdAt: invite.created_at,
+      respondedAt,
+      expiresAt: invite.expires_at,
+    };
+  });
+
+  return jsonResponse({ success: true, invites });
+};
+
+const handleCancelInvite = async (
+  authUser: AuthInviteUser,
+  payload: InvitePayload,
+) => {
+  const token = payload.token?.trim() ?? "";
+  if (!token) {
+    return jsonResponse({ error: "Invite token is required." }, 400);
+  }
+
+  const { data: invite, error: inviteError } = await supabaseAdmin
+    .from("workspace_invites")
+    .select("id, invited_by, accepted_at, revoked_at")
+    .eq("token", token)
+    .maybeSingle();
+
+  if (inviteError) {
+    return jsonResponse({ error: inviteError.message }, 400);
+  }
+
+  if (!invite) {
+    return jsonResponse({ error: "Invite not found." }, 404);
+  }
+
+  if (invite.invited_by !== authUser.id) {
+    return jsonResponse({ error: "Forbidden" }, 403);
+  }
+
+  if (invite.accepted_at) {
+    return jsonResponse({ error: "Invite already accepted." }, 400);
+  }
+
+  if (invite.revoked_at) {
+    return jsonResponse({ success: true });
+  }
+
+  const { error: revokeError } = await supabaseAdmin
+    .from("workspace_invites")
+    .update({ revoked_at: new Date().toISOString(), revoked_reason: "canceled" })
+    .eq("id", invite.id)
+    .is("revoked_at", null);
+
+  if (revokeError) {
+    return jsonResponse({ error: revokeError.message }, 400);
+  }
+
+  return jsonResponse({ success: true });
+};
+
+const handleInvite = async (req: Request) => {
+  if (req.method !== "POST") {
+    return jsonResponse({ error: "Method not allowed" }, 405);
+  }
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    return jsonResponse({ error: "Missing Supabase env vars" }, 500);
+  }
+
+  const authResult = await getAuthUser(req);
+  if ("error" in authResult) {
+    return jsonResponse({ error: authResult.error }, authResult.status ?? 401);
+  }
+
+  const { data: payload, error } = await readJson<InvitePayload>(req);
+  if (error) {
+    return jsonResponse({ error }, 400);
+  }
+
+  const action = payload.action ?? "create";
+  if (action === "accept") {
+    return handleAcceptInvite(authResult.user, payload);
+  }
+  if (action === "list") {
+    return handleListInvites(authResult.user);
+  }
+  if (action === "listSent") {
+    return handleListSentInvites(authResult.user, payload);
+  }
+  if (action === "decline") {
+    return handleDeclineInvite(authResult.user, payload);
+  }
+  if (action === "cancel") {
+    return handleCancelInvite(authResult.user, payload);
+  }
+
+  return handleCreateInvite(authResult.user, payload);
 };
 
 export const handler = async (req: Request) => {

@@ -1,248 +1,365 @@
 # Timeline Planner
 
-Веб‑приложение для командного планирования задач на таймлайне с проектами, участниками, виджетами и админ‑панелью. Фронтенд на Vite/React/TypeScript, бэкенд и авторизация — Supabase, интеграция через Edge Functions.
+Timeline Planner — приложение для командного планирования задач на таймлайне.
 
-## Возможности
+Стек проекта:
+- Frontend: `Vite + React + TypeScript + Zustand + TanStack Query`
+- Backend: `Supabase` (`Postgres + GoTrue + PostgREST + Edge Functions`)
+- Identity/SSO: `Keycloak` + `oauth2-proxy`
+- Миграции БД: `Liquibase`
+- Резервное копирование: отдельный `backup-service`
 
-- Таймлайн задач с двумя режимами отображения (timeline / calendar), фильтрами и быстрым созданием задач.
-- Проекты с цветами, архивированием и просмотром задач проекта.
-- Сотрудники: список участников, их задачи, массовые действия, фильтры и история.
-- Дашборд с настраиваемыми виджетами и автосохранением раскладки.
-- Роли и доступ: viewer/editor/admin, инвайты через Keycloak + ссылка на вход.
-- Настройки воркспейса: статусы, типы задач, теги, шаблоны, удаление.
-- Супер‑админка: пользователи, воркспейсы, супер‑админы, бэкапы.
-- SSO через Keycloak (OIDC) с брендированной страницей логина.
+## Что уже реализовано
 
-## Архитектура и ключевые модули
+- Таймлайн задач, календарный режим, панель деталей задачи.
+- Проекты, участники, роли workspace (`viewer/editor/admin`).
+- Invite-поток через Keycloak/Supabase identity link.
+- Super-admin консоль:
+  - обзор пользователей (без CRUD пользователей),
+  - управление workspace,
+  - управление backup/restore.
+- Полноценные миграции через Liquibase (`DATABASECHANGELOG`).
+- Загрузка изображений в описание задачи:
+  - кнопкой,
+  - вставкой из буфера,
+  - drag-and-drop в редактор.
+- Отдельное хранение task media (`public.task_media`) + квоты по пользователю и workspace.
 
-- `src/app/App.tsx` — маршрутизация и защита страниц.
-- `src/features/planner` — таймлайн, задачи, фильтры, панель деталей.
-- `src/features/dashboard` — дашборд и виджеты аналитики.
-- `src/features/projects` — список проектов и задачи проекта.
-- `src/features/members` — участники и их задачи/доступ.
-- `src/features/workspace` — настройки воркспейса и управление участниками.
-- `infra/supabase` — SQL-миграции, Liquibase changelog и Edge Functions (`admin`, `invite`).
-- `infra/backup-service` — сервис бэкапов (доступ через `/backup`).
+## Важные правила текущей архитектуры
+
+- Логин в приложение идёт через `oauth2-proxy` и Keycloak.
+- Жизненный цикл пользователей (create/edit/delete/password) управляется в **Keycloak Admin Console**.
+- Админка приложения показывает пользователей как обзор (доступы + storage), но не заменяет IAM.
+
+## Структура репозитория
+
+- `src/` — frontend.
+- `infra/docker-compose.yml` — локальный dev-контур (Vite в контейнере).
+- `infra/docker-compose.prod.yml` — production-контур (статическая сборка + nginx).
+- `infra/supabase/`:
+  - `migrations/` — SQL миграции,
+  - `liquibase/changelog-master.xml` — мастер-чанжлог,
+  - `functions/` — Edge Functions (`admin`, `invite`, `task-media`, `main`),
+  - `nginx.conf` — gateway для `/auth/v1`, `/rest/v1`, `/functions/v1`, `/backup`.
+- `infra/keycloak/realm/timeline-realm.json` — импорт realm.
+- `infra/backup-service/` — сервис backup/restore.
+- `infra/scripts/dev-compose.sh` — локальный запуск полного контура.
+- `infra/scripts/prod-compose.sh` — production запуск с pre-migration backup.
 
 ## Требования
 
-- Node.js 20+
-- Docker Desktop (для локального Supabase через Compose)
-- Supabase CLI (опционально, для локального Supabase без Compose)
+- `Node.js 20+`
+- `Docker Desktop`
+- (опционально) `Supabase CLI` для режима `dev:local`
 
-## Быстрый старт (Docker Compose)
+## Быстрый старт (рекомендуется)
 
-Самый простой способ поднять весь стек локально.
+### 1. Локальный полный контур
 
-```sh
+```bash
 make up
 ```
 
-Что произойдет:
-- Поднимется Supabase‑стек (db/auth/rest/functions/gateway), фронтенд и `oauth2-proxy`.
-- Поднимется Keycloak (`keycloak-db` + `keycloak`) для входа через OIDC.
-- `.env` будет сгенерирован автоматически (JWT/ANON/SERVICE роли и `OAUTH2_PROXY_COOKIE_SECRET`).
-- Данные сохраняются в volume `supabase_db_data`.
+Что делает команда:
+- создаёт/обновляет `.env` (если нужно),
+- генерирует `JWT_SECRET`, `ANON_KEY`, `SERVICE_ROLE_KEY`,
+- генерирует `OAUTH2_PROXY_COOKIE_SECRET` (если пусто),
+- поднимает `db`, `keycloak`, `auth`, `rest`, `functions`, `backup`, `gateway`, `web`, `oauth2-proxy`,
+- применяет Liquibase миграции,
+- вызывает bootstrap sync (`action=bootstrap.sync`) для синхронизации Keycloak/Supabase.
 
-Остановить контейнеры (данные сохраняются):
+### 2. URLs
 
-```sh
+- Приложение: `http://localhost:5173`
+- Keycloak: `http://localhost:8081`
+- Supabase Gateway health: `http://localhost:8080/health`
+- Supabase Auth health: `http://localhost:8080/auth/v1/health`
+- Postgres: `localhost:54322`
+
+### 3. Остановка и логи
+
+```bash
 make down
-```
-
-Логи контейнеров:
-
-```sh
 make logs
 ```
 
-Сервис доступен:
-- Frontend: `http://localhost:5173`
-- Supabase Gateway health: `http://localhost:8080/health`
-- Supabase Auth health: `http://localhost:8080/auth/v1/health`
-- Keycloak: `http://localhost:8081`
-- Postgres: `localhost:54322`
+## Production запуск
 
-## Production запуск (build + static)
-
-Для сервера используйте production‑контур: фронтенд собирается через `vite build` и раздается через `nginx` как статические файлы.
-
-```sh
+```bash
 make up-prod
 ```
 
-Что произойдет:
-- Поднимутся `db/keycloak-db/keycloak/auth/rest/functions/backup/gateway/web/oauth2-proxy`.
-- Перед миграциями создастся страховочный backup `pre-migrate-*.dump` (если `AUTO_PRE_MIGRATION_BACKUP=true`).
-- Применятся Liquibase-миграции (`DATABASECHANGELOG`/`DATABASECHANGELOGLOCK`) с контролем checksums и блокировкой параллельных запусков.
-- Соберется фронтенд‑образ и поднимутся `web` + `oauth2-proxy`.
-- В production отключена открытая регистрация: вход только по инвайтам.
-- Резервный super admin будет создан автоматически из `RESERVE_ADMIN_EMAIL`/`RESERVE_ADMIN_PASSWORD`.
+Особенности `up-prod`:
+- требует заполненный `.env`,
+- проверяет обязательные переменные invite-only режима,
+- запускает pre-migration backup (если `AUTO_PRE_MIGRATION_BACKUP=true`),
+- применяет Liquibase миграции,
+- собирает frontend образ (`infra/web/Dockerfile`) и запускает `web + oauth2-proxy`.
 
-Остановить production‑контур:
+Остановка/логи:
 
-```sh
+```bash
 make down-prod
-```
-
-Логи production‑контейнеров:
-
-```sh
 make logs-prod
 ```
 
-Важно для обновлений:
-- `index.html` отдается без кеша.
-- ассеты в `/assets` кешируются долго (immutable).
-- после деплоя пользователи получают новый функционал после перезагрузки страницы.
+## Обязательные переменные для production
 
-Авторизация:
-- Frontend на `http://localhost:5173` идет через `oauth2-proxy` (OIDC в Keycloak).
-- Страница `/auth` работает в режиме Keycloak-only.
-- Локальные формы логина/регистрации/сброса пароля отключены.
+Минимально:
+- `RESERVE_ADMIN_EMAIL`
+- `RESERVE_ADMIN_PASSWORD`
+- `KEYCLOAK_ADMIN`
+- `KEYCLOAK_ADMIN_PASSWORD`
+- `OAUTH2_PROXY_COOKIE_SECRET` (может сгенерироваться скриптом, но лучше задавать явно)
 
-## Локальный запуск с Supabase CLI
+Шаблон: `.env.example`
 
-Используйте, если хотите локальный Supabase вне Docker Compose.
+## Основные переменные окружения
 
-```sh
-npm install
-npm run dev:local
-```
+### Auth / Keycloak / oauth2-proxy
 
-Скрипт:
-- запускает `supabase start` в `infra/`;
-- записывает `VITE_SUPABASE_URL` и `VITE_SUPABASE_ANON_KEY` в `.env`;
-- поднимает `supabase functions serve invite`;
-- стартует фронтенд (`npm run dev`).
+- `GOTRUE_EXTERNAL_KEYCLOAK_*` — OIDC провайдер для Supabase Auth.
+- `KEYCLOAK_INTERNAL_URL`, `KEYCLOAK_REALM`, `KEYCLOAK_ADMIN_REALM`, `KEYCLOAK_ADMIN_CLIENT_ID` — доступ Edge Functions к Keycloak Admin API.
+- `KEYCLOAK_ADMIN`, `KEYCLOAK_ADMIN_PASSWORD` — admin credentials для bootstrap/sync.
+- `OAUTH2_PROXY_*` — проксирование входа на фронт (`localhost:5173`).
+- `VITE_KEYCLOAK_PUBLIC_URL`, `VITE_KEYCLOAK_REALM`, `VITE_KEYCLOAK_CLIENT_ID` — клиентская часть logout/redirect логики.
 
-## Локальный запуск через Compose скрипт
+### Supabase / DB
 
-Эквивалент `make up`, но в npm‑формате.
+- `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`
+- `SUPABASE_DB_URL`, `SUPABASE_INTERNAL_URL`
+- `PGRST_DB_URI`, `GOTRUE_DB_DATABASE_URL`
 
-```sh
-npm run dev:compose
-```
+### Backup / Restore
 
-## Ручная настройка Supabase (если используете внешний проект)
+- `BACKUP_CRON`
+- `BACKUP_RETENTION_COUNT`
+- `BACKUP_SCHEMAS` (по умолчанию: `public,auth,storage`)
+- `BACKUP_MAX_UPLOAD_MB`
+- `BACKUP_RESTORE_DB_URL` (опционально)
+- `BACKUP_AUTH_DB_USER`, `BACKUP_AUTH_HOST`
 
-1) Создайте Supabase‑проект.
-2) Примените Liquibase changelog `infra/supabase/liquibase/changelog-master.xml`.
-3) Создайте `.env` на основе `.env.example` и заполните:
-   - `VITE_SUPABASE_URL`
-   - `VITE_SUPABASE_ANON_KEY`
-4) Разверните Edge Functions:
-   ```sh
-   cd infra
-   supabase functions deploy invite
-   supabase functions deploy admin
-   ```
-5) Настройте переменные функций:
-   - `APP_URL` (например, `http://localhost:5173`)
-   - `RESEND_API_KEY` и `RESEND_FROM` (опционально для email‑инвайтов)
-   - `RESERVE_ADMIN_EMAIL`, `RESERVE_ADMIN_PASSWORD` (см. ниже)
-6) В Supabase используйте только OAuth через Keycloak (локальный email/password выключен).
+### Liquibase
 
-## Переменные окружения
+- `AUTO_PRE_MIGRATION_BACKUP`
+- `LIQUIBASE_LOG_LEVEL`
+- `MIGRATION_MAX_WAIT_SECONDS`
 
-Ключевые:
+### Task media quotas
 
-- `VITE_SUPABASE_URL` — URL Supabase Gateway.
-- `VITE_SUPABASE_ANON_KEY` — публичный ключ.
-- `RESEND_API_KEY`, `RESEND_FROM` — отправка инвайтов через Resend.
-- `RESERVE_ADMIN_EMAIL`, `RESERVE_ADMIN_PASSWORD` — резервный супер‑админ.
-- `GOTRUE_EXTERNAL_KEYCLOAK_URL` — URL realm Keycloak (должен быть доступен браузеру и контейнеру `auth`).
-- `GOTRUE_EXTERNAL_KEYCLOAK_REDIRECT_URI` — callback URL в Supabase Auth (обычно `http://localhost:8080/auth/v1/callback`).
-- `GOTRUE_EXTERNAL_KEYCLOAK_CLIENT_ID`, `GOTRUE_EXTERNAL_KEYCLOAK_SECRET` — OIDC client Supabase в Keycloak.
-- `KEYCLOAK_ADMIN`, `KEYCLOAK_ADMIN_PASSWORD` — логин/пароль админки Keycloak.
-- `KEYCLOAK_DB_NAME`, `KEYCLOAK_DB_USER`, `KEYCLOAK_DB_PASSWORD` — БД Keycloak.
-- `KEYCLOAK_INTERNAL_URL`, `KEYCLOAK_REALM`, `KEYCLOAK_ADMIN_REALM`, `KEYCLOAK_ADMIN_CLIENT_ID`, `KEYCLOAK_APP_CLIENT_ID` — доступ Edge Functions к Keycloak Admin API.
-- `OAUTH2_PROXY_OIDC_ISSUER_URL`, `OAUTH2_PROXY_CLIENT_ID`, `OAUTH2_PROXY_CLIENT_SECRET`, `OAUTH2_PROXY_REDIRECT_URL` — OIDC-настройки `oauth2-proxy`.
-- `OAUTH2_PROXY_COOKIE_SECRET` — секрет cookie-сессии `oauth2-proxy` (для production обязателен).
-- `OAUTH2_PROXY_SCOPE`, `OAUTH2_PROXY_EMAIL_DOMAINS`, `OAUTH2_PROXY_COOKIE_SECURE`, `OAUTH2_PROXY_COOKIE_SAMESITE` — поведение и безопасность cookie/доступа.
-- `VITE_AUTH_MODE` — оставляйте `keycloak` (поддерживается только Keycloak-only режим).
-- `VITE_OAUTH2_PROXY_ENABLED`, `VITE_OAUTH2_PROXY_SIGN_OUT_PATH` — клиентская логика выхода через `oauth2-proxy`.
-- `BACKUP_RETENTION_COUNT` — сколько последних `.dump` хранить локально (по умолчанию `30`).
-- `BACKUP_SCHEMAS` — схемы для backup/restore (по умолчанию `public,auth,storage`).
-- `BACKUP_RESTORE_DB_URL` — отдельный URL для restore (если не задан, используется `SUPABASE_DB_URL` с пользователем `supabase_admin`).
-- `BACKUP_AUTH_DB_USER` — роль, которой после restore выдаются права на `auth` (по умолчанию берется пользователь из `GOTRUE_DB_DATABASE_URL`).
-- `BACKUP_AUTH_HOST` — хост контейнера GoTrue для точечного сброса его DB-соединений после restore (по умолчанию `auth`).
-- `BACKUP_MAX_UPLOAD_MB` — максимальный размер загружаемого backup-файла (по умолчанию `1024`).
-- `AUTO_PRE_MIGRATION_BACKUP` — делать ли автоматический backup перед миграциями в `make up-prod` (по умолчанию `true`).
-- `LIQUIBASE_LOG_LEVEL` — уровень логов Liquibase (по умолчанию `info`).
-- `MIGRATION_MAX_WAIT_SECONDS` — сколько ждать доступности DB/auth схемы перед стартом Liquibase (по умолчанию `300`).
-- `TASK_MEDIA_MAX_FILE_BYTES` — максимальный размер одного изображения в задачах (по умолчанию `5242880`, 5MB).
-- `TASK_MEDIA_USER_QUOTA_BYTES` — квота изображений на пользователя (по умолчанию `209715200`, 200MB).
-- `TASK_MEDIA_WORKSPACE_QUOTA_BYTES` — квота изображений на workspace (по умолчанию `2147483648`, 2GB).
-
-Файл‑шаблон: `.env.example`. В Compose‑режиме `.env` создается автоматически.
-
-## Супер‑админка
-
-- Страница: `/admin/users`.
-- Доступ только для пользователей из таблицы `super_admins`.
-- Создание/редактирование/удаление пользователей выполняется в Keycloak Admin Console.
-- Вкладка `Users` используется как обзор: доступы к workspace и потребление хранилища.
-- Резервный супер‑админ создается автоматически, если заданы:
-  - `RESERVE_ADMIN_EMAIL`
-  - `RESERVE_ADMIN_PASSWORD`
-- В production используйте сильный пароль для `RESERVE_ADMIN_PASSWORD`.
-
-## Keycloak брендинг
-
-- Realm import: `infra/keycloak/realm/timeline-realm.json`
-- Тема логина: `infra/keycloak/themes/timeline/login/theme.properties`
-- CSS темы: `infra/keycloak/themes/timeline/login/resources/css/styles.css`
-- Админка Keycloak: `http://localhost:8081` (по умолчанию `admin/admin`, обязательно смените в `.env` перед продом).
-
-## Использование
-
-1) Перейдите на `/auth` и войдите через Keycloak.
-2) Создайте воркспейс (создается автоматически при первом входе).
-3) На таймлайне создайте задачи и назначьте участников.
-   - В описании задач изображения можно вставлять кнопкой или drag-and-drop.
-   - Файлы хранятся отдельно от `tasks.description` и учитываются в пользовательских квотах.
-4) В `Projects` управляйте проектами и смотрите задачи.
-5) В `Members`:
-   - вкладка `Tasks` — задачи участников с фильтрами и массовыми действиями;
-   - вкладка `Access` — приглашения и роли.
-6) В `Dashboard` добавляйте и настраивайте виджеты.
-7) В `Workspace settings` настраивайте статусы, типы, теги и шаблоны.
+- `TASK_MEDIA_MAX_FILE_BYTES` (по умолчанию `5MB`)
+- `TASK_MEDIA_USER_QUOTA_BYTES` (по умолчанию `200MB`)
+- `TASK_MEDIA_WORKSPACE_QUOTA_BYTES` (по умолчанию `2GB`)
+- `TASK_MEDIA_TOKEN_TTL_SECONDS` (по умолчанию `604800`, 7 дней)
 
 ## Скрипты
 
-```sh
-npm run dev         # фронтенд
-npm run dev:local   # Supabase CLI + фронтенд
-npm run dev:compose # Docker Compose
+### Make
+
+```bash
+make up
+make down
+make logs
+make up-prod
+make down-prod
+make logs-prod
+```
+
+### npm
+
+```bash
+npm run dev
+npm run dev:compose
+npm run dev:local
 npm run build
 npm run lint
 npm run test
 npm run test:watch
+npm run lingui:extract
+npm run lingui:compile
 ```
 
-```sh
-make up       # локальный dev-контур (vite dev)
-make down
-make logs
-make up-prod  # production-контур (build + nginx)
-make down-prod
-make logs-prod
+## Edge Functions
+
+Через `main` роутер доступны:
+- `/functions/v1/admin`
+- `/functions/v1/invite`
+- `/functions/v1/task-media`
+
+### `admin`
+
+Ключевые actions:
+- `bootstrap.sync`
+- `users.list`
+- `workspaces.list`, `workspaces.update`, `workspaces.delete`
+- `keycloak.sync`
+
+Важно:
+- `users.create/users.update/users.delete` возвращают ошибку по дизайну: user lifecycle управляется в Keycloak.
+
+### `invite`
+
+- Добавляет пользователя в workspace.
+- Создаёт/линкует Keycloak + Supabase identity при необходимости.
+- Синхронизирует realm роли по workspace ролям.
+
+### `task-media`
+
+- `POST /functions/v1/task-media`
+  - загрузка бинарного image,
+  - валидация membership,
+  - квоты file/user/workspace,
+  - хранение в `public.task_media`.
+- `GET /functions/v1/task-media/:id?token=...`
+  - отдача изображения по access token.
+- `POST /functions/v1/task-media/:id/revoke`
+  - отзыв access token (owner файла или workspace admin).
+
+## Task media и UX изображений
+
+В описании задачи поддержано:
+- выбор файла кнопкой,
+- paste из буфера,
+- drag-and-drop в область rich text editor.
+
+Что хранится:
+- в `tasks.description` хранится URL на `task-media` endpoint,
+- бинарные данные — в `public.task_media`.
+
+Текущий нюанс:
+- автоматический garbage collection не реализован (если удалить картинку из текста, запись в `task_media` не удаляется автоматически).
+
+## Admin Console
+
+Страница: `/admin/users`
+
+Вкладки:
+- `Users` — обзор пользователей, workspace ownership/management и storage usage.
+- `Workspaces` — rename/delete workspace.
+- `Backups` — create/upload/download/rename/delete/restore.
+
+UI-поведение:
+- на таблице показывается компактная информация,
+- детали раскрываются через tooltip и/или `Details`.
+
+## Backup / Restore
+
+`backup-service` (через `/backup`) умеет:
+- `GET /backup/backups`
+- `POST /backup/backups`
+- `POST /backup/backups/upload` (binary upload, имя в `x-backup-name`)
+- `GET /backup/backups/:name/download`
+- `PATCH /backup/backups/:name`
+- `DELETE /backup/backups/:name`
+- `POST /backup/backups/:name/restore`
+
+Restore поток:
+- создаёт safety backup `pre-restore-*`,
+- делает `pg_restore` по схемам из `BACKUP_SCHEMAS`,
+- восстанавливает права для auth роли,
+- сбрасывает соединения GoTrue к БД.
+
+## Миграции (Liquibase)
+
+- SQL файлы: `infra/supabase/migrations/*.sql`
+- Мастер-чанжлог: `infra/supabase/liquibase/changelog-master.xml`
+
+Ручной прогон миграций:
+
+```bash
+docker compose -f infra/docker-compose.prod.yml --env-file .env run --rm migrate
 ```
 
-## Тестирование и линтинг
+Как добавить новую миграцию:
+1. Создать `infra/supabase/migrations/00xx_name.sql`.
+2. Добавить `changeSet` в `infra/supabase/liquibase/changelog-master.xml`.
+3. Прогнать `migrate`.
 
-- `npm run test` — прогон тестов.
-- `npm run lint` — линтер.
+## Локальный режим с Supabase CLI
 
-## Примечания
+```bash
+npm run dev:local
+```
 
-- Инвайты работают через Edge Function `invite`, создают/связывают пользователя с Keycloak и возвращают ссылку входа, если email не отправлен.
-- Бэкапы доступны в супер‑админке (вкладка `Backups`).
-- В супер‑админке можно создавать, загружать, скачивать, переименовывать, удалять и восстанавливать `.dump` бэкапы.
-- Перед восстановлением автоматически создается страховочный бэкап `pre-restore-*.dump`.
-- По умолчанию backup/restore обрабатывают схемы `public`, `auth`, `storage`, чтобы не затрагивать системные объекты Supabase и сохранить пользователей/файлы.
-- После restore backup-сервис автоматически восстанавливает права на `auth` для роли GoTrue и сбрасывает только его DB-соединения.
-- Миграции выполняет Liquibase, состояние хранится в `DATABASECHANGELOG` и `DATABASECHANGELOGLOCK`.
-- Новую SQL-миграцию добавляйте в `infra/supabase/migrations/` и отдельным `changeSet` в `infra/supabase/liquibase/changelog-master.xml`.
-- Все пользовательские настройки и роли ограничены RLS в Supabase.
+Важно:
+- если `supabase` CLI не найден, скрипт переключится на `dev-compose`.
+- для полного соответствия production-поведения рекомендуется `make up` / `npm run dev:compose`.
+
+## Troubleshooting
+
+### 1) `OAUTH2_PROXY_COOKIE_SECRET is required for oauth2-proxy`
+
+Причина: пустая переменная `OAUTH2_PROXY_COOKIE_SECRET`.
+
+Решение:
+- `make up` обычно генерирует её автоматически,
+- для `make up-prod` задай значение в `.env` или дай скрипту сгенерировать.
+
+### 2) `localhost:5173` -> `ERR_CONNECTION_REFUSED`
+
+Проверь контейнеры:
+
+```bash
+docker compose -f infra/docker-compose.prod.yml --env-file .env ps
+```
+
+Должны быть `oauth2-proxy` и `web` в статусе `Up`.
+
+### 3) `Warning: could not confirm Keycloak sync bootstrap`
+
+Это не Liquibase ошибка.
+
+Смысл предупреждения:
+- миграции применились,
+- но `bootstrap.sync` не вернул `200`.
+
+Обычно причина: неверные `KEYCLOAK_ADMIN` / `KEYCLOAK_ADMIN_PASSWORD`.
+
+Проверка:
+- лог `functions` содержит `Invalid user credentials`.
+
+### 4) `Invalid user credentials` в admin sync
+
+Проверь, что в `.env` admin-учётка совпадает с master admin в Keycloak.
+После исправления перезапусти минимум:
+- `keycloak`
+- `functions`
+- `gateway`
+
+### 5) `The schema must be one of the following: public`
+
+Если видишь это в админке, значит где-то остался запрос к non-public schema через PostgREST.
+В актуальной версии users storage считается через `public.task_media`.
+
+### 6) Bad Request в редиректе на Keycloak
+
+Проверь согласованность:
+- `OAUTH2_PROXY_CLIENT_ID`
+- `OAUTH2_PROXY_REDIRECT_URL`
+- redirect URIs клиента в `infra/keycloak/realm/timeline-realm.json`
+
+### 7) `volume supabase_db_data declared as external, but could not be found`
+
+Создай volume вручную один раз:
+
+```bash
+docker volume create supabase_db_data
+```
+
+## Безопасность
+
+Перед реальным продом обязательно:
+- сменить dev secrets в `.env`,
+- задать сильные пароли и cookie secrets,
+- ограничить CORS/origins,
+- включить HTTPS и `OAUTH2_PROXY_COOKIE_SECURE=true`,
+- ограничить backup endpoint сетевыми правилами.
+
+## Текущий статус README
+
+Этот README приведён к текущей архитектуре проекта:
+- Keycloak-only auth flow,
+- Liquibase как единый механизм миграций,
+- user lifecycle в Keycloak,
+- task media + quotas + drag-and-drop,
+- backup/restore через отдельный сервис.

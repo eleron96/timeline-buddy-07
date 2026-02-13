@@ -10,6 +10,8 @@ interface TimelineHeaderProps {
   viewMode: ViewMode;
   scrollLeft: number;
   viewportWidth: number;
+  attentionDate: string | null;
+  onDateDoubleClick?: (date: string) => void;
 }
 
 export const TimelineHeader: React.FC<TimelineHeaderProps> = ({
@@ -18,6 +20,8 @@ export const TimelineHeader: React.FC<TimelineHeaderProps> = ({
   viewMode,
   scrollLeft,
   viewportWidth,
+  attentionDate,
+  onDateDoubleClick,
 }) => {
   // Group days by month for month labels
   const monthGroups = React.useMemo(() => {
@@ -98,6 +102,8 @@ export const TimelineHeader: React.FC<TimelineHeaderProps> = ({
           const { day: dayName, date } = formatDayHeader(day, viewMode);
           const today = isToday(day);
           const weekend = isWeekend(day);
+          const dayKey = format(day, 'yyyy-MM-dd');
+          const isAttentionDay = attentionDate === dayKey;
           
           return (
             <div
@@ -105,9 +111,11 @@ export const TimelineHeader: React.FC<TimelineHeaderProps> = ({
               className={cn(
                 'flex flex-col items-center justify-center border-r border-border transition-colors py-2 gap-1',
                 weekend && 'bg-timeline-weekend',
-                today && 'today-hatch'
+                today && 'today-hatch',
+                onDateDoubleClick && 'cursor-pointer'
               )}
               style={{ width: dayWidth }}
+              onDoubleClick={() => onDateDoubleClick?.(dayKey)}
             >
               <span className={cn(
                 'text-xs uppercase tracking-wide leading-none',
@@ -121,7 +129,8 @@ export const TimelineHeader: React.FC<TimelineHeaderProps> = ({
               )}>
                 <span className={cn(
                   'inline-flex items-center justify-center',
-                  today && 'rounded-full bg-rose-100/80 px-2.5 py-0.5'
+                  today && 'rounded-full bg-rose-100/80 px-2.5 py-0.5',
+                  isAttentionDay && 'timeline-date-attention rounded-full px-2.5 py-0.5'
                 )}>
                   {date}
                 </span>

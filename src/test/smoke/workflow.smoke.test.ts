@@ -175,18 +175,9 @@ describe('Smoke: key user workflows', () => {
     expect(supabaseMocks.invoke).not.toHaveBeenCalled();
   });
 
-  it('invite: sends invite and refreshes members/planner side data', async () => {
-    const fetchMembersMock = vi.fn(async () => {});
-    const refreshAssigneesMock = vi.fn(async () => {});
-    const refreshGroupsMock = vi.fn(async () => {});
-
+  it('invite: sends pending invite link without mutating memberships immediately', async () => {
     useAuthStore.setState({
       currentWorkspaceId: 'ws-1',
-      fetchMembers: fetchMembersMock,
-    });
-    usePlannerStore.setState({
-      refreshAssignees: refreshAssigneesMock,
-      refreshMemberGroups: refreshGroupsMock,
     });
 
     supabaseMocks.invoke.mockResolvedValue({
@@ -209,14 +200,12 @@ describe('Smoke: key user workflows', () => {
     });
     expect(supabaseMocks.invoke).toHaveBeenCalledWith('invite', {
       body: {
+        action: 'create',
         workspaceId: 'ws-1',
         email: 'member@example.com',
         role: 'editor',
         groupId: 'group-1',
       },
     });
-    expect(fetchMembersMock).toHaveBeenCalledWith('ws-1');
-    expect(refreshAssigneesMock).toHaveBeenCalledTimes(1);
-    expect(refreshGroupsMock).toHaveBeenCalledTimes(1);
   });
 });

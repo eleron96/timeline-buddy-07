@@ -1,48 +1,73 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useAuthStore } from '@/features/auth/store/authStore';
+import { toast } from '@/shared/ui/sonner';
 import { t } from '@lingui/macro';
 
 const InvitePage: React.FC = () => {
-  const { workspaceId } = useParams();
+  const { inviteToken } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
   const {
     user,
     loading,
-    workspaces,
+    acceptInvite,
     fetchWorkspaces,
     setCurrentWorkspaceId,
   } = useAuthStore();
-  const [noAccess, setNoAccess] = useState(false);
+  const attemptedTokenRef = useRef<string | null>(null);
+  const [acceptError, setAcceptError] = useState('');
 
   useEffect(() => {
-    if (user && workspaces.length === 0) {
-      fetchWorkspaces();
-    }
-  }, [fetchWorkspaces, user, workspaces.length]);
+    if (!user || loading || !inviteToken) return;
+    if (attemptedTokenRef.current === inviteToken) return;
+    attemptedTokenRef.current = inviteToken;
 
-  useEffect(() => {
-    if (!user || !workspaceId || workspaces.length === 0) return;
+    let active = true;
+    const accept = async () => {
+      setAcceptError('');
+      const result = await acceptInvite(inviteToken);
+      if (!active) return;
 
-    const hasAccess = workspaces.some((workspace) => workspace.id === workspaceId);
-    if (!hasAccess) {
-      setNoAccess(true);
-      return;
-    }
+      if (result.error) {
+        setAcceptError(result.error);
+        return;
+      }
 
-    setCurrentWorkspaceId(workspaceId);
-    navigate('/', { replace: true });
-  }, [navigate, setCurrentWorkspaceId, user, workspaceId, workspaces]);
+      await fetchWorkspaces();
+      if (!active) return;
+
+      if (result.workspaceId) {
+        setCurrentWorkspaceId(result.workspaceId);
+      }
+      toast(t`Workspace joined`, {
+        description: t`You were added to a new workspace.`,
+      });
+      navigate('/', { replace: true });
+    };
+
+    void accept();
+    return () => {
+      active = false;
+    };
+  }, [acceptInvite, fetchWorkspaces, inviteToken, loading, navigate, setCurrentWorkspaceId, user]);
 
   if (!user && !loading) {
-    return <Navigate to="/auth" state={{ redirectTo: location.pathname }} replace />;
+    return <Navigate to="/auth" state={{ redirectTo: location.pathname + location.search }} replace />;
   }
 
-  if (noAccess) {
+  if (!inviteToken) {
     return (
       <div className="flex h-screen items-center justify-center text-sm text-destructive">
-        {t`You do not have access to this workspace.`}
+        Invalid invite link.
+      </div>
+    );
+  }
+
+  if (acceptError) {
+    return (
+      <div className="flex h-screen items-center justify-center text-sm text-destructive">
+        {acceptError}
       </div>
     );
   }

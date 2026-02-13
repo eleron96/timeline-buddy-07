@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ResponsiveGridLayout, noCompactor, useContainerWidth } from 'react-grid-layout';
+import { ResponsiveGridLayout, getCompactor, useContainerWidth } from 'react-grid-layout';
 import type { Layout, Layouts } from 'react-grid-layout';
 import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
@@ -40,6 +40,7 @@ import { WorkspaceSwitcher } from '@/features/workspace/components/WorkspaceSwit
 import { WorkspaceNav } from '@/features/workspace/components/WorkspaceNav';
 import { SettingsPanel } from '@/features/workspace/components/SettingsPanel';
 import { AccountSettingsDialog } from '@/features/auth/components/AccountSettingsDialog';
+import { InviteNotifications } from '@/features/auth/components/InviteNotifications';
 import {
   useDashboardStore,
   DASHBOARD_BREAKPOINTS,
@@ -72,6 +73,7 @@ const DashboardPage = () => {
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const prevWorkspaceIdRef = useRef<string | null>(null);
   const { width, containerRef } = useContainerWidth({ measureBeforeMount: true });
+  const gridCompactor = useMemo(() => getCompactor(null, false, true), []);
 
   const {
     widgets,
@@ -107,13 +109,10 @@ const DashboardPage = () => {
     loadStats,
   } = useDashboardStore();
 
-  const user = useAuthStore((state) => state.user);
-  const profileDisplayName = useAuthStore((state) => state.profileDisplayName);
   const currentWorkspaceId = useAuthStore((state) => state.currentWorkspaceId);
   const currentWorkspaceRole = useAuthStore((state) => state.currentWorkspaceRole);
   const isSuperAdmin = useAuthStore((state) => state.isSuperAdmin);
   const canEdit = currentWorkspaceRole === 'editor' || currentWorkspaceRole === 'admin';
-  const userLabel = profileDisplayName || user?.email || user?.id || '';
   const loadWorkspaceData = usePlannerStore((state) => state.loadWorkspaceData);
   const dashboardStorageKey = currentWorkspaceId
     ? `dashboard-current-${currentWorkspaceId}`
@@ -321,6 +320,16 @@ const DashboardPage = () => {
     persistDashboard();
   };
 
+  const handleCanvasDoubleClick = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (!canAddWidget) return;
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    if (target.closest('.dashboard-toolbar')) return;
+    if (target.closest('.dashboard-grid-item')) return;
+    if (target.closest('button, a, input, textarea, select, [role="button"]')) return;
+    handleAddWidget();
+  };
+
   const handleCreateDashboard = async (event: React.FormEvent) => {
     event.preventDefault();
     setCreateDashboardError('');
@@ -441,11 +450,6 @@ const DashboardPage = () => {
         </div>
 
         <div className="flex items-center gap-2">
-          {userLabel && (
-            <span className="max-w-[220px] truncate text-xs text-muted-foreground" title={userLabel}>
-              {userLabel}
-            </span>
-          )}
           {canEdit && (
             <Button size="sm" className="gap-2" onClick={handleAddWidget} disabled={!canAddWidget}>
               <Plus className="h-4 w-4" />
@@ -460,6 +464,7 @@ const DashboardPage = () => {
           >
             <Settings className="h-4 w-4" />
           </Button>
+          <InviteNotifications />
           <Button
             variant="ghost"
             size="icon"
@@ -482,8 +487,12 @@ const DashboardPage = () => {
 
       <ContextMenu>
         <ContextMenuTrigger asChild>
-          <div ref={containerRef} className="flex-1 overflow-auto p-4">
-            <div className="mb-4 flex flex-wrap items-center gap-2">
+          <div
+            ref={containerRef}
+            className="flex-1 overflow-auto p-4"
+            onDoubleClick={handleCanvasDoubleClick}
+          >
+            <div className="dashboard-toolbar mb-4 flex flex-wrap items-center gap-2">
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="outline" className="gap-2">
@@ -588,7 +597,7 @@ const DashboardPage = () => {
                 onBreakpointChange={handleBreakpointChange}
                 draggableHandle=".dashboard-widget-handle"
                 measureBeforeMount={false}
-                compactor={noCompactor}
+                compactor={gridCompactor}
                 resizeHandles={['se']}
               >
                 {widgets.map((widget) => (

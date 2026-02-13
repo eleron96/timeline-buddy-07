@@ -54,6 +54,7 @@ const filterLabels: Record<DashboardStatusFilter, string> = {
   cancelled: t`Cancelled`,
   custom: t`Custom`,
 };
+const PIE_OTHER_LABEL = 'Other';
 
 interface DashboardWidgetCardProps {
   widget: DashboardWidget;
@@ -102,8 +103,6 @@ export const DashboardWidgetCard: React.FC<DashboardWidgetCardProps> = ({
   const isMilestoneWidget = widget.type === 'milestone' || widget.type === 'milestone_calendar';
   const isMilestoneList = isMilestoneWidget && milestoneView === 'list';
   const isMilestoneCalendar = isMilestoneWidget && milestoneView === 'calendar';
-  const legendItems = isChart ? (data?.series ?? []) : [];
-  const showLegend = isChart && legendItems.length > 0;
   const contentGapClass = isSmall ? 'gap-1.5' : 'gap-2';
   const calendarGapClass = isMilestoneCalendar && isSmall ? 'gap-1' : contentGapClass;
   const cardPaddingClass = isKpiSmall ? 'p-2' : isSmall ? 'p-3' : 'p-4';
@@ -112,6 +111,24 @@ export const DashboardWidgetCard: React.FC<DashboardWidgetCardProps> = ({
     : isMilestoneCalendar && isSmall
       ? 'pt-2'
       : 'pt-3';
+  const [pieTooltipPosition, setPieTooltipPosition] = React.useState<{ x: number; y: number } | undefined>(undefined);
+  const pieChartSeries = widget.type === 'pie' ? (data?.series ?? []) : [];
+  const pieLegendLimit = size === 'small' ? 3 : size === 'medium' ? 5 : 7;
+  const pieSeries = widget.type === 'pie' ? (() => {
+    const source = pieChartSeries;
+    if (!isSmall) return source;
+    if (source.length <= pieLegendLimit) return source;
+    const visibleCount = Math.max(1, pieLegendLimit - 1);
+    const visible = source.slice(0, visibleCount);
+    const hidden = source.slice(visibleCount);
+    const otherValue = hidden.reduce((sum, item) => sum + item.value, 0);
+    if (!otherValue) return visible;
+    return [...visible, { name: PIE_OTHER_LABEL, value: otherValue }];
+  })() : [];
+  const legendItems = isChart
+    ? (widget.type === 'pie' ? pieSeries : (data?.series ?? []))
+    : [];
+  const showLegend = isChart && legendItems.length > 0;
   const chartMinHeightClass = isSmall
     ? 'min-h-[64px]'
     : legendItems.length > 6
@@ -137,12 +154,23 @@ export const DashboardWidgetCard: React.FC<DashboardWidgetCardProps> = ({
   const chartPeriodLabel = (widget.type === 'bar' || widget.type === 'area' || widget.type === 'line')
     ? taskPeriodLabel
     : null;
-  const legendMinWidth = size === 'small' ? 110 : 140;
-  const legendColumns = legendItems.length <= 1 ? 1 : 2;
-  const legendTextClass = legendItems.length > 6 ? 'text-[10px]' : 'text-[11px]';
+  const isPieLegend = widget.type === 'pie';
+  const legendColumns = isPieLegend
+    ? (legendItems.length > 2 ? 2 : 1)
+    : (legendItems.length <= 1 ? 1 : 2);
+  const legendTextClass = isPieLegend
+    ? 'text-[9px] leading-tight'
+    : legendItems.length > 6
+      ? 'text-[10px] leading-snug'
+      : 'text-[11px] leading-snug';
+  const showLegendValue = true;
   const legendList = showLegend ? (
     <div
-      className={cn('grid w-full max-w-full gap-x-3 gap-y-1 leading-snug text-muted-foreground', legendTextClass)}
+      className={cn(
+        'grid w-full max-w-full text-muted-foreground',
+        isPieLegend ? 'gap-x-2 gap-y-0.5' : 'gap-x-3 gap-y-1',
+        legendTextClass,
+      )}
       style={{
         gridTemplateColumns: legendColumns === 1
           ? `minmax(0, 1fr)`
@@ -155,14 +183,33 @@ export const DashboardWidgetCard: React.FC<DashboardWidgetCardProps> = ({
       {legendItems.map((item, index) => (
         <div
           key={`${item.name}-${index}`}
-          className="grid min-w-0 grid-cols-[12px_minmax(0,1fr)_minmax(24px,auto)] items-start gap-2"
+          className={cn(
+            'grid min-w-0 items-center',
+            showLegendValue
+              ? (isPieLegend
+                ? 'grid-cols-[8px_minmax(0,1fr)_minmax(20px,auto)] gap-1'
+                : 'grid-cols-[12px_minmax(0,1fr)_minmax(24px,auto)] gap-2')
+              : 'grid-cols-[8px_minmax(0,1fr)] gap-1',
+          )}
         >
           <span
-            className="mt-1 h-2 w-2 rounded-full"
-            style={{ backgroundColor: paletteColors[index % paletteColors.length] }}
+            className={cn('rounded-full', isPieLegend ? 'h-1.5 w-1.5' : 'mt-1 h-2 w-2')}
+            style={{
+              backgroundColor: (
+                isPieLegend && item.name === PIE_OTHER_LABEL
+                  ? '#94A3B8'
+                  : paletteColors[index % paletteColors.length]
+              ),
+            }}
           />
-          <span className="min-w-0 break-words text-muted-foreground">{item.name}</span>
-          <span className="text-right font-medium text-foreground">{item.value.toLocaleString()}</span>
+          <span className={cn('min-w-0 text-muted-foreground', isPieLegend ? 'truncate' : 'break-words')}>
+            {item.name}
+          </span>
+          {showLegendValue && (
+            <span className="text-right font-medium text-foreground">
+              {item.value.toLocaleString()}
+            </span>
+          )}
         </div>
       ))}
     </div>
@@ -402,24 +449,37 @@ export const DashboardWidgetCard: React.FC<DashboardWidgetCardProps> = ({
         )}
         {!loading && !error && widget.type === 'pie' && (
           <div className={cn('flex h-full min-h-0 flex-col', contentGapClass)}>
-            {data?.series.length ? (
+            {pieChartSeries.length ? (
               <ChartContainer
                 config={{ value: { label: t`Tasks` } }}
-                className={cn('flex-1 min-h-0', pieMinHeightClass)}
+                className={cn('flex-1 min-h-0', size === 'small' ? 'min-h-0' : pieMinHeightClass)}
                 style={{ aspectRatio: 'auto' }}
               >
-                <PieChart>
-                  <ChartTooltip content={<ChartTooltipContent indicator="dot" />} />
+                <PieChart
+                  onMouseMove={(state: { chartX?: number; chartY?: number }) => {
+                    if (typeof state.chartX !== 'number' || typeof state.chartY !== 'number') return;
+                    setPieTooltipPosition({ x: state.chartX + 14, y: state.chartY + 14 });
+                  }}
+                  onMouseLeave={() => setPieTooltipPosition(undefined)}
+                >
+                  <ChartTooltip
+                    content={<ChartTooltipContent indicator="dot" />}
+                    position={pieTooltipPosition}
+                    allowEscapeViewBox={{ x: true, y: true }}
+                  />
                   <Pie
-                    data={data.series}
+                    data={pieChartSeries}
                     dataKey="value"
                     nameKey="name"
                     innerRadius={pieInnerRadius}
                     outerRadius={pieOuterRadius}
                     paddingAngle={2}
                   >
-                    {data.series.map((entry, index) => (
-                      <Cell key={`${entry.name}-${index}`} fill={paletteColors[index % paletteColors.length]} />
+                    {pieChartSeries.map((entry, index) => (
+                      <Cell
+                        key={`${entry.name}-${index}`}
+                        fill={paletteColors[index % paletteColors.length]}
+                      />
                     ))}
                   </Pie>
                 </PieChart>

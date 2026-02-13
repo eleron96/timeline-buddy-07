@@ -6,6 +6,8 @@ cd "$root_dir"
 
 compose_file="infra/docker-compose.prod.yml"
 env_file=".env"
+version_file="VERSION"
+release_log_file="infra/releases.log"
 
 if ! command -v docker >/dev/null 2>&1; then
   echo "Docker is required. Please install Docker." >&2
@@ -77,6 +79,7 @@ POSTGRES_DB="${POSTGRES_DB:-postgres}"
 POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-postgres}"
 AUTO_PRE_MIGRATION_BACKUP="$(normalize_bool "${AUTO_PRE_MIGRATION_BACKUP:-true}")"
 BACKUP_SCHEMAS="${BACKUP_SCHEMAS:-public,auth,storage}"
+backup_path="n/a"
 
 if [[ -z "$RESERVE_ADMIN_EMAIL" || -z "$RESERVE_ADMIN_PASSWORD" ]]; then
   echo "RESERVE_ADMIN_EMAIL and RESERVE_ADMIN_PASSWORD are required for invite-only production mode." >&2
@@ -188,9 +191,34 @@ fi
 
 docker compose -f "$compose_file" --env-file "$env_file" up -d --build web oauth2-proxy
 
+release_timestamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+release_version="unversioned"
+if [[ -f "$version_file" ]]; then
+  release_version="$(tr -d '[:space:]' < "$version_file")"
+  if [[ -z "$release_version" ]]; then
+    release_version="unversioned"
+  fi
+fi
+
+release_commit="n/a"
+if command -v git >/dev/null 2>&1 && git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  release_commit="$(git rev-parse --short HEAD 2>/dev/null || echo n/a)"
+fi
+
+mkdir -p "$(dirname "$release_log_file")"
+touch "$release_log_file"
+printf "%s | %s | %s | %s | %s | %s\n" \
+  "$release_timestamp" \
+  "$release_version" \
+  "$release_commit" \
+  "$(whoami)" \
+  "$(hostname -s 2>/dev/null || hostname)" \
+  "$backup_path" >> "$release_log_file"
+
 echo "Production stack is running."
 echo "Frontend: http://localhost:5173"
 echo "Supabase Gateway health: http://localhost:8080/health"
 echo "Supabase Auth health: http://localhost:8080/auth/v1/health"
 echo "Keycloak: http://localhost:8081"
 echo "Login as reserve super admin: $RESERVE_ADMIN_EMAIL"
+echo "Release log updated: $release_log_file"

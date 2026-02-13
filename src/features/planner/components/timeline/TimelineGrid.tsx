@@ -16,8 +16,10 @@ import { calculateTaskLanes, getMaxLanes, TaskWithLane } from '@/features/planne
 import { Button } from '@/shared/ui/button';
 import { cn } from '@/shared/lib/classNames';
 import { formatProjectLabel } from '@/shared/lib/projectLabels';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/shared/ui/tooltip';
 import { hexToRgba } from '@/features/planner/lib/colorUtils';
 import { differenceInDays, format, isSameDay, parseISO } from 'date-fns';
+import { t } from '@lingui/macro';
 
 interface TimelineGridProps {
   onCreateTask?: (payload: {
@@ -45,6 +47,8 @@ export const TimelineGrid: React.FC<TimelineGridProps> = ({ onCreateTask }) => {
     filters,
     assigneeTaskCounts,
     highlightedTaskId,
+    timelineAttentionDate,
+    setTimelineAttentionDate,
   } = usePlannerStore();
   const user = useAuthStore((state) => state.user);
   const currentWorkspaceRole = useAuthStore((state) => state.currentWorkspaceRole);
@@ -115,6 +119,7 @@ export const TimelineGrid: React.FC<TimelineGridProps> = ({ onCreateTask }) => {
   const pendingScrollDateRef = useRef<string | null>(null);
   const visibleDaysRef = useRef<Date[]>([]);
   const ignoreScrollDateUpdateRef = useRef(false);
+  const skipAutoCenterRef = useRef(false);
   const prevRangeRef = useRef<{ start: Date | null; currentDate: string; viewMode: string } | null>(null);
 
   const projectById = useMemo(
@@ -351,16 +356,17 @@ export const TimelineGrid: React.FC<TimelineGridProps> = ({ onCreateTask }) => {
       scrollEndTimerRef.current = window.setTimeout(() => {
         const nextDate = pendingScrollDateRef.current;
         if (nextDate && nextDate !== currentDate) {
+          skipAutoCenterRef.current = true;
           setCurrentDate(nextDate);
         }
-      }, 300);
+      }, 450);
     }
-  }, [currentDate, dayWidth, setCurrentDate, viewportWidth, visibleDays.length, visibleDays]);
+  }, [currentDate, dayWidth, setCurrentDate, viewportWidth, visibleDays]);
 
   const handleDragStart = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     if (e.button !== 0) return;
     const target = e.target;
-    if (target instanceof Element && target.closest('.task-bar, .milestone-dot')) {
+    if (target instanceof Element && target.closest('.task-bar, .milestone-dot, .milestone-cell')) {
       return;
     }
     dragScrollRef.current = {
@@ -475,6 +481,11 @@ export const TimelineGrid: React.FC<TimelineGridProps> = ({ onCreateTask }) => {
     if (lastCenteredRef.current?.date === currentDate && lastCenteredRef.current?.viewMode === viewMode) {
       return;
     }
+    if (skipAutoCenterRef.current) {
+      skipAutoCenterRef.current = false;
+      lastCenteredRef.current = { date: currentDate, viewMode };
+      return;
+    }
     const days = visibleDaysRef.current;
     if (days.length === 0) return;
     const targetIndex = days.findIndex((day) => isSameDay(day, currentDateObj));
@@ -515,7 +526,7 @@ export const TimelineGrid: React.FC<TimelineGridProps> = ({ onCreateTask }) => {
     if (showUnassignedRow) {
       rows.push({
         id: 'unassigned',
-        name: groupMode === 'assignee' ? 'Unassigned' : 'No Project',
+        name: groupMode === 'assignee' ? t`Unassigned` : t`No project`,
         color: '#94a3b8',
         tasks: tasksByRow['unassigned'],
         height: rowHeights['unassigned'] || MIN_ROW_HEIGHT,
@@ -555,6 +566,11 @@ export const TimelineGrid: React.FC<TimelineGridProps> = ({ onCreateTask }) => {
     requestScrollToDate(today);
   };
 
+  const clearTimelineAttention = useCallback(() => {
+    if (!timelineAttentionDate) return;
+    setTimelineAttentionDate(null);
+  }, [setTimelineAttentionDate, timelineAttentionDate]);
+
   const handleMilestoneDialogChange = useCallback((open: boolean) => {
     setMilestoneDialogOpen(open);
     if (!open) {
@@ -575,7 +591,7 @@ export const TimelineGrid: React.FC<TimelineGridProps> = ({ onCreateTask }) => {
     setMilestoneDialogOpen(true);
   }, []);
 
-  const handleMilestoneRowClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+  const handleMilestoneRowDoubleClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     if (!canEdit) return;
     if (Date.now() - lastDragTimeRef.current < 200) return;
     const target = e.target;
@@ -586,6 +602,12 @@ export const TimelineGrid: React.FC<TimelineGridProps> = ({ onCreateTask }) => {
     if (index < 0 || index >= visibleDays.length) return;
     handleCreateMilestone(format(visibleDays[index], 'yyyy-MM-dd'));
   }, [canEdit, dayWidth, handleCreateMilestone, visibleDays]);
+
+  const handleMilestoneDateDoubleClick = useCallback((date: string) => {
+    if (!canEdit) return;
+    if (Date.now() - lastDragTimeRef.current < 200) return;
+    handleCreateMilestone(date);
+  }, [canEdit, handleCreateMilestone]);
 
   const handleMilestoneHover = useCallback((date: string, color: string) => {
     setMilestoneLine({ date, color, visible: true });
@@ -641,6 +663,23 @@ export const TimelineGrid: React.FC<TimelineGridProps> = ({ onCreateTask }) => {
     return lines;
   }, [sortedMilestones, visibleDayIndex, projectById]);
 
+  const milestoneTooltipCells = useMemo(() => {
+    const cells: Array<{ date: string; dayIndex: number; color: string; milestones: Milestone[] }> = [];
+    milestonesByDate.forEach((dayMilestones, date) => {
+      const dayIndex = visibleDayIndex.get(date);
+      if (typeof dayIndex !== 'number') return;
+      const project = projectById.get(dayMilestones[0]?.projectId ?? '');
+      cells.push({
+        date,
+        dayIndex,
+        color: project?.color ?? '#94a3b8',
+        milestones: dayMilestones,
+      });
+    });
+    cells.sort((left, right) => left.dayIndex - right.dayIndex);
+    return cells;
+  }, [milestonesByDate, projectById, visibleDayIndex]);
+
   // Линия начинается от нижней точки круга вехи (h-2.5 = 10px, радиус 5px)
   const milestoneDotRadius = 5;
   const milestoneLineTop = HEADER_HEIGHT + milestoneRowHeight / 2 + milestoneDotRadius;
@@ -652,7 +691,11 @@ export const TimelineGrid: React.FC<TimelineGridProps> = ({ onCreateTask }) => {
     <div className={cn(
       'relative flex flex-col h-full overflow-hidden bg-background',
       highlightedTaskId && 'task-highlight-mode'
-    )}>
+    )}
+    onPointerDownCapture={clearTimelineAttention}
+    onWheelCapture={clearTimelineAttention}
+    onTouchStartCapture={clearTimelineAttention}
+    >
       {/* Сайдбар и сетка — два скролла с синхронизацией по вертикали */}
       <div className="flex flex-1 min-h-0 overflow-hidden">
         <div className="flex flex-col flex-shrink-0 bg-timeline-header border-r border-border" style={{ width: SIDEBAR_WIDTH }}>
@@ -730,38 +773,90 @@ export const TimelineGrid: React.FC<TimelineGridProps> = ({ onCreateTask }) => {
                   viewMode={viewMode}
                   scrollLeft={scrollLeft}
                   viewportWidth={viewportWidth}
+                  attentionDate={timelineAttentionDate}
+                  onDateDoubleClick={canEdit ? handleMilestoneDateDoubleClick : undefined}
                 />
               </div>
               <div
                 className="relative border-b border-border bg-timeline-header"
                 style={{ width: totalWidth, height: milestoneRowHeight }}
-                onClick={handleMilestoneRowClick}
+                onDoubleClick={handleMilestoneRowDoubleClick}
               >
-                {sortedMilestones.map((milestone) => {
-                  const dayIndex = visibleDayIndex.get(milestone.date);
-                  if (dayIndex === undefined) return null;
-                  const project = projectById.get(milestone.projectId);
-                  const color = project?.color ?? '#94a3b8';
-                  const dotColor = hexToRgba(color, 0.45) ?? color;
-                  const dotBorder = hexToRgba(color, 0.8) ?? color;
-                  const offset = milestoneOffsets.get(milestone.id) ?? 0;
-                  const left = dayIndex * dayWidth + dayWidth / 2 + offset;
+                <TooltipProvider delayDuration={180}>
+                  {milestoneTooltipCells.map((cell) => (
+                    <Tooltip key={`milestone-cell-${cell.date}`}>
+                      <TooltipTrigger asChild>
+                        <div
+                          className="milestone-cell absolute inset-y-0 cursor-pointer"
+                          style={{ left: cell.dayIndex * dayWidth, width: dayWidth }}
+                          onMouseEnter={() => handleMilestoneHover(cell.date, cell.color)}
+                          onMouseLeave={handleMilestoneHoverEnd}
+                        />
+                      </TooltipTrigger>
+                      <TooltipContent
+                        side="bottom"
+                        sideOffset={6}
+                        className="w-56 rounded-lg border border-border bg-card/95 px-3 py-2 text-xs text-foreground shadow-sm backdrop-blur"
+                      >
+                        <div className="space-y-1.5">
+                          <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                            {format(parseISO(cell.date), 'dd MMM yyyy')}
+                          </div>
+                          <div className="max-h-44 space-y-1 overflow-y-auto pr-1">
+                            {cell.milestones.map((milestone) => {
+                              const project = projectById.get(milestone.projectId);
+                              const color = project?.color ?? '#94a3b8';
+                              const dotColor = hexToRgba(color, 0.8) ?? color;
+                              return (
+                                <div key={milestone.id} className="flex items-center gap-2">
+                                  <span className="h-2 w-2 rounded-full" style={{ backgroundColor: dotColor }} />
+                                  <div className="min-w-0">
+                                    <div className="truncate">{milestone.title}</div>
+                                    <div className="truncate text-[10px] text-muted-foreground">
+                                      {project
+                                        ? formatProjectLabel(project.name, project.code)
+                                        : t`Project`}
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                          <div className="flex items-center justify-between border-t border-border/60 pt-1">
+                            <span className="text-muted-foreground">{t`Total milestones`}</span>
+                            <span className="font-semibold">{cell.milestones.length}</span>
+                          </div>
+                        </div>
+                      </TooltipContent>
+                    </Tooltip>
+                  ))}
 
-                  return (
-                    <button
-                      key={milestone.id}
-                      type="button"
-                      className="milestone-dot absolute top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border transition-transform hover:scale-110"
-                      style={{ left, backgroundColor: dotColor, borderColor: dotBorder }}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        handleEditMilestone(milestone);
-                      }}
-                      onMouseEnter={() => handleMilestoneHover(milestone.date, color)}
-                      onMouseLeave={handleMilestoneHoverEnd}
-                    />
-                  );
-                })}
+                  {sortedMilestones.map((milestone) => {
+                    const dayIndex = visibleDayIndex.get(milestone.date);
+                    if (dayIndex === undefined) return null;
+                    const project = projectById.get(milestone.projectId);
+                    const color = project?.color ?? '#94a3b8';
+                    const dotColor = hexToRgba(color, 0.45) ?? color;
+                    const dotBorder = hexToRgba(color, 0.8) ?? color;
+                    const offset = milestoneOffsets.get(milestone.id) ?? 0;
+                    const left = dayIndex * dayWidth + dayWidth / 2 + offset;
+
+                    return (
+                      <button
+                        key={milestone.id}
+                        type="button"
+                        className="milestone-dot absolute top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border transition-transform hover:scale-110"
+                        style={{ left, backgroundColor: dotColor, borderColor: dotBorder }}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          handleEditMilestone(milestone);
+                        }}
+                        onMouseEnter={() => handleMilestoneHover(milestone.date, color)}
+                        onMouseLeave={handleMilestoneHoverEnd}
+                      />
+                    );
+                  })}
+                </TooltipProvider>
               </div>
             </div>
             {displayRows.map((row, rowIndex) => (
@@ -793,6 +888,7 @@ export const TimelineGrid: React.FC<TimelineGridProps> = ({ onCreateTask }) => {
                       visibleDays={visibleDays}
                       lane={task.lane}
                       canEdit={canEdit}
+                      rowAssigneeId={groupMode === 'assignee' && row.id !== 'unassigned' ? row.id : null}
                     />
                   );
                 })}
@@ -809,7 +905,7 @@ export const TimelineGrid: React.FC<TimelineGridProps> = ({ onCreateTask }) => {
           className="absolute bottom-4 right-4 z-30 shadow-md"
           onClick={handleJumpToToday}
         >
-          Today
+          {t`Today`}
         </Button>
       )}
 

@@ -6,6 +6,7 @@ import { FilterPanel } from '@/features/planner/components/FilterPanel';
 import { TaskDetailPanel } from '@/features/planner/components/TaskDetailPanel';
 import { SettingsPanel } from '@/features/workspace/components/SettingsPanel';
 import { AccountSettingsDialog } from '@/features/auth/components/AccountSettingsDialog';
+import { InviteNotifications } from '@/features/auth/components/InviteNotifications';
 import { AddTaskDialog } from '@/features/planner/components/AddTaskDialog';
 import { Button } from '@/shared/ui/button';
 import { Plus, Settings, User } from 'lucide-react';
@@ -39,6 +40,7 @@ const normalizeFilters = (value: unknown): Filters => {
 
 const PlannerPage = () => {
   const [filterCollapsed, setFilterCollapsed] = useState(true);
+  const [filterWidth, setFilterWidth] = useState(320);
   const [showSettings, setShowSettings] = useState(false);
   const [showAccountSettings, setShowAccountSettings] = useState(false);
   const [showAddTask, setShowAddTask] = useState(false);
@@ -71,14 +73,13 @@ const PlannerPage = () => {
   const highlightedTaskId = usePlannerStore((state) => state.highlightedTaskId);
   const setHighlightedTaskId = usePlannerStore((state) => state.setHighlightedTaskId);
   const user = useAuthStore((state) => state.user);
-  const profileDisplayName = useAuthStore((state) => state.profileDisplayName);
   const currentWorkspaceId = useAuthStore((state) => state.currentWorkspaceId);
   const currentWorkspaceRole = useAuthStore((state) => state.currentWorkspaceRole);
   const isSuperAdmin = useAuthStore((state) => state.isSuperAdmin);
   const canEdit = currentWorkspaceRole === 'editor' || currentWorkspaceRole === 'admin';
-  const userLabel = profileDisplayName || user?.email || user?.id || '';
   const filtersHydratedRef = useRef(false);
   const centeredOnLoadRef = useRef(false);
+  const filterResizeRef = useRef<{ startX: number; startWidth: number } | null>(null);
   const hasActiveFilters = filters.projectIds.length > 0
     || filters.assigneeIds.length > 0
     || filters.groupIds.length > 0
@@ -146,6 +147,45 @@ const PlannerPage = () => {
     window.localStorage.setItem(storageKey, JSON.stringify(filters));
   }, [filters, user?.id]);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const raw = window.localStorage.getItem('planner-filter-width');
+    if (!raw) return;
+    const parsed = Number(raw);
+    if (!Number.isFinite(parsed)) return;
+    setFilterWidth(Math.max(260, Math.min(520, parsed)));
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem('planner-filter-width', String(filterWidth));
+  }, [filterWidth]);
+
+  useEffect(() => {
+    const handleMouseMove = (event: MouseEvent) => {
+      const resizeState = filterResizeRef.current;
+      if (!resizeState || filterCollapsed) return;
+      const deltaX = event.clientX - resizeState.startX;
+      const nextWidth = Math.max(260, Math.min(520, resizeState.startWidth + deltaX));
+      setFilterWidth(nextWidth);
+    };
+
+    const handleMouseUp = () => {
+      filterResizeRef.current = null;
+      if (typeof document !== 'undefined') {
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+      }
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [filterCollapsed]);
+
   const handleCreateTaskRequest = useCallback((defaults: {
     startDate: string;
     endDate: string;
@@ -163,6 +203,16 @@ const PlannerPage = () => {
     }
   }, []);
 
+  const handleFilterResizeStart = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    if (filterCollapsed) return;
+    filterResizeRef.current = { startX: event.clientX, startWidth: filterWidth };
+    if (typeof document !== 'undefined') {
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+    }
+    event.preventDefault();
+  }, [filterCollapsed, filterWidth]);
+
   if (isSuperAdmin) {
     return <Navigate to="/admin/users" replace />;
   }
@@ -177,11 +227,6 @@ const PlannerPage = () => {
         </div>
         
         <div className="flex items-center gap-2">
-          {userLabel && (
-            <span className="max-w-[220px] truncate text-xs text-muted-foreground" title={userLabel}>
-              {userLabel}
-            </span>
-          )}
           <Button
             onClick={() => {
               setAddTaskDefaults(null);
@@ -203,6 +248,7 @@ const PlannerPage = () => {
           >
             <Settings className="h-4 w-4" />
           </Button>
+          <InviteNotifications />
           <Button
             variant="ghost"
             size="icon"
@@ -231,10 +277,24 @@ const PlannerPage = () => {
       {/* Main content */}
       <div className="flex flex-1 overflow-hidden min-h-0">
         {/* Filter sidebar */}
-        <FilterPanel 
-          collapsed={filterCollapsed} 
-          onToggle={() => setFilterCollapsed(!filterCollapsed)} 
-        />
+        <div
+          className="relative flex-shrink-0 h-full"
+          style={filterCollapsed ? undefined : { width: filterWidth }}
+        >
+          <FilterPanel
+            collapsed={filterCollapsed}
+            onToggle={() => setFilterCollapsed(!filterCollapsed)}
+          />
+          {!filterCollapsed && (
+            <div
+              role="separator"
+              aria-orientation="vertical"
+              aria-label={t`Resize filters`}
+              className="absolute right-0 top-0 h-full w-1 cursor-col-resize bg-transparent transition-colors hover:bg-border/70"
+              onMouseDown={handleFilterResizeStart}
+            />
+          )}
+        </div>
         
         {/* Timeline area */}
         <div className="flex-1 flex flex-col overflow-hidden min-h-0 timeline-surface">

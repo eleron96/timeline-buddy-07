@@ -1,7 +1,7 @@
-.PHONY: help up down logs up-prod down-prod logs-prod
+.PHONY: help up down logs up-prod down-prod logs-prod audit-migrations
 
 help:
-	@printf "Targets:\n  up\n  down\n  logs\n  up-prod\n  down-prod\n  logs-prod\n"
+	@printf "Targets:\n  up\n  down\n  logs\n  up-prod\n  down-prod\n  logs-prod\n  audit-migrations\n"
 
 up:
 	./infra/scripts/dev-compose.sh
@@ -20,3 +20,6 @@ down-prod:
 
 logs-prod:
 	docker compose -f infra/docker-compose.prod.yml --env-file .env logs -f
+
+audit-migrations:
+	./infra/scripts/audit-migrations.sh

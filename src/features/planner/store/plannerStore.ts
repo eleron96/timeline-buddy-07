@@ -26,6 +26,7 @@ import {
   TaskType,
   Tag,
   TaskPriority,
+  RepeatTaskUpdateScope,
   ViewMode,
   GroupMode,
   Filters,
@@ -155,7 +156,7 @@ interface PlannerStore extends PlannerState {
   reset: () => void;
 
   addTask: (task: Omit<Task, 'id'>) => Promise<Task | null>;
-  updateTask: (id: string, updates: Partial<Task>) => Promise<void>;
+  updateTask: (id: string, updates: Partial<Task>, scope?: RepeatTaskUpdateScope) => Promise<void>;
   deleteTask: (id: string) => Promise<void>;
   deleteTasks: (ids: string[]) => Promise<{ error?: string }>;
   duplicateTask: (id: string) => Promise<void>;
@@ -163,6 +164,7 @@ interface PlannerStore extends PlannerState {
   moveTask: (id: string, startDate: string, endDate: string) => Promise<void>;
   reassignTask: (id: string, assigneeId: string | null, projectId?: string | null) => Promise<void>;
   deleteTaskSeries: (repeatId: string, fromDate: string) => Promise<void>;
+  removeAssigneeFromTask: (id: string, assigneeId: string, mode: 'single' | 'following') => Promise<void>;
 
   addProject: (project: Omit<Project, 'id'>) => Promise<void>;
   updateProject: (id: string, updates: Partial<Project>) => Promise<void>;
@@ -197,6 +199,7 @@ interface PlannerStore extends PlannerState {
   setGroupMode: (mode: GroupMode) => void;
   setCurrentDate: (date: string) => void;
   requestScrollToDate: (date: string) => void;
+  setTimelineAttentionDate: (date: string | null) => void;
   setFilters: (filters: Partial<Filters>) => void;
   clearFilterCriteria: () => void;
   clearFilters: () => void;
@@ -253,6 +256,15 @@ const normalizeAssigneeIds = (assigneeIds: string[] | null | undefined, legacyId
 const uniqueAssigneeIds = (assigneeIds: string[] | null | undefined) => (
   Array.from(new Set((assigneeIds ?? []).filter(Boolean)))
 );
+
+const pickActiveAssigneeIds = (assigneeIds: string[] | null | undefined, assignees: Assignee[]) => {
+  const activeIds = new Set(
+    assignees
+      .filter((assignee) => assignee.isActive)
+      .map((assignee) => assignee.id),
+  );
+  return uniqueAssigneeIds(assigneeIds).filter((id) => activeIds.has(id));
+};
 
 const mapTaskRow = (row: TaskRow): Task => ({
   id: row.id,
@@ -368,6 +380,7 @@ export const usePlannerStore = create<PlannerStore>()(
       filters: initialFilters,
       selectedTaskId: null,
       highlightedTaskId: null,
+      timelineAttentionDate: null,
       workspaceId: null,
       loading: false,
       error: null,
@@ -394,6 +407,7 @@ export const usePlannerStore = create<PlannerStore>()(
         tags: [],
         selectedTaskId: null,
         highlightedTaskId: null,
+        timelineAttentionDate: null,
         workspaceId: null,
         loading: false,
         error: null,
@@ -424,6 +438,7 @@ export const usePlannerStore = create<PlannerStore>()(
           workspaceId,
           selectedTaskId: null,
           highlightedTaskId: null,
+          timelineAttentionDate: null,
           dataRequestId: requestId,
         });
 
@@ -706,7 +721,7 @@ export const usePlannerStore = create<PlannerStore>()(
         const workspaceId = get().workspaceId;
         if (!workspaceId) return null;
 
-        const assigneeIds = uniqueAssigneeIds(task.assigneeIds);
+        const assigneeIds = pickActiveAssigneeIds(task.assigneeIds, get().assignees);
 
         const { data, error } = await supabase
           .from('tasks')
@@ -738,12 +753,64 @@ export const usePlannerStore = create<PlannerStore>()(
         return mapped;
       },
 
-      updateTask: async (id, updates) => {
+      updateTask: async (id, updates, scope = 'single') => {
         const workspaceId = get().workspaceId;
         if (!workspaceId) return;
 
         const payload = mapTaskUpdates(updates);
         if (Object.keys(payload).length === 0) return;
+
+        const applyUpdatedRows = (rows: TaskRow[]) => {
+          if (rows.length === 0) return;
+          const updatedById = new Map(rows.map((row) => [row.id, mapTaskRow(row)]));
+          set((state) => ({
+            tasks: state.tasks.map((task) => updatedById.get(task.id) ?? task),
+          }));
+        };
+
+        let baseTask = get().tasks.find((task) => task.id === id) ?? null;
+        if (!baseTask && scope !== 'single') {
+          const { data: baseTaskData, error: baseTaskError } = await supabase
+            .from('tasks')
+            .select('*')
+            .eq('id', id)
+            .eq('workspace_id', workspaceId)
+            .single();
+          if (baseTaskError || !baseTaskData) {
+            console.error(baseTaskError);
+            return;
+          }
+          baseTask = mapTaskRow(baseTaskData as TaskRow);
+          set((state) => (
+            state.tasks.some((task) => task.id === baseTask!.id)
+              ? state
+              : { tasks: [...state.tasks, baseTask!] }
+          ));
+        }
+
+        const repeatScope = (scope !== 'single' && baseTask?.repeatId)
+          ? scope
+          : 'single';
+
+        if (repeatScope !== 'single' && baseTask?.repeatId) {
+          const query = supabase
+            .from('tasks')
+            .update(payload)
+            .eq('workspace_id', workspaceId)
+            .eq('repeat_id', baseTask.repeatId);
+
+          const { data, error } = await (repeatScope === 'following'
+            ? query.gte('start_date', baseTask.startDate).select('*')
+            : query.select('*'));
+
+          if (error) {
+            console.error(error);
+            return;
+          }
+
+          applyUpdatedRows((data ?? []) as TaskRow[]);
+          return;
+        }
 
         const { data, error } = await supabase
           .from('tasks')
@@ -886,7 +953,7 @@ export const usePlannerStore = create<PlannerStore>()(
         const baseStart = parseISO(task.startDate);
         const baseEnd = parseISO(task.endDate);
         const duration = differenceInDays(baseEnd, baseStart) + 1;
-        const assigneeIds = uniqueAssigneeIds(task.assigneeIds);
+        const assigneeIds = pickActiveAssigneeIds(task.assigneeIds, get().assignees);
         const { data: existingRepeats, error: existingRepeatsError } = await supabase
           .from('tasks')
           .select('start_date')
@@ -988,6 +1055,13 @@ export const usePlannerStore = create<PlannerStore>()(
       },
 
       reassignTask: async (id, assigneeId, projectId) => {
+        if (assigneeId) {
+          const targetAssignee = get().assignees.find((assignee) => assignee.id === assigneeId);
+          if (!targetAssignee?.isActive) {
+            return;
+          }
+        }
+
         await get().updateTask(id, {
           assigneeIds: assigneeId ? [assigneeId] : [],
           ...(projectId !== undefined ? { projectId } : {}),
@@ -1019,6 +1093,104 @@ export const usePlannerStore = create<PlannerStore>()(
           return {
             tasks: state.tasks.filter((item) => !(item.repeatId === repeatId && item.startDate >= fromDate)),
             selectedTaskId: state.selectedTaskId && deletedIds.has(state.selectedTaskId) ? null : state.selectedTaskId,
+          };
+        });
+      },
+
+      removeAssigneeFromTask: async (id, assigneeId, mode) => {
+        const workspaceId = get().workspaceId;
+        if (!workspaceId || !assigneeId) return;
+
+        let baseTask = get().tasks.find((task) => task.id === id) ?? null;
+        if (!baseTask) {
+          const { data, error } = await supabase
+            .from('tasks')
+            .select('*')
+            .eq('id', id)
+            .eq('workspace_id', workspaceId)
+            .single();
+          if (error || !data) {
+            console.error(error);
+            return;
+          }
+          baseTask = mapTaskRow(data as TaskRow);
+        }
+
+        const isFollowingMode = mode === 'following' && Boolean(baseTask.repeatId);
+        const query = supabase
+          .from('tasks')
+          .select('*')
+          .eq('workspace_id', workspaceId);
+        const { data: targetRows, error: targetRowsError } = await (isFollowingMode
+          ? query
+            .eq('repeat_id', baseTask.repeatId)
+            .gte('start_date', baseTask.startDate)
+          : query.eq('id', id));
+
+        if (targetRowsError) {
+          console.error(targetRowsError);
+          return;
+        }
+
+        const rows = (targetRows ?? []) as TaskRow[];
+        if (rows.length === 0) return;
+
+        const updatedRows: TaskRow[] = [];
+        const deleteIds: string[] = [];
+
+        for (const row of rows) {
+          const currentAssignees = normalizeAssigneeIds(row.assignee_ids, row.assignee_id);
+          if (!currentAssignees.includes(assigneeId)) continue;
+
+          const nextAssignees = uniqueAssigneeIds(currentAssignees.filter((item) => item !== assigneeId));
+          if (nextAssignees.length === 0) {
+            deleteIds.push(row.id);
+            continue;
+          }
+
+          const { data: updatedRow, error: updateError } = await supabase
+            .from('tasks')
+            .update({
+              assignee_ids: nextAssignees,
+              assignee_id: nextAssignees[0] ?? null,
+            })
+            .eq('workspace_id', workspaceId)
+            .eq('id', row.id)
+            .select('*')
+            .single();
+
+          if (updateError || !updatedRow) {
+            console.error(updateError);
+            return;
+          }
+
+          updatedRows.push(updatedRow as TaskRow);
+        }
+
+        if (deleteIds.length > 0) {
+          const { error: deleteError } = await supabase
+            .from('tasks')
+            .delete()
+            .eq('workspace_id', workspaceId)
+            .in('id', deleteIds);
+          if (deleteError) {
+            console.error(deleteError);
+            return;
+          }
+        }
+
+        if (updatedRows.length === 0 && deleteIds.length === 0) return;
+
+        set((state) => {
+          const updatedById = new Map(updatedRows.map((row) => [row.id, mapTaskRow(row)]));
+          const deleted = new Set(deleteIds);
+          return {
+            tasks: state.tasks
+              .filter((task) => !deleted.has(task.id))
+              .map((task) => updatedById.get(task.id) ?? task),
+            selectedTaskId: state.selectedTaskId && deleted.has(state.selectedTaskId)
+              ? null
+              : state.selectedTaskId,
           };
         });
       },
@@ -1637,6 +1809,7 @@ export const usePlannerStore = create<PlannerStore>()(
         scrollTargetDate: date,
         scrollRequestId: state.scrollRequestId + 1,
       })),
+      setTimelineAttentionDate: (date) => set({ timelineAttentionDate: date }),
       setFilters: (filters) => set((state) => ({
         filters: { ...state.filters, ...filters },
       })),

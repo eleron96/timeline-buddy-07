@@ -37,7 +37,7 @@ update public.workspace_dashboards wd
 set widgets = (
   select jsonb_agg(
     case
-      when widget ? 'statusIds' then
+      when jsonb_exists(widget, 'statusIds') then
         jsonb_set(
           widget,
           '{statusIds}',

@@ -27,7 +27,7 @@ import {
 } from '@/shared/ui/alert-dialog';
 import { AlertTriangle, ChevronDown, CircleDot, Layers, RotateCw, Trash2, User, X } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/shared/ui/tooltip';
-import { Task, TaskPriority } from '@/features/planner/types/planner';
+import { RepeatTaskUpdateScope, Task, TaskPriority } from '@/features/planner/types/planner';
 import { useAuthStore } from '@/features/auth/store/authStore';
 import { addDays, endOfMonth, format, isSameMonth, isSameYear, parseISO } from 'date-fns';
 import { t } from '@lingui/macro';
@@ -55,6 +55,22 @@ const shouldIgnoreOutsideInteraction = (target: EventTarget | null) => {
   return Boolean(target.closest('[data-radix-popper-content-wrapper]'));
 };
 
+type PendingRepeatUpdate = {
+  taskId: string;
+  updates: Partial<Task>;
+  resetDraftOnCancel: boolean;
+};
+
+const hasTaskUpdates = (task: Task, updates: Partial<Task>) => (
+  Object.entries(updates).some(([key, value]) => {
+    const currentValue = task[key as keyof Task];
+    if (Array.isArray(currentValue) && Array.isArray(value)) {
+      return !areArraysEqual(currentValue, value);
+    }
+    return currentValue !== value;
+  })
+);
+
 export const TaskDetailPanel: React.FC = () => {
   const { 
     selectedTaskId, 
@@ -67,6 +83,7 @@ export const TaskDetailPanel: React.FC = () => {
     statuses, 
     taskTypes, 
     tags,
+    groupMode,
     updateTask,
     deleteTask,
     deleteTaskSeries,
@@ -93,6 +110,8 @@ export const TaskDetailPanel: React.FC = () => {
   const originalTaskRef = useRef<Task | null>(null);
   const repeatInFlightRef = useRef(false);
   const repeatUntilAutoRef = useRef(true);
+  const titleDraftRef = useRef('');
+  const descriptionDraftRef = useRef('');
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [repeatFrequency, setRepeatFrequency] = useState<'none' | 'daily' | 'weekly' | 'monthly' | 'yearly'>('none');
   const [repeatEnds, setRepeatEnds] = useState<'never' | 'on' | 'after'>('never');
@@ -101,6 +120,10 @@ export const TaskDetailPanel: React.FC = () => {
   const [repeatError, setRepeatError] = useState('');
   const [repeatNotice, setRepeatNotice] = useState('');
   const [repeatCreating, setRepeatCreating] = useState(false);
+  const [repeatScopeOpen, setRepeatScopeOpen] = useState(false);
+  const [pendingRepeatUpdate, setPendingRepeatUpdate] = useState<PendingRepeatUpdate | null>(null);
+  const [draftTitle, setDraftTitle] = useState('');
+  const [draftDescription, setDraftDescription] = useState('');
   const [deleteOpen, setDeleteOpen] = useState(false);
   
   const task = tasks.find(t => t.id === selectedTaskId);
@@ -122,6 +145,7 @@ export const TaskDetailPanel: React.FC = () => {
       (assignee) => assignee.isActive || task.assigneeIds.includes(assignee.id),
     );
   }, [filteredAssignees, task]);
+  const noProjectDisabled = groupMode === 'project';
 
   useEffect(() => {
     if (!selectedTaskId) {
@@ -137,6 +161,21 @@ export const TaskDetailPanel: React.FC = () => {
       };
     }
   }, [selectedTaskId, task]);
+
+  useEffect(() => {
+    if (!task) {
+      titleDraftRef.current = '';
+      descriptionDraftRef.current = '';
+      setDraftTitle('');
+      setDraftDescription('');
+      return;
+    }
+    titleDraftRef.current = task.title;
+    setDraftTitle(task.title);
+    const nextDescription = task.description || '';
+    descriptionDraftRef.current = nextDescription;
+    setDraftDescription(nextDescription);
+  }, [task]);
 
   const getDefaultRepeatUntil = (baseDate: string) => {
     const start = parseISO(baseDate);
@@ -157,14 +196,20 @@ export const TaskDetailPanel: React.FC = () => {
     setRepeatError('');
     setRepeatNotice('');
     setRepeatCreating(false);
-  }, [task?.id]);
+  }, [task]);
+
+  useEffect(() => {
+    if (selectedTaskId) return;
+    setRepeatScopeOpen(false);
+    setPendingRepeatUpdate(null);
+  }, [selectedTaskId]);
 
   useEffect(() => {
     if (!task) return;
     if (repeatFrequency === 'none' || repeatEnds !== 'on') return;
     if (!repeatUntilAutoRef.current) return;
     setRepeatUntil(getDefaultRepeatUntil(task.startDate));
-  }, [repeatEnds, repeatFrequency, task?.startDate]);
+  }, [repeatEnds, repeatFrequency, task]);
 
   const handleRepeatFrequencyChange = (value: typeof repeatFrequency) => {
     setRepeatFrequency(value);
@@ -188,12 +233,12 @@ export const TaskDetailPanel: React.FC = () => {
   }, [task]);
 
   const assigneeLabel = useMemo(() => {
-    if (!task || task.assigneeIds.length === 0) return 'Unassigned';
+    if (!task || task.assigneeIds.length === 0) return t`Unassigned`;
     const selected = filteredAssignees
       .filter((assignee) => task.assigneeIds.includes(assignee.id))
       .map((assignee) => assignee.name);
     if (selected.length === 1 && task.assigneeIds.length === 1) return selected[0];
-    return `${task.assigneeIds.length} assignees`;
+    return t`${task.assigneeIds.length} assignees`;
   }, [filteredAssignees, task]);
 
   const requestClose = () => {
@@ -205,6 +250,7 @@ export const TaskDetailPanel: React.FC = () => {
   };
 
   const handleSaveAndClose = () => {
+    if (repeatScopeOpen || pendingRepeatUpdate) return;
     setConfirmOpen(false);
     setSelectedTaskId(null);
   };
@@ -224,7 +270,7 @@ export const TaskDetailPanel: React.FC = () => {
       <Dialog open={!!selectedTaskId} onOpenChange={(open) => !open && requestClose()}>
         <DialogContent className="w-[90vw] max-w-[420px]">
           <DialogHeader>
-            <DialogTitle>Task not found</DialogTitle>
+            <DialogTitle>{t`Task not found.`}</DialogTitle>
             <DialogDescription>
               {t`The selected task does not exist or was deleted.`}
             </DialogDescription>
@@ -238,10 +284,44 @@ export const TaskDetailPanel: React.FC = () => {
   const hasFutureRepeats = isRepeating
     ? tasks.some((item) => item.repeatId === task.repeatId && item.startDate > task.startDate)
     : false;
-  
-  const handleUpdate = (field: keyof Task, value: Task[keyof Task]) => {
+
+  const requestTaskUpdate = (updates: Partial<Task>, resetDraftOnCancel = false) => {
     if (!canEdit) return;
-    updateTask(task.id, { [field]: value } as Partial<Task>);
+    if (!hasTaskUpdates(task, updates)) return;
+    if (task.repeatId) {
+      setPendingRepeatUpdate({
+        taskId: task.id,
+        updates,
+        resetDraftOnCancel,
+      });
+      setRepeatScopeOpen(true);
+      return;
+    }
+    void updateTask(task.id, updates, 'single');
+  };
+
+  const applyPendingRepeatUpdate = async (scope: RepeatTaskUpdateScope) => {
+    const pending = pendingRepeatUpdate;
+    if (!pending) return;
+    setPendingRepeatUpdate(null);
+    setRepeatScopeOpen(false);
+    await updateTask(pending.taskId, pending.updates, scope);
+  };
+
+  const cancelPendingRepeatUpdate = () => {
+    const pending = pendingRepeatUpdate;
+    setPendingRepeatUpdate(null);
+    setRepeatScopeOpen(false);
+    if (!pending?.resetDraftOnCancel) return;
+    titleDraftRef.current = task.title;
+    setDraftTitle(task.title);
+    const nextDescription = task.description || '';
+    descriptionDraftRef.current = nextDescription;
+    setDraftDescription(nextDescription);
+  };
+
+  const handleUpdate = (field: keyof Task, value: Task[keyof Task]) => {
+    requestTaskUpdate({ [field]: value } as Partial<Task>);
   };
 
   const handleAssigneeToggle = (assigneeId: string) => {
@@ -257,7 +337,7 @@ export const TaskDetailPanel: React.FC = () => {
     const sorted = [...new Set(next)].sort((left, right) => (
       (order.get(left) ?? 0) - (order.get(right) ?? 0)
     ));
-    updateTask(task.id, { assigneeIds: sorted });
+    requestTaskUpdate({ assigneeIds: sorted });
   };
   
   const handleTagToggle = (tagId: string) => {
@@ -265,7 +345,7 @@ export const TaskDetailPanel: React.FC = () => {
     const newTagIds = task.tagIds.includes(tagId)
       ? task.tagIds.filter(id => id !== tagId)
       : [...task.tagIds, tagId];
-    updateTask(task.id, { tagIds: newTagIds });
+    requestTaskUpdate({ tagIds: newTagIds });
   };
   
   const handleDelete = () => {
@@ -280,17 +360,17 @@ export const TaskDetailPanel: React.FC = () => {
     setRepeatError('');
     setRepeatNotice('');
     if (repeatFrequency === 'none') {
-      setRepeatError('Select a repeat schedule.');
+      setRepeatError(t`Select a repeat schedule.`);
       repeatInFlightRef.current = false;
       return;
     }
     if (repeatEnds === 'after' && (!repeatCount || repeatCount < 1)) {
-      setRepeatError('Enter how many repeats to create.');
+      setRepeatError(t`Enter how many repeats to create.`);
       repeatInFlightRef.current = false;
       return;
     }
     if (repeatEnds === 'on' && !repeatUntil) {
-      setRepeatError('Select an end date.');
+      setRepeatError(t`Select an end date.`);
       repeatInFlightRef.current = false;
       return;
     }
@@ -335,36 +415,46 @@ export const TaskDetailPanel: React.FC = () => {
           <div className="grid gap-6 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
             <div className="space-y-3">
               <div className="space-y-2">
-                <Label htmlFor="title">Title</Label>
+                <Label htmlFor="title">{t`Title`}</Label>
                 <div className="space-y-1.5">
                   <Input
                     id="title"
-                    value={task.title}
-                    onChange={(e) => handleUpdate('title', e.target.value)}
+                    value={draftTitle}
+                    onChange={(e) => {
+                      const nextTitle = e.target.value;
+                      titleDraftRef.current = nextTitle;
+                      setDraftTitle(nextTitle);
+                    }}
+                    onBlur={() => {
+                      requestTaskUpdate({ title: titleDraftRef.current }, true);
+                    }}
                     className="text-lg font-semibold"
                     disabled={isReadOnly}
                   />
                   {task.repeatId && (
                     <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                       <RotateCw className="h-3 w-3" aria-hidden="true" />
-                      <span>Repeat</span>
+                      <span>{t`Repeat`}</span>
                     </div>
                   )}
                 </div>
               </div>
 
               <div className="space-y-2">
-                <Label>Project</Label>
+                <Label>{t`Project`}</Label>
                 <Select
                   value={task.projectId || 'none'}
-                  onValueChange={(v) => handleUpdate('projectId', v === 'none' ? null : v)}
+                  onValueChange={(v) => {
+                    if (noProjectDisabled && v === 'none') return;
+                    handleUpdate('projectId', v === 'none' ? null : v);
+                  }}
                   disabled={isReadOnly}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Select project" />
+                    <SelectValue placeholder={t`Select project`} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="none">No Project</SelectItem>
+                    <SelectItem value="none" disabled={noProjectDisabled}>{t`No project`}</SelectItem>
                     {projectOptions.map((project) => (
                       <SelectItem key={project.id} value={project.id}>
                         <div className="flex items-center gap-2">
@@ -374,7 +464,7 @@ export const TaskDetailPanel: React.FC = () => {
                           />
                           {formatProjectLabel(project.name, project.code)}
                           {project.archived && (
-                            <span className="ml-1 text-[10px] text-muted-foreground">(archived)</span>
+                            <span className="ml-1 text-[10px] text-muted-foreground">({t`Archived`})</span>
                           )}
                         </div>
                       </SelectItem>
@@ -392,9 +482,16 @@ export const TaskDetailPanel: React.FC = () => {
                 <Label htmlFor="description">{t`Description`}</Label>
                 <RichTextEditor
                   id="description"
-                  value={task.description || ''}
+                  value={draftDescription}
                   workspaceId={currentWorkspaceId}
-                  onChange={(value) => handleUpdate('description', value || null)}
+                  onChange={(value) => {
+                    const nextDescription = value || '';
+                    descriptionDraftRef.current = nextDescription;
+                    setDraftDescription(nextDescription);
+                  }}
+                  onBlur={() => {
+                    requestTaskUpdate({ description: descriptionDraftRef.current || null }, true);
+                  }}
                   placeholder={t`Add a description...`}
                   disabled={isReadOnly}
                   className="max-h-[45vh] overflow-y-auto pr-2"
@@ -575,7 +672,7 @@ export const TaskDetailPanel: React.FC = () => {
               </div>
 
               <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">Repeat</Label>
+                <Label className="text-xs text-muted-foreground">{t`Repeat`}</Label>
                 <div className="grid grid-cols-2 gap-2">
                   <Select
                     value={repeatFrequency}
@@ -583,14 +680,14 @@ export const TaskDetailPanel: React.FC = () => {
                     disabled={isReadOnly}
                   >
                     <SelectTrigger className="h-8 text-sm">
-                      <SelectValue placeholder="Repeat" />
+                      <SelectValue placeholder={t`Repeat`} />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="none">Does not repeat</SelectItem>
-                      <SelectItem value="daily">Daily</SelectItem>
-                      <SelectItem value="weekly">Weekly</SelectItem>
-                      <SelectItem value="monthly">Monthly</SelectItem>
-                      <SelectItem value="yearly">Yearly</SelectItem>
+                      <SelectItem value="none">{t`Does not repeat`}</SelectItem>
+                      <SelectItem value="daily">{t`Daily`}</SelectItem>
+                      <SelectItem value="weekly">{t`Weekly`}</SelectItem>
+                      <SelectItem value="monthly">{t`Monthly`}</SelectItem>
+                      <SelectItem value="yearly">{t`Yearly`}</SelectItem>
                     </SelectContent>
                   </Select>
                   <Select
@@ -599,18 +696,18 @@ export const TaskDetailPanel: React.FC = () => {
                     disabled={isReadOnly || repeatFrequency === 'none'}
                   >
                     <SelectTrigger className="h-8 text-sm">
-                      <SelectValue placeholder="Ends" />
+                      <SelectValue placeholder={t`Ends`} />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="never">Never</SelectItem>
-                      <SelectItem value="on">On date</SelectItem>
-                      <SelectItem value="after">After count</SelectItem>
+                      <SelectItem value="never">{t`Never`}</SelectItem>
+                      <SelectItem value="on">{t`On date`}</SelectItem>
+                      <SelectItem value="after">{t`After count`}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                 {repeatFrequency !== 'none' && repeatEnds === 'on' && (
                   <div className="space-y-1">
-                    <Label htmlFor="repeat-until" className="text-xs text-muted-foreground">End date</Label>
+                    <Label htmlFor="repeat-until" className="text-xs text-muted-foreground">{t`End date`}</Label>
                     <Input
                       id="repeat-until"
                       type="date"
@@ -626,7 +723,7 @@ export const TaskDetailPanel: React.FC = () => {
                 )}
                 {repeatFrequency !== 'none' && repeatEnds === 'after' && (
                   <div className="space-y-1">
-                    <Label htmlFor="repeat-count" className="text-xs text-muted-foreground">Occurrences</Label>
+                    <Label htmlFor="repeat-count" className="text-xs text-muted-foreground">{t`Occurrences`}</Label>
                     <Input
                       id="repeat-count"
                       type="number"
@@ -657,12 +754,12 @@ export const TaskDetailPanel: React.FC = () => {
                   onClick={handleCreateRepeats}
                   disabled={isReadOnly || repeatFrequency === 'none' || repeatCreating}
                 >
-                  Create repeats
+                  {t`Generate`}
                 </Button>
               </div>
 
               <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">Tags</Label>
+                <Label className="text-xs text-muted-foreground">{t`Tags`}</Label>
                 <div className="flex flex-wrap gap-1.5">
                   {tags.map(tag => {
                     const isSelected = task.tagIds.includes(tag.id);
@@ -700,7 +797,7 @@ export const TaskDetailPanel: React.FC = () => {
                   disabled={isReadOnly}
                 >
                   <Trash2 className="w-4 h-4 mr-2" />
-                  Delete
+                  {t`Delete`}
                 </Button>
               </div>
 
@@ -713,7 +810,7 @@ export const TaskDetailPanel: React.FC = () => {
                     onClick={() => duplicateTask(task.id)}
                     disabled={isReadOnly}
                   >
-                    Duplicate
+                    {t`Duplicate task`}
                   </Button>
                   <Button
                     variant="default"
@@ -732,14 +829,65 @@ export const TaskDetailPanel: React.FC = () => {
       <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Save changes?</AlertDialogTitle>
+            <AlertDialogTitle>{t`Unsaved changes`}</AlertDialogTitle>
             <AlertDialogDescription>
-              You have unsaved changes. Do you want to save them before closing?
+              {t`You have unsaved changes. Close without saving?`}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={handleDiscardAndClose}>Don&apos;t save</AlertDialogCancel>
-            <AlertDialogAction onClick={handleSaveAndClose}>Save</AlertDialogAction>
+            <AlertDialogCancel onClick={handleDiscardAndClose}>{t`Discard`}</AlertDialogCancel>
+            <AlertDialogAction onClick={handleSaveAndClose}>{t`Save`}</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={repeatScopeOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            cancelPendingRepeatUpdate();
+            return;
+          }
+          setRepeatScopeOpen(true);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t`Apply changes to repeating tasks?`}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t`Choose where to apply this change.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="flex-row flex-wrap items-center justify-between gap-2 sm:justify-between sm:space-x-0">
+            <AlertDialogCancel className="mt-0 h-8 px-2.5 text-xs" onClick={cancelPendingRepeatUpdate}>
+              {t`Cancel`}
+            </AlertDialogCancel>
+            <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+              <AlertDialogAction
+                className="h-8 whitespace-nowrap bg-muted px-2.5 text-xs text-foreground hover:bg-muted/80"
+                onClick={() => {
+                  void applyPendingRepeatUpdate('all');
+                }}
+              >
+                {t`All tasks`}
+              </AlertDialogAction>
+              <AlertDialogAction
+                className="h-8 whitespace-nowrap bg-muted px-2.5 text-xs text-foreground hover:bg-muted/80"
+                onClick={() => {
+                  void applyPendingRepeatUpdate('following');
+                }}
+              >
+                {t`This and following`}
+              </AlertDialogAction>
+              <AlertDialogAction
+                className="h-8 whitespace-nowrap px-2.5 text-xs"
+                onClick={() => {
+                  void applyPendingRepeatUpdate('single');
+                }}
+              >
+                {t`Only this task`}
+              </AlertDialogAction>
+            </div>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -747,15 +895,17 @@ export const TaskDetailPanel: React.FC = () => {
       <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>{isRepeating ? 'Delete repeated task?' : 'Delete task?'}</AlertDialogTitle>
+            <AlertDialogTitle>{isRepeating ? t`Delete repeated task?` : t`Delete task?`}</AlertDialogTitle>
             <AlertDialogDescription>
               {isRepeating
-                ? `Delete only this task or this and ${hasFutureRepeats ? 'future' : 'subsequent'} repeats? Previous repeats stay.`
-                : `This will permanently delete "${task.title}".`}
+                ? (hasFutureRepeats
+                  ? t`Delete only this task or this and future repeats? Previous repeats stay.`
+                  : t`Delete only this task or this and subsequent repeats? Previous repeats stay.`)
+                : t`This will permanently delete "${task.title}".`}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>{t`Cancel`}</AlertDialogCancel>
             {isRepeating ? (
               <>
                 <AlertDialogAction
@@ -766,7 +916,7 @@ export const TaskDetailPanel: React.FC = () => {
                     setDeleteOpen(false);
                   }}
                 >
-                  Delete this
+                  {t`Delete this`}
                 </AlertDialogAction>
                 <AlertDialogAction
                   className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
@@ -776,7 +926,7 @@ export const TaskDetailPanel: React.FC = () => {
                     setDeleteOpen(false);
                   }}
                 >
-                  Delete this & following
+                  {t`Delete this & following`}
                 </AlertDialogAction>
               </>
             ) : (
@@ -787,7 +937,7 @@ export const TaskDetailPanel: React.FC = () => {
                   setDeleteOpen(false);
                 }}
               >
-                Delete
+                {t`Delete`}
               </AlertDialogAction>
             )}
           </AlertDialogFooter>

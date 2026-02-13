@@ -3,14 +3,17 @@ import type { Session, User } from '@supabase/supabase-js';
 import { supabase } from '@/shared/lib/supabaseClient';
 import { usePlannerStore } from '@/features/planner/store/plannerStore';
 import { useLocaleStore } from '@/shared/store/localeStore';
-import type { Locale } from '@/shared/lib/locale';
+import { isSupportedLocale, type Locale } from '@/shared/lib/locale';
+import { clearPendingLocale, getPendingLocale } from '@/features/auth/lib/pendingLocale';
 
 export type WorkspaceRole = 'viewer' | 'editor' | 'admin';
 
 interface WorkspaceSummary {
   id: string;
   name: string;
+  holidayCountry: string;
   role: WorkspaceRole;
+  ownerId: string;
 }
 
 interface WorkspaceMember {
@@ -24,7 +27,7 @@ interface WorkspaceMember {
 interface WorkspaceMemberRow {
   workspace_id: string;
   role: WorkspaceRole;
-  workspaces: { id: string; name: string } | null;
+  workspaces: { id: string; name: string; holiday_country: string | null; owner_id: string | null } | null;
 }
 
 interface WorkspaceMemberProfileRow {
@@ -33,6 +36,23 @@ interface WorkspaceMemberProfileRow {
   group_id: string | null;
   profiles: { email: string; display_name: string | null } | null;
 }
+
+const DEFAULT_HOLIDAY_COUNTRY = 'RU';
+
+const normalizeHolidayCountryCode = (value: string | null | undefined) => {
+  const code = (value ?? '').trim().toUpperCase();
+  return /^[A-Z]{2}$/.test(code) ? code : DEFAULT_HOLIDAY_COUNTRY;
+};
+
+const mapWorkspaceRows = (rows: WorkspaceMemberRow[]): WorkspaceSummary[] => rows
+  .map((row) => ({
+    id: row.workspaces?.id ?? row.workspace_id,
+    name: row.workspaces?.name ?? 'Workspace',
+    holidayCountry: normalizeHolidayCountryCode(row.workspaces?.holiday_country),
+    role: row.role as WorkspaceRole,
+    ownerId: row.workspaces?.owner_id ?? '',
+  }))
+  .filter((workspace) => Boolean(workspace.id));
 
 export interface AdminUser {
   id: string;
@@ -127,8 +147,14 @@ interface AuthState {
   createWorkspace: (name: string) => Promise<{ error?: string }>;
   deleteWorkspace: (workspaceId?: string) => Promise<{ error?: string }>;
   updateWorkspaceName: (workspaceId: string, name: string) => Promise<{ error?: string }>;
+  updateWorkspaceHolidayCountry: (workspaceId: string, countryCode: string) => Promise<{ error?: string }>;
   fetchMembers: (workspaceId?: string) => Promise<void>;
-  inviteMember: (email: string, role: WorkspaceRole, groupId?: string | null) => Promise<{ error?: string; actionLink?: string; warning?: string }>;
+  inviteMember: (
+    email: string,
+    role: WorkspaceRole,
+    groupId?: string | null
+  ) => Promise<{ error?: string; actionLink?: string; warning?: string; inviteEmail?: string; inviteStatus?: string }>;
+  acceptInvite: (token: string) => Promise<{ error?: string; workspaceId?: string; warning?: string }>;
   updateMemberRole: (userId: string, role: WorkspaceRole) => Promise<{ error?: string }>;
   updateMemberGroup: (userId: string, groupId: string | null) => Promise<{ error?: string }>;
   removeMember: (userId: string) => Promise<{ error?: string }>;
@@ -169,6 +195,30 @@ const getBackupBaseUrl = () => {
 
 const trimTrailingSlash = (value: string) => value.replace(/\/+$/, '');
 
+const isLocalHostname = (hostname: string) => {
+  const normalized = hostname.trim().toLowerCase();
+  return normalized === 'localhost' || normalized === '127.0.0.1' || normalized === '::1' || normalized === 'host.docker.internal';
+};
+
+const resolveKeycloakPublicBase = () => {
+  const configured = trimTrailingSlash((import.meta.env.VITE_KEYCLOAK_PUBLIC_URL ?? '').trim());
+  if (!configured) return null;
+
+  try {
+    const parsed = new URL(configured);
+    if (
+      typeof window !== 'undefined'
+      && isLocalHostname(parsed.hostname)
+      && !isLocalHostname(window.location.hostname)
+    ) {
+      return trimTrailingSlash(window.location.origin);
+    }
+    return trimTrailingSlash(parsed.toString());
+  } catch (_error) {
+    return null;
+  }
+};
+
 const getOauth2ProxySignOutPath = () => {
   const signOutPath = (import.meta.env.VITE_OAUTH2_PROXY_SIGN_OUT_PATH ?? '/oauth2/sign_out').trim();
   if (!signOutPath) return '/oauth2/sign_out';
@@ -177,7 +227,7 @@ const getOauth2ProxySignOutPath = () => {
 };
 
 const getKeycloakLogoutUrl = (postLogoutRedirectUri: string) => {
-  const keycloakPublicUrl = trimTrailingSlash((import.meta.env.VITE_KEYCLOAK_PUBLIC_URL ?? '').trim());
+  const keycloakPublicUrl = resolveKeycloakPublicBase();
   const keycloakRealm = (import.meta.env.VITE_KEYCLOAK_REALM ?? '').trim();
   const keycloakClientId = (import.meta.env.VITE_KEYCLOAK_CLIENT_ID ?? '').trim();
 
@@ -320,11 +370,16 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   signInWithKeycloak: async (redirectTo) => {
     const destination = redirectTo
       ?? (typeof window !== 'undefined' ? `${window.location.origin}/auth` : undefined);
+    const locale = useLocaleStore.getState().locale;
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'keycloak',
       options: {
         ...(destination ? { redirectTo: destination } : {}),
-        queryParams: { prompt: 'login' },
+        scopes: 'openid profile email',
+        queryParams: {
+          prompt: 'login',
+          ...(locale ? { ui_locales: locale } : {}),
+        },
       },
     });
     if (error) return { error: error.message };
@@ -632,30 +687,33 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       return;
     }
 
-    const { data, error } = await supabase
-      .from('workspace_members')
-      .select('workspace_id, role, workspaces(id, name)')
-      .eq('user_id', user.id);
+    const loadWorkspaces = async () => {
+      const { data, error } = await supabase
+        .from('workspace_members')
+        .select('workspace_id, role, workspaces(id, name, holiday_country, owner_id)')
+        .eq('user_id', user.id);
 
-    if (error) {
-      console.error(error);
-      return;
-    }
+      if (error) {
+        console.error(error);
+        return null;
+      }
 
-    const rows = (data ?? []) as WorkspaceMemberRow[];
-    const workspaces: WorkspaceSummary[] = rows.map((row) => ({
-      id: row.workspaces?.id ?? row.workspace_id,
-      name: row.workspaces?.name ?? 'Workspace',
-      role: row.role as WorkspaceRole,
-    })).filter((workspace) => Boolean(workspace.id));
+      return mapWorkspaceRows((data ?? []) as WorkspaceMemberRow[]);
+    };
+
+    let workspaces = await loadWorkspaces();
+    if (!workspaces) return;
 
     if (workspaces.length === 0) {
-      const { error: createError } = await get().createWorkspace('My Workspace');
-      if (createError) {
-        console.error(createError);
+      const { error: ensureError } = await supabase.rpc('ensure_initial_workspace', {
+        default_workspace_name: 'My Workspace',
+      });
+      if (ensureError) {
+        console.error(ensureError);
         return;
       }
-      return;
+      workspaces = await loadWorkspaces();
+      if (!workspaces || workspaces.length === 0) return;
     }
 
     const storageKey = getWorkspaceStorageKey(user.id);
@@ -691,11 +749,30 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
 
     const displayName = data?.display_name?.trim();
-    const profileLocale = (typeof data?.locale === 'string' ? data.locale : null) as Locale | null;
+    const profileLocale = isSupportedLocale(data?.locale) ? data.locale : null;
+    const pendingLocale = getPendingLocale();
+    const nextLocale = pendingLocale ?? profileLocale;
+
     set({
       profileDisplayName: displayName ? displayName : null,
-      profileLocale,
+      profileLocale: nextLocale,
     });
+
+    if (pendingLocale) {
+      useLocaleStore.getState().setLocale(pendingLocale);
+      clearPendingLocale();
+      if (profileLocale !== pendingLocale) {
+        const { error: localeError } = await supabase
+          .from('profiles')
+          .update({ locale: pendingLocale })
+          .eq('id', user.id);
+        if (localeError) {
+          console.error(localeError);
+        }
+      }
+      return;
+    }
+
     useLocaleStore.getState().setLocaleFromProfile(profileLocale);
   },
   setCurrentWorkspaceId: (id) => {
@@ -725,8 +802,35 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const targetWorkspaceId = workspaceId ?? get().currentWorkspaceId;
     if (!targetWorkspaceId) return { error: 'Workspace not selected.' };
 
+    const { currentWorkspaceId, user } = get();
+    const isCurrentWorkspace = currentWorkspaceId === targetWorkspaceId;
+
+    if (isCurrentWorkspace) {
+      set({
+        currentWorkspaceId: null,
+        currentWorkspaceRole: null,
+        members: [],
+      });
+      const plannerStore = usePlannerStore.getState();
+      plannerStore.reset();
+      plannerStore.clearFilters();
+
+      if (user && typeof window !== 'undefined') {
+        const storageKey = getWorkspaceStorageKey(user.id);
+        const storedWorkspaceId = window.localStorage.getItem(storageKey);
+        if (storedWorkspaceId === targetWorkspaceId) {
+          window.localStorage.removeItem(storageKey);
+        }
+      }
+    }
+
     const { error } = await supabase.rpc('delete_workspace', { workspace_id: targetWorkspaceId });
-    if (error) return { error: error.message };
+    if (error) {
+      if (isCurrentWorkspace) {
+        await get().fetchWorkspaces();
+      }
+      return { error: error.message };
+    }
 
     await get().fetchWorkspaces();
     return {};
@@ -738,6 +842,19 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const { error } = await supabase
       .from('workspaces')
       .update({ name: trimmedName })
+      .eq('id', workspaceId);
+
+    if (error) return { error: error.message };
+
+    await get().fetchWorkspaces();
+    return {};
+  },
+  updateWorkspaceHolidayCountry: async (workspaceId, countryCode) => {
+    const normalizedCode = normalizeHolidayCountryCode(countryCode);
+
+    const { error } = await supabase
+      .from('workspaces')
+      .update({ holiday_country: normalizedCode })
       .eq('id', workspaceId);
 
     if (error) return { error: error.message };
@@ -778,13 +895,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     if (!workspaceId) return { error: 'Workspace not selected.' };
 
     const { data, error, response } = await supabase.functions.invoke('invite', {
-      body: { workspaceId, email, role, groupId },
+      body: { action: 'create', workspaceId, email, role, groupId },
     });
 
     if (error) {
       let message = error.message;
       let actionLink: string | undefined;
       let warning: string | undefined;
+      let inviteEmail: string | undefined;
+      let inviteStatus: string | undefined;
       if (response) {
         try {
           const body = await response.clone().json();
@@ -798,6 +917,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
             if (typeof (body as { warning?: string }).warning === 'string') {
               warning = (body as { warning: string }).warning;
             }
+            if (typeof (body as { inviteEmail?: string }).inviteEmail === 'string') {
+              inviteEmail = (body as { inviteEmail: string }).inviteEmail;
+            }
+            if (typeof (body as { inviteStatus?: string }).inviteStatus === 'string') {
+              inviteStatus = (body as { inviteStatus: string }).inviteStatus;
+            }
           }
         } catch (_error) {
           try {
@@ -808,17 +933,61 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           }
         }
       }
-      return { error: message, actionLink, warning };
+      return { error: message, actionLink, warning, inviteEmail, inviteStatus };
     }
 
     if (data?.error) {
-      return { error: data.error, actionLink: data.actionLink, warning: data.warning };
+      return {
+        error: data.error,
+        actionLink: data.actionLink,
+        warning: data.warning,
+        inviteEmail: data.inviteEmail,
+        inviteStatus: data.inviteStatus,
+      };
+    }
+    return {
+      actionLink: data?.actionLink,
+      warning: data?.warning,
+      inviteEmail: data?.inviteEmail,
+      inviteStatus: data?.inviteStatus,
+    };
+  },
+  acceptInvite: async (token) => {
+    const inviteToken = token.trim();
+    if (!inviteToken) return { error: 'Invite token is required.' };
+
+    const { data, error, response } = await supabase.functions.invoke('invite', {
+      body: { action: 'accept', token: inviteToken },
+    });
+
+    if (error) {
+      let message = error.message;
+      if (response) {
+        try {
+          const body = await response.clone().json();
+          if (body && typeof body === 'object' && typeof (body as { error?: string }).error === 'string') {
+            message = (body as { error: string }).error;
+          }
+        } catch (_parseError) {
+          try {
+            const text = await response.clone().text();
+            if (text) message = text;
+          } catch (_innerError) {
+            // Ignore parsing errors and keep the original message.
+          }
+        }
+      }
+      return { error: message };
     }
 
-    await get().fetchMembers(workspaceId);
-    await usePlannerStore.getState().refreshAssignees();
-    await usePlannerStore.getState().refreshMemberGroups();
-    return { actionLink: data?.actionLink, warning: data?.warning };
+    if (data?.error) {
+      return { error: data.error };
+    }
+
+    return {
+      workspaceId: typeof data?.workspaceId === 'string' ? data.workspaceId : undefined,
+      warning: typeof data?.warning === 'string' ? data.warning : undefined,
+    };
   },
   updateMemberRole: async (userId, role) => {
     const workspaceId = get().currentWorkspaceId;
@@ -862,6 +1031,24 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const currentUserId = get().user?.id;
     if (currentUserId && currentUserId === userId) {
       return { error: 'You cannot remove yourself.' };
+    }
+
+    if (!currentUserId) {
+      return { error: 'Access denied' };
+    }
+
+    const { data: workspace, error: workspaceError } = await supabase
+      .from('workspaces')
+      .select('owner_id')
+      .eq('id', workspaceId)
+      .single();
+
+    if (workspaceError) {
+      return { error: workspaceError.message };
+    }
+
+    if (workspace?.owner_id !== currentUserId) {
+      return { error: 'Access denied' };
     }
 
     const { error } = await supabase

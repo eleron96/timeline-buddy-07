@@ -22,6 +22,7 @@ export const AccountSettingsDialog: React.FC<AccountSettingsDialogProps> = ({ op
   const setLocale = useLocaleStore((state) => state.setLocale);
   const [displayName, setDisplayName] = useState('');
   const [initialDisplayName, setInitialDisplayName] = useState('');
+  const [isEditingName, setIsEditingName] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [saved, setSaved] = useState(false);
@@ -47,8 +48,10 @@ export const AccountSettingsDialog: React.FC<AccountSettingsDialogProps> = ({ op
         setLoading(false);
         return;
       }
-      setDisplayName(data?.display_name ?? '');
-      setInitialDisplayName(data?.display_name ?? '');
+      const nextDisplayName = data?.display_name ?? '';
+      setDisplayName(nextDisplayName);
+      setInitialDisplayName(nextDisplayName);
+      setIsEditingName(!nextDisplayName.trim());
       setLoading(false);
     };
 
@@ -74,8 +77,8 @@ export const AccountSettingsDialog: React.FC<AccountSettingsDialogProps> = ({ op
     || 'U';
 
   const isDisplayNameDirty = displayName !== initialDisplayName;
-  const showSave = Boolean(user && isDisplayNameDirty);
-  const showNameInput = !displayName.trim();
+  const showSave = Boolean(user && isEditingName && isDisplayNameDirty);
+  const canCancelEditing = Boolean(initialDisplayName.trim());
   const canEditName = Boolean(user && !loading);
   const languageOptions: Array<{ value: Locale; label: string }> = [
     { value: 'en', label: localeLabels.en },
@@ -92,6 +95,7 @@ export const AccountSettingsDialog: React.FC<AccountSettingsDialogProps> = ({ op
       return;
     }
     setInitialDisplayName(displayName);
+    setIsEditingName(false);
     setSaved(true);
   };
 
@@ -124,7 +128,7 @@ export const AccountSettingsDialog: React.FC<AccountSettingsDialogProps> = ({ op
           </div>
 
           <div className="w-full max-w-xs space-y-2">
-            {showNameInput ? (
+            {isEditingName ? (
               <>
                 <Input
                   value={displayName}
@@ -135,11 +139,28 @@ export const AccountSettingsDialog: React.FC<AccountSettingsDialogProps> = ({ op
                   placeholder={t`Add your name`}
                   disabled={!user || loading}
                 />
-                {showSave && (
-                  <Button onClick={handleSave} disabled={!user || loading} className="w-full">
-                    {t`Save`}
-                  </Button>
-                )}
+                <div className="flex items-center gap-2">
+                  {showSave && (
+                    <Button onClick={handleSave} disabled={!user || loading} className="w-full">
+                      {t`Save`}
+                    </Button>
+                  )}
+                  {canCancelEditing && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => {
+                        setDisplayName(initialDisplayName);
+                        setIsEditingName(false);
+                        setSaved(false);
+                      }}
+                      disabled={!canEditName}
+                      className="w-full"
+                    >
+                      {t`Cancel`}
+                    </Button>
+                  )}
+                </div>
               </>
             ) : (
               <div className="inline-flex items-start gap-1 text-lg font-semibold text-foreground">
@@ -150,7 +171,7 @@ export const AccountSettingsDialog: React.FC<AccountSettingsDialogProps> = ({ op
                   variant="ghost"
                   className="h-3.5 w-3.5 -mt-1 text-muted-foreground hover:text-foreground"
                   onClick={() => {
-                    setDisplayName('');
+                    setIsEditingName(true);
                     setSaved(false);
                   }}
                   disabled={!canEditName}

@@ -6,6 +6,7 @@ import { WorkspaceSwitcher } from '@/features/workspace/components/WorkspaceSwit
 import { WorkspaceNav } from '@/features/workspace/components/WorkspaceNav';
 import { SettingsPanel } from '@/features/workspace/components/SettingsPanel';
 import { AccountSettingsDialog } from '@/features/auth/components/AccountSettingsDialog';
+import { InviteNotifications } from '@/features/auth/components/InviteNotifications';
 import { Button } from '@/shared/ui/button';
 import { Input } from '@/shared/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/shared/ui/tabs';
@@ -22,7 +23,7 @@ import { t } from '@lingui/macro';
 import { formatStatusLabel } from '@/shared/lib/statusLabels';
 import { formatProjectLabel } from '@/shared/lib/projectLabels';
 import { cn } from '@/shared/lib/classNames';
-import { format, parseISO } from 'date-fns';
+import { differenceInCalendarDays, format, parseISO } from 'date-fns';
 import { Settings, User, RefreshCcw, ArrowDownAZ, ArrowDownZA, Layers, Plus } from 'lucide-react';
 import { Task } from '@/features/planner/types/planner';
 import { WorkspaceMembersPanel } from '@/features/workspace/components/WorkspaceMembersPanel';
@@ -46,6 +47,13 @@ type TaskRow = {
   repeat_id: string | null;
 };
 
+type TaskCountRow = {
+  id: string;
+  assignee_id: string | null;
+  assignee_ids: string[] | null;
+  repeat_id: string | null;
+};
+
 type MemberGroup = {
   id: string;
   workspace_id: string;
@@ -64,6 +72,17 @@ type GroupMember = {
   role: WorkspaceRole;
   email: string;
   displayName: string | null;
+};
+
+type DisplayTaskRow = {
+  key: string;
+  task: Task;
+  taskIds: string[];
+  repeatMeta: {
+    label: string;
+    remaining: number;
+    total: number;
+  } | null;
 };
 
 const normalizeAssigneeIds = (assigneeIds: string[] | null | undefined, legacyId: string | null | undefined) => {
@@ -118,6 +137,27 @@ const sanitizeDescription = (value: string) => (
   })
 );
 
+const inferRepeatLabel = (tasks: Task[]) => {
+  if (tasks.length < 2) return 'Повторяющаяся';
+  const sorted = [...tasks].sort((left, right) => left.startDate.localeCompare(right.startDate));
+  const first = parseISO(sorted[0].startDate);
+  const second = parseISO(sorted[1].startDate);
+  const diffDays = Math.abs(differenceInCalendarDays(second, first));
+  if (diffDays === 1) return 'Ежедневная';
+  if (diffDays === 7) return 'Еженедельная';
+  if (diffDays >= 28 && diffDays <= 31) return 'Ежемесячная';
+  if (diffDays >= 364 && diffDays <= 366) return 'Ежегодная';
+  return 'Повторяющаяся';
+};
+
+const countTaskUnits = (tasks: Task[]) => {
+  const units = new Set<string>();
+  tasks.forEach((task) => {
+    units.add(task.repeatId ? `r:${task.repeatId}` : `t:${task.id}`);
+  });
+  return units.size;
+};
+
 const MembersPage = () => {
   const [showSettings, setShowSettings] = useState(false);
   const [showAccountSettings, setShowAccountSettings] = useState(false);
@@ -155,6 +195,8 @@ const MembersPage = () => {
   const [groupActionLoading, setGroupActionLoading] = useState(false);
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
   const [editingGroupName, setEditingGroupName] = useState('');
+  const [memberTaskCounts, setMemberTaskCounts] = useState<Record<string, number>>({});
+  const [memberTaskCountsDate, setMemberTaskCountsDate] = useState<string | null>(null);
   const pageSize = 100;
 
   const {
@@ -178,7 +220,6 @@ const MembersPage = () => {
 
   const {
     user,
-    profileDisplayName,
     currentWorkspaceId,
     currentWorkspaceRole,
     isSuperAdmin,
@@ -186,7 +227,6 @@ const MembersPage = () => {
 
   const canEdit = currentWorkspaceRole === 'editor' || currentWorkspaceRole === 'admin';
   const isAdmin = currentWorkspaceRole === 'admin';
-  const userLabel = profileDisplayName || user?.email || user?.id || '';
   const roleLabels: Record<WorkspaceRole, string> = {
     admin: t`Admin`,
     editor: t`Editor`,
@@ -271,13 +311,25 @@ const MembersPage = () => {
     : user?.id
     ? `members-mode-user-${user.id}`
     : 'members-mode';
+  const tasksViewPrefsStorageKey = currentWorkspaceId
+    ? `members-tasks-view-prefs-${currentWorkspaceId}`
+    : user?.id
+    ? `members-tasks-view-prefs-user-${user.id}`
+    : 'members-tasks-view-prefs';
   const modeHydratedRef = useRef(false);
+  const tasksViewPrefsHydratedRef = useRef(false);
 
   useEffect(() => {
     if (currentWorkspaceId) {
       loadWorkspaceData(currentWorkspaceId);
     }
   }, [currentWorkspaceId, loadWorkspaceData]);
+
+  useEffect(() => {
+    if (currentWorkspaceId) return;
+    setMemberTaskCounts({});
+    setMemberTaskCountsDate(null);
+  }, [currentWorkspaceId]);
 
   useEffect(() => {
     modeHydratedRef.current = false;
@@ -303,6 +355,38 @@ const MembersPage = () => {
     if (!modeHydratedRef.current) return;
     window.localStorage.setItem(modeStorageKey, mode);
   }, [mode, modeStorageKey]);
+
+  useEffect(() => {
+    tasksViewPrefsHydratedRef.current = false;
+    if (typeof window === 'undefined') return;
+    const saved = window.localStorage.getItem(tasksViewPrefsStorageKey);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved) as Partial<{
+          memberSort: 'asc' | 'desc';
+          memberGroupBy: 'none' | 'group';
+        }>;
+        if (parsed.memberSort === 'asc' || parsed.memberSort === 'desc') {
+          setMemberSort(parsed.memberSort);
+        }
+        if (parsed.memberGroupBy === 'none' || parsed.memberGroupBy === 'group') {
+          setMemberGroupBy(parsed.memberGroupBy);
+        }
+      } catch {
+        // Ignore invalid localStorage payload and keep defaults.
+      }
+    }
+    tasksViewPrefsHydratedRef.current = true;
+  }, [tasksViewPrefsStorageKey]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (!tasksViewPrefsHydratedRef.current) return;
+    window.localStorage.setItem(tasksViewPrefsStorageKey, JSON.stringify({
+      memberSort,
+      memberGroupBy,
+    }));
+  }, [memberGroupBy, memberSort, tasksViewPrefsStorageKey]);
 
   const activeAssignees = useMemo(
     () => [...assignees].filter((assignee) => assignee.isActive).sort((a, b) => a.name.localeCompare(b.name)),
@@ -437,6 +521,40 @@ const MembersPage = () => {
     [groups, selectedGroupId],
   );
 
+  const refreshMemberTaskCounts = useCallback(async () => {
+    if (!currentWorkspaceId) return;
+    const today = format(new Date(), 'yyyy-MM-dd');
+    const { data, error } = await supabase
+      .from('tasks')
+      .select('id, assignee_id, assignee_ids, repeat_id')
+      .eq('workspace_id', currentWorkspaceId)
+      .gte('end_date', today);
+
+    if (error) {
+      console.error(error);
+      return;
+    }
+
+    const unitsByAssignee = new Map<string, Set<string>>();
+    ((data ?? []) as TaskCountRow[]).forEach((row) => {
+      const assigneeIds = normalizeAssigneeIds(row.assignee_ids, row.assignee_id);
+      if (assigneeIds.length === 0) return;
+      const unitKey = row.repeat_id ? `r:${row.repeat_id}` : `t:${row.id}`;
+      assigneeIds.forEach((assigneeId) => {
+        const current = unitsByAssignee.get(assigneeId) ?? new Set<string>();
+        current.add(unitKey);
+        unitsByAssignee.set(assigneeId, current);
+      });
+    });
+
+    const nextCounts: Record<string, number> = {};
+    unitsByAssignee.forEach((units, assigneeId) => {
+      nextCounts[assigneeId] = units.size;
+    });
+    setMemberTaskCounts(nextCounts);
+    setMemberTaskCountsDate(today);
+  }, [currentWorkspaceId]);
+
   const fetchGroups = useCallback(async () => {
     if (!currentWorkspaceId) return;
     setGroupsLoading(true);
@@ -515,6 +633,11 @@ const MembersPage = () => {
   }, [fetchGroupMembers, mode, selectedGroupId]);
 
   useEffect(() => {
+    if (mode !== 'tasks' || !currentWorkspaceId) return;
+    void refreshMemberTaskCounts();
+  }, [currentWorkspaceId, mode, refreshMemberTaskCounts]);
+
+  useEffect(() => {
     if (!selectedGroupId || selectedGroupId !== editingGroupId) {
       setEditingGroupId(null);
       setEditingGroupName('');
@@ -583,17 +706,35 @@ const MembersPage = () => {
       sortedQuery = sortedQuery.order('start_date', { ascending: true });
     }
 
-    const { data, error, count } = await sortedQuery
-      .range(offset, offset + pageSize - 1);
+    const { data, error, count } = taskScope === 'current'
+      ? await sortedQuery
+      : await sortedQuery.range(offset, offset + pageSize - 1);
     if (error) {
       setTasksError(error.message);
       setTasksLoading(false);
       return;
     }
-    setAssigneeTasks((data ?? []).map((row) => mapTaskRow(row as TaskRow)));
-    setTotalCount(typeof count === 'number' ? count : 0);
+    const mapped = (data ?? []).map((row) => mapTaskRow(row as TaskRow));
+    setAssigneeTasks(mapped);
+    setTotalCount(taskScope === 'current'
+      ? mapped.length
+      : (typeof count === 'number' ? count : 0));
+    if (
+      taskScope === 'current'
+      && statusFilterIds.length === 0
+      && projectFilterIds.length === 0
+      && !search.trim()
+    ) {
+      setMemberTaskCounts((current) => ({
+        ...current,
+        [assigneeId]: countTaskUnits(mapped),
+      }));
+      if (!memberTaskCountsDate) {
+        setMemberTaskCountsDate(format(new Date(), 'yyyy-MM-dd'));
+      }
+    }
     setTasksLoading(false);
-  }, [currentWorkspaceId, pageIndex, pageSize, projectFilterIds, search, statusFilterIds, taskScope, pastFromDate, pastToDate, pastSort]);
+  }, [currentWorkspaceId, memberTaskCountsDate, pageIndex, pageSize, projectFilterIds, search, statusFilterIds, taskScope, pastFromDate, pastToDate, pastSort]);
 
   useEffect(() => {
     if (!selectedAssigneeId) {
@@ -615,7 +756,64 @@ const MembersPage = () => {
     }
   }, [assigneeTasks, selectedTaskId]);
 
-  const filteredTasks = assigneeTasks;
+  const displayTaskRows = useMemo<DisplayTaskRow[]>(() => {
+    if (taskScope !== 'current') {
+      return assigneeTasks.map((task) => ({
+        key: task.id,
+        task,
+        taskIds: [task.id],
+        repeatMeta: null,
+      }));
+    }
+
+    const repeatBuckets = new Map<string, Task[]>();
+    const rows: DisplayTaskRow[] = [];
+
+    assigneeTasks.forEach((task) => {
+      if (!task.repeatId) {
+        rows.push({
+          key: task.id,
+          task,
+          taskIds: [task.id],
+          repeatMeta: null,
+        });
+        return;
+      }
+      const bucket = repeatBuckets.get(task.repeatId) ?? [];
+      bucket.push(task);
+      repeatBuckets.set(task.repeatId, bucket);
+    });
+
+    repeatBuckets.forEach((tasks, repeatId) => {
+      const sorted = [...tasks].sort((left, right) => left.startDate.localeCompare(right.startDate));
+      const representative = sorted[0];
+      rows.push({
+        key: `repeat:${repeatId}`,
+        task: representative,
+        taskIds: sorted.map((item) => item.id),
+        repeatMeta: {
+          label: inferRepeatLabel(sorted),
+          remaining: Math.max(0, sorted.length - 1),
+          total: sorted.length,
+        },
+      });
+    });
+
+    rows.sort((left, right) => {
+      const byStart = left.task.startDate.localeCompare(right.task.startDate);
+      if (byStart !== 0) return byStart;
+      const byEnd = left.task.endDate.localeCompare(right.task.endDate);
+      if (byEnd !== 0) return byEnd;
+      return left.task.title.localeCompare(right.task.title);
+    });
+
+    return rows;
+  }, [assigneeTasks, taskScope]);
+
+  const visibleTaskIds = useMemo(
+    () => displayTaskRows.flatMap((row) => row.taskIds),
+    [displayTaskRows],
+  );
 
   const selectedTask = useMemo(
     () => assigneeTasks.find((task) => task.id === selectedTaskId) ?? null,
@@ -634,10 +832,15 @@ const MembersPage = () => {
     return sanitizeDescription(selectedTask.description);
   }, [selectedTask?.description]);
 
-  const allVisibleSelected = filteredTasks.length > 0 && filteredTasks.every((task) => selectedTaskIds.has(task.id));
-  const someVisibleSelected = filteredTasks.some((task) => selectedTaskIds.has(task.id));
+  const allVisibleSelected = visibleTaskIds.length > 0 && visibleTaskIds.every((id) => selectedTaskIds.has(id));
+  const someVisibleSelected = visibleTaskIds.some((id) => selectedTaskIds.has(id));
   const selectedCount = selectedTaskIds.size;
-  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+  const totalPages = taskScope === 'past'
+    ? Math.max(1, Math.ceil(totalCount / pageSize))
+    : 1;
+  const displayTotalCount = taskScope === 'current'
+    ? countTaskUnits(assigneeTasks)
+    : totalCount;
 
   const statusFilterLabel = statusFilterIds.length === 0
     ? t`All statuses`
@@ -706,19 +909,19 @@ const MembersPage = () => {
 
   const handleToggleAll = (value: boolean | 'indeterminate') => {
     if (value === true) {
-      setSelectedTaskIds(new Set(filteredTasks.map((task) => task.id)));
+      setSelectedTaskIds(new Set(visibleTaskIds));
     } else {
       setSelectedTaskIds(new Set());
     }
   };
 
-  const handleToggleTask = (taskId: string, value: boolean | 'indeterminate') => {
+  const handleToggleTask = (taskIds: string[], value: boolean | 'indeterminate') => {
     setSelectedTaskIds((current) => {
       const next = new Set(current);
       if (value === true) {
-        next.add(taskId);
+        taskIds.forEach((taskId) => next.add(taskId));
       } else {
-        next.delete(taskId);
+        taskIds.forEach((taskId) => next.delete(taskId));
       }
       return next;
     });
@@ -738,8 +941,9 @@ const MembersPage = () => {
     setAssigneeTasks((current) => current.filter((task) => !selectedTaskIds.has(task.id)));
     setTotalCount((current) => Math.max(0, current - ids.length));
     setSelectedTaskIds(new Set());
+    await refreshMemberTaskCounts();
     setTasksLoading(false);
-  }, [deleteTasks, selectedCount, selectedTaskIds, tasksLoading]);
+  }, [deleteTasks, refreshMemberTaskCounts, selectedCount, selectedTaskIds, tasksLoading]);
 
   const handleCreateGroup = useCallback(async () => {
     if (!currentWorkspaceId || !isAdmin) return;
@@ -847,11 +1051,6 @@ const MembersPage = () => {
           <WorkspaceNav />
         </div>
         <div className="flex items-center gap-2">
-          {userLabel && (
-            <span className="max-w-[220px] truncate text-xs text-muted-foreground" title={userLabel}>
-              {userLabel}
-            </span>
-          )}
           {mode === 'groups' && isAdmin && (
             <Button size="sm" className="gap-2" onClick={() => setCreatingGroup(true)}>
               <Plus className="h-4 w-4" />
@@ -867,6 +1066,7 @@ const MembersPage = () => {
           >
             <Settings className="h-4 w-4" />
           </Button>
+          <InviteNotifications />
           <Button
             variant="ghost"
             size="icon"
@@ -878,14 +1078,18 @@ const MembersPage = () => {
         </div>
       </header>
 
-      <div className="flex flex-1 overflow-hidden">
-        <aside className="w-80 border-r border-border bg-card flex flex-col">
+      <div className="flex flex-1 min-h-0 overflow-hidden">
+        <aside className="w-80 min-w-0 min-h-0 border-r border-border bg-card flex flex-col">
           <div className="px-4 py-3 border-b border-border">
             {modeToggle}
           </div>
 
           {mode === 'tasks' && (
-            <Tabs value={tab} onValueChange={(value) => setTab(value as 'active' | 'disabled')} className="flex-1 flex flex-col">
+            <Tabs
+              value={tab}
+              onValueChange={(value) => setTab(value as 'active' | 'disabled')}
+              className="flex min-h-0 flex-1 flex-col"
+            >
               <div className="px-4 py-3 border-b border-border">
                 <div className="grid grid-cols-[1fr_auto] items-center gap-2">
                   <Input
@@ -925,7 +1129,7 @@ const MembersPage = () => {
                 <TabsTrigger value="active">{t`Active`}</TabsTrigger>
                 <TabsTrigger value="disabled">{t`Disabled`}</TabsTrigger>
               </TabsList>
-              <TabsContent value="active" className="flex-1 overflow-hidden">
+              <TabsContent value="active" className="flex-1 min-h-0 overflow-hidden">
                 <ScrollArea className="h-full px-4 py-3">
                   {activeVisibleAssignees.length === 0 && (
                     <div className="text-sm text-muted-foreground">{t`No active members.`}</div>
@@ -940,7 +1144,10 @@ const MembersPage = () => {
                             </div>
                           )}
                           {group.members.map((assignee) => {
-                            const count = assigneeCountsDate ? (assigneeTaskCounts[assignee.id] ?? 0) : null;
+                            const fallbackCount = assigneeCountsDate ? (assigneeTaskCounts[assignee.id] ?? 0) : null;
+                            const count = memberTaskCountsDate
+                              ? (memberTaskCounts[assignee.id] ?? 0)
+                              : fallbackCount;
                             return (
                               <button
                                 key={assignee.id}
@@ -951,7 +1158,9 @@ const MembersPage = () => {
                                 }`}
                               >
                                 <div className="flex items-center gap-2">
-                                  <span className="text-sm font-medium truncate">{assignee.name}</span>
+                                  <span className="text-sm font-medium leading-snug break-words line-clamp-2">
+                                    {assignee.name}
+                                  </span>
                                   {count !== null && (
                                     <Badge variant="secondary" className="ml-auto text-[10px]">
                                       {count}
@@ -967,7 +1176,7 @@ const MembersPage = () => {
                   )}
                 </ScrollArea>
               </TabsContent>
-              <TabsContent value="disabled" className="flex-1 overflow-hidden">
+              <TabsContent value="disabled" className="flex-1 min-h-0 overflow-hidden">
                 <ScrollArea className="h-full px-4 py-3">
                   {disabledVisibleAssignees.length === 0 && (
                     <div className="text-sm text-muted-foreground">{t`No disabled members.`}</div>
@@ -982,7 +1191,10 @@ const MembersPage = () => {
                             </div>
                           )}
                           {group.members.map((assignee) => {
-                            const count = assigneeCountsDate ? (assigneeTaskCounts[assignee.id] ?? 0) : null;
+                            const fallbackCount = assigneeCountsDate ? (assigneeTaskCounts[assignee.id] ?? 0) : null;
+                            const count = memberTaskCountsDate
+                              ? (memberTaskCounts[assignee.id] ?? 0)
+                              : fallbackCount;
                             return (
                               <button
                                 key={assignee.id}
@@ -993,7 +1205,9 @@ const MembersPage = () => {
                                 }`}
                               >
                                 <div className="flex items-center gap-2">
-                                  <span className="text-sm font-medium truncate">{assignee.name}</span>
+                                  <span className="text-sm font-medium leading-snug break-words line-clamp-2">
+                                    {assignee.name}
+                                  </span>
                                   <Badge variant="secondary" className="text-[10px]">{t`Disabled`}</Badge>
                                   {count !== null && (
                                     <Badge variant="secondary" className="ml-auto text-[10px]">
@@ -1014,7 +1228,7 @@ const MembersPage = () => {
           )}
 
           {mode === 'groups' && (
-            <div className="flex flex-1 flex-col">
+            <div className="flex min-h-0 flex-1 flex-col">
               <div className="px-4 py-3 border-b border-border space-y-2">
                 <div className="grid grid-cols-[1fr_auto] items-center gap-2">
                   <Input
@@ -1063,7 +1277,7 @@ const MembersPage = () => {
                               selectedGroupId === group.id ? 'border-foreground/60 bg-muted/60' : 'border-border hover:bg-muted/40'
                             }`}
                           >
-                            <div className="text-sm font-medium truncate">{group.name}</div>
+                            <div className="text-sm font-medium leading-snug break-words line-clamp-2">{group.name}</div>
                           </button>
                         </ContextMenuTrigger>
                         <ContextMenuContent>
@@ -1166,7 +1380,7 @@ const MembersPage = () => {
                                 className="w-full rounded-lg border px-3 py-2 text-left transition-colors hover:bg-muted/40"
                               >
                                 <div className="flex flex-wrap items-center gap-2">
-                                  <span className="text-sm font-medium truncate">
+                                  <span className="text-sm font-medium leading-snug break-words line-clamp-2">
                                     {member.displayName || member.email}
                                   </span>
                                   {!isActive && (
@@ -1176,7 +1390,7 @@ const MembersPage = () => {
                                     {roleLabels[member.role] ?? member.role}
                                   </Badge>
                                 </div>
-                                <div className="text-xs text-muted-foreground truncate">
+                                <div className="text-xs text-muted-foreground leading-snug break-words line-clamp-2">
                                   {member.displayName ? member.email : t`View tasks`}
                                 </div>
                               </button>
@@ -1213,7 +1427,7 @@ const MembersPage = () => {
                     <div>{scopeToggle}</div>
                   </div>
                   <div className="text-xs text-muted-foreground">
-                    {assigneeCountsDate ? t`Tasks from today` : t`Tasks count loading...`}
+                    {memberTaskCountsDate || assigneeCountsDate ? t`Tasks from today` : t`Tasks count loading...`}
                   </div>
                 </div>
               </div>
@@ -1342,7 +1556,12 @@ const MembersPage = () => {
                   <Button
                     variant="ghost"
                     className="ml-auto"
-                    onClick={() => selectedAssigneeId && fetchAssigneeTasks(selectedAssigneeId)}
+                    onClick={() => {
+                      if (selectedAssigneeId) {
+                        void fetchAssigneeTasks(selectedAssigneeId);
+                      }
+                      void refreshMemberTaskCounts();
+                    }}
                     disabled={!selectedAssigneeId || tasksLoading}
                   >
                     <RefreshCcw className="mr-2 h-4 w-4" />
@@ -1369,7 +1588,7 @@ const MembersPage = () => {
                 )}
                 {!tasksLoading && !tasksError && (
                   <>
-                    {filteredTasks.length === 0 ? (
+                    {displayTaskRows.length === 0 ? (
                       <div className="text-sm text-muted-foreground">{t`No tasks match the current filters.`}</div>
                     ) : (
                       <Table>
@@ -1389,23 +1608,48 @@ const MembersPage = () => {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {filteredTasks.map((task) => {
+                          {displayTaskRows.map((row) => {
+                            const { task } = row;
                             const status = statusById.get(task.statusId);
                             const project = task.projectId ? projectById.get(task.projectId) : null;
+                            const selectedInRow = row.taskIds.filter((taskId) => selectedTaskIds.has(taskId)).length;
+                            const rowChecked: boolean | 'indeterminate' = (
+                              selectedInRow === row.taskIds.length
+                                ? true
+                                : selectedInRow > 0
+                                  ? 'indeterminate'
+                                  : false
+                            );
                             return (
                               <TableRow
-                                key={task.id}
+                                key={row.key}
                                 className="cursor-pointer"
                                 onClick={() => setSelectedTaskId(task.id)}
                               >
                                 <TableCell onClick={(event) => event.stopPropagation()}>
                                   <Checkbox
-                                    checked={selectedTaskIds.has(task.id)}
-                                    onCheckedChange={(value) => handleToggleTask(task.id, value)}
+                                    checked={rowChecked}
+                                    onCheckedChange={(value) => handleToggleTask(row.taskIds, value)}
                                     aria-label={t`Select task ${task.title}`}
                                   />
                                 </TableCell>
-                                <TableCell className="font-medium">{task.title}</TableCell>
+                                <TableCell className="font-medium">
+                                  <div className="space-y-1">
+                                    <div>{task.title}</div>
+                                    {row.repeatMeta && (
+                                      <div className="flex flex-wrap items-center gap-2">
+                                        <Badge variant="outline" className="text-[10px]">
+                                          {row.repeatMeta.label}
+                                        </Badge>
+                                        <span className="text-xs text-muted-foreground">
+                                          {row.repeatMeta.remaining > 0
+                                            ? `Еще ${row.repeatMeta.remaining}`
+                                            : 'Последняя в серии'}
+                                        </span>
+                                      </div>
+                                    )}
+                                  </div>
+                                </TableCell>
                                 <TableCell>
                                   <div className="flex items-center gap-2 text-sm">
                                     <span
@@ -1440,11 +1684,11 @@ const MembersPage = () => {
                         </TableBody>
                       </Table>
                     )}
-                    {totalCount > pageSize && (
+                    {taskScope === 'past' && displayTotalCount > pageSize && (
                       <div className="mt-4 flex items-center justify-between text-xs text-muted-foreground">
                         <span>
-                          {Math.min(totalCount, (pageIndex - 1) * pageSize + 1)}–
-                          {Math.min(totalCount, pageIndex * pageSize)} {t`of`} {totalCount}
+                          {Math.min(displayTotalCount, (pageIndex - 1) * pageSize + 1)}–
+                          {Math.min(displayTotalCount, pageIndex * pageSize)} {t`of`} {displayTotalCount}
                         </span>
                         <div className="flex items-center gap-2">
                           <Button
