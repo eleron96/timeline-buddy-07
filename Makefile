@@ -1,7 +1,7 @@
-.PHONY: help up down logs up-prod down-prod logs-prod audit-migrations
+.PHONY: help up down logs up-prod down-prod logs-prod audit-migrations deploy-remote
 
 help:
-	@printf "Targets:\n  up\n  down\n  logs\n  up-prod\n  down-prod\n  logs-prod\n  audit-migrations\n"
+	@printf "Targets:\n  up\n  down\n  logs\n  up-prod\n  down-prod\n  logs-prod\n  audit-migrations\n  deploy-remote\n"
 
 up:
 	./infra/scripts/dev-compose.sh
@@ -23,3 +23,6 @@ logs-prod:
 
 audit-migrations:
 	./infra/scripts/audit-migrations.sh
+
+deploy-remote:
+	./infra/scripts/deploy-remote.sh

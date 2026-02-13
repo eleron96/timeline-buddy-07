@@ -65,6 +65,19 @@ normalize_bool() {
   esac
 }
 
+increment_patch_version() {
+  local version="$1"
+  if [[ ! "$version" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+    return 1
+  fi
+
+  local major="${BASH_REMATCH[1]}"
+  local minor="${BASH_REMATCH[2]}"
+  local patch="${BASH_REMATCH[3]}"
+
+  echo "${major}.${minor}.$((patch + 1))"
+}
+
 POSTGRES_USER="$(get_env_value POSTGRES_USER)"
 POSTGRES_DB="$(get_env_value POSTGRES_DB)"
 POSTGRES_PASSWORD="$(get_env_value POSTGRES_PASSWORD)"
@@ -192,13 +205,20 @@ fi
 docker compose -f "$compose_file" --env-file "$env_file" up -d --build web oauth2-proxy
 
 release_timestamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-release_version="unversioned"
+current_version="0.0.0"
 if [[ -f "$version_file" ]]; then
-  release_version="$(tr -d '[:space:]' < "$version_file")"
-  if [[ -z "$release_version" ]]; then
-    release_version="unversioned"
-  fi
+  current_version="$(tr -d '[:space:]' < "$version_file")"
 fi
+if [[ -z "$current_version" ]]; then
+  current_version="0.0.0"
+fi
+
+if ! release_version="$(increment_patch_version "$current_version")"; then
+  echo "Invalid VERSION format: '$current_version'. Expected X.Y.Z." >&2
+  exit 1
+fi
+printf "%s\n" "$release_version" > "$version_file"
+echo "Release version updated: $current_version -> $release_version"
 
 release_commit="n/a"
 if command -v git >/dev/null 2>&1 && git rev-parse --is-inside-work-tree >/dev/null 2>&1; then

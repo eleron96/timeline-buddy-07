@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ResponsiveGridLayout, getCompactor, useContainerWidth } from 'react-grid-layout';
+import { ResponsiveGridLayout, cloneLayout, useContainerWidth } from 'react-grid-layout';
 import type { Layout, Layouts } from 'react-grid-layout';
 import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
@@ -73,7 +73,11 @@ const DashboardPage = () => {
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const prevWorkspaceIdRef = useRef<string | null>(null);
   const { width, containerRef } = useContainerWidth({ measureBeforeMount: true });
-  const gridCompactor = useMemo(() => getCompactor(null, false, true), []);
+  const gridCompactor = useMemo(() => ({
+    type: 'vertical' as const,
+    allowOverlap: false,
+    compact: (layout: Layout) => cloneLayout(layout),
+  }), []);
 
   const {
     widgets,
