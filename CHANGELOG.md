@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Fixed
+- Доработали edge-настройки для страницы авторизации: сжатие и кэширование ресурсов Keycloak теперь применяются корректно на боевом домене.
+
+## [0.1.6] - 2026-02-13
 ### Changed
 - Ускорили загрузку страницы авторизации: статические ресурсы Keycloak теперь отдаются со сжатием на edge и кэшируются в браузере.
 

@@ -1,6 +1,4 @@
 motio.nikog.net {
-  encode zstd gzip
-
   redir /realms /realms/timeline/account 302
   redir /realms/ /realms/timeline/account 302
 
@@ -9,10 +7,13 @@ motio.nikog.net {
   }
 
   handle /resources* {
-    header {
-      Cache-Control "public, max-age=604800, immutable"
+    route {
+      encode zstd gzip
+      reverse_proxy host.docker.internal:8081 {
+        header_down -Cache-Control
+        header_down Cache-Control "public, max-age=604800, immutable"
+      }
     }
-    reverse_proxy host.docker.internal:8081
   }
 
   handle /admin* {
