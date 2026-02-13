@@ -18,6 +18,7 @@ import {
   max,
   min,
 } from 'date-fns';
+import type { Locale as DateFnsLocale } from 'date-fns';
 import { ViewMode } from '@/features/planner/types/planner';
 
 export const DAY_WIDTH = 120; // pixels per day in day view
@@ -88,30 +89,40 @@ export const getTaskPosition = (
   return { left, width };
 };
 
-export const formatDateRange = (startDate: string, endDate: string): string => {
+export const formatDateRange = (
+  startDate: string,
+  endDate: string,
+  dateLocale?: DateFnsLocale,
+): string => {
   const start = parseISO(startDate);
   const end = parseISO(endDate);
+  const formatOptions = dateLocale ? { locale: dateLocale } : undefined;
   
   if (isSameDay(start, end)) {
-    return format(start, 'MMM d, yyyy');
+    return format(start, 'MMM d, yyyy', formatOptions);
   }
   
   if (start.getMonth() === end.getMonth() && start.getFullYear() === end.getFullYear()) {
-    return `${format(start, 'MMM d')} - ${format(end, 'd, yyyy')}`;
+    return `${format(start, 'MMM d', formatOptions)} - ${format(end, 'd, yyyy', formatOptions)}`;
   }
   
-  return `${format(start, 'MMM d')} - ${format(end, 'MMM d, yyyy')}`;
+  return `${format(start, 'MMM d', formatOptions)} - ${format(end, 'MMM d, yyyy', formatOptions)}`;
 };
 
-export const formatDayHeader = (date: Date, viewMode: ViewMode): { day: string; date: string } => {
+export const formatDayHeader = (
+  date: Date,
+  viewMode: ViewMode,
+  dateLocale?: DateFnsLocale,
+): { day: string; date: string } => {
+  const formatOptions = dateLocale ? { locale: dateLocale } : undefined;
   if (viewMode === 'day') {
     return {
-      day: format(date, 'EEE'),
+      day: format(date, 'EEE', formatOptions),
       date: format(date, 'd'),
     };
   }
   return {
-    day: format(date, 'EEEEE'),
+    day: format(date, 'EEEEE', formatOptions),
     date: format(date, 'd'),
   };
 };

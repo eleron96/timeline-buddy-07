@@ -25,7 +25,7 @@ import {
   CommandList,
 } from '@/shared/ui/command';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/shared/ui/table';
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/shared/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/shared/ui/dialog';
 import { ColorPicker } from '@/shared/ui/color-picker';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/shared/ui/resizable';
 import { supabase } from '@/shared/lib/supabaseClient';
@@ -1009,6 +1009,10 @@ const ProjectsPage = () => {
             role="button"
             tabIndex={0}
             onClick={() => setSelectedProjectId(project.id)}
+            onDoubleClick={() => {
+              if (!canEdit) return;
+              openProjectSettings(project);
+            }}
             onKeyDown={(event) => {
               if (event.key === 'Enter' || event.key === ' ') {
                 event.preventDefault();
@@ -1646,6 +1650,9 @@ const ProjectsPage = () => {
         <DialogContent className="w-[95vw] max-w-md">
           <DialogHeader>
             <DialogTitle>{t`New customer`}</DialogTitle>
+            <DialogDescription className="sr-only">
+              {t`Create a new customer for grouping projects.`}
+            </DialogDescription>
           </DialogHeader>
           <form
             onSubmit={(event) => {
@@ -1691,6 +1698,9 @@ const ProjectsPage = () => {
         <DialogContent className="w-[95vw] max-w-md">
           <DialogHeader>
             <DialogTitle>{t`Rename customer`}</DialogTitle>
+            <DialogDescription className="sr-only">
+              {t`Update customer name.`}
+            </DialogDescription>
           </DialogHeader>
           <form
             onSubmit={(event) => {
@@ -1759,6 +1769,9 @@ const ProjectsPage = () => {
         <DialogContent className="w-[95vw] max-w-xl">
           <DialogHeader>
             <DialogTitle>{t`New project`}</DialogTitle>
+            <DialogDescription className="sr-only">
+              {t`Create a new project and assign customer, code, and color.`}
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="grid gap-3 sm:grid-cols-[1fr_160px_auto]">
@@ -1844,6 +1857,9 @@ const ProjectsPage = () => {
         <DialogContent className="w-[95vw] max-w-xl">
           <DialogHeader>
             <DialogTitle>{t`Edit project`}</DialogTitle>
+            <DialogDescription className="sr-only">
+              {t`Edit project details such as name, code, customer, and color.`}
+            </DialogDescription>
           </DialogHeader>
           {!projectSettingsTarget && (
             <div className="text-sm text-muted-foreground">{t`Project not found.`}</div>
@@ -1938,6 +1954,9 @@ const ProjectsPage = () => {
         <DialogContent className="w-[95vw] max-w-2xl">
           <DialogHeader>
             <DialogTitle>{selectedTask?.title ?? t`Task details`}</DialogTitle>
+            <DialogDescription className="sr-only">
+              {t`View task details linked to this project.`}
+            </DialogDescription>
           </DialogHeader>
           {!selectedTask && (
             <div className="text-sm text-muted-foreground">{t`Task not found.`}</div>

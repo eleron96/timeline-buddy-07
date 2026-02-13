@@ -10,6 +10,8 @@ import { hexToRgba } from '@/features/planner/lib/colorUtils';
 import { Milestone } from '@/features/planner/types/planner';
 import { ArrowDown, ArrowUp } from 'lucide-react';
 import { t } from '@lingui/macro';
+import { useLocaleStore } from '@/shared/store/localeStore';
+import { resolveDateFnsLocale } from '@/shared/lib/dateFnsLocale';
 import {
   addDays,
   addMonths,
@@ -39,6 +41,8 @@ const normalizeHolidayCountryCode = (value: string | null | undefined) => {
 };
 
 export const CalendarTimeline: React.FC = () => {
+  const locale = useLocaleStore((state) => state.locale);
+  const dateLocale = useMemo(() => resolveDateFnsLocale(locale), [locale]);
   const {
     tasks,
     milestones,
@@ -71,15 +75,12 @@ export const CalendarTimeline: React.FC = () => {
   const [hasUserScrolled, setHasUserScrolled] = useState(false);
   const initialScrollTopRef = useRef(0);
   const scrollReadyRef = useRef(false);
-  const weekdayLabels = [
-    t`Mon`,
-    t`Tue`,
-    t`Wed`,
-    t`Thu`,
-    t`Fri`,
-    t`Sat`,
-    t`Sun`,
-  ];
+  const weekdayLabels = useMemo(() => {
+    const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 });
+    return Array.from({ length: 7 }, (_, index) => (
+      format(addDays(weekStart, index), 'EEEEE', { locale: dateLocale })
+    ));
+  }, [dateLocale]);
   const fallbackHolidayLabel = t`Non-working day`;
 
   const holidayCountryCode = useMemo(() => {
@@ -490,11 +491,11 @@ export const CalendarTimeline: React.FC = () => {
                         className="w-full rounded-lg border border-border bg-card p-3 shadow-sm"
                       >
                         <div className="mb-2 text-sm font-semibold text-foreground">
-                          {format(month, 'LLLL yyyy')}
+                          {format(month, 'LLLL yyyy', { locale: dateLocale })}
                         </div>
                         <div className="grid grid-cols-7 text-[11px] text-muted-foreground uppercase tracking-wide">
-                          {weekdayLabels.map((label) => (
-                            <div key={label} className="flex items-center justify-center py-1">
+                          {weekdayLabels.map((label, index) => (
+                            <div key={`weekday-${index}`} className="flex items-center justify-center py-1">
                               {label}
                             </div>
                           ))}

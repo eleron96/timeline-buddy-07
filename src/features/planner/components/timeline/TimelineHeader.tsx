@@ -3,6 +3,8 @@ import { format } from 'date-fns';
 import { isToday, isWeekend, formatDayHeader } from '@/features/planner/lib/dateUtils';
 import { ViewMode } from '@/features/planner/types/planner';
 import { cn } from '@/shared/lib/classNames';
+import { useLocaleStore } from '@/shared/store/localeStore';
+import { resolveDateFnsLocale } from '@/shared/lib/dateFnsLocale';
 
 interface TimelineHeaderProps {
   visibleDays: Date[];
@@ -23,6 +25,9 @@ export const TimelineHeader: React.FC<TimelineHeaderProps> = ({
   attentionDate,
   onDateDoubleClick,
 }) => {
+  const locale = useLocaleStore((state) => state.locale);
+  const dateLocale = React.useMemo(() => resolveDateFnsLocale(locale), [locale]);
+
   // Group days by month for month labels
   const monthGroups = React.useMemo(() => {
     const groups: { month: string; days: number; startIndex: number }[] = [];
@@ -31,7 +36,7 @@ export const TimelineHeader: React.FC<TimelineHeaderProps> = ({
     let startIndex = 0;
     
     visibleDays.forEach((day, index) => {
-      const monthKey = format(day, 'MMMM yyyy');
+      const monthKey = format(day, 'MMMM yyyy', { locale: dateLocale });
       if (monthKey !== currentMonth) {
         if (currentMonth) {
           groups.push({ month: currentMonth, days: currentCount, startIndex });
@@ -49,19 +54,19 @@ export const TimelineHeader: React.FC<TimelineHeaderProps> = ({
     }
     
     return groups;
-  }, [visibleDays]);
+  }, [visibleDays, dateLocale]);
 
   const totalWidth = visibleDays.length * dayWidth;
   const activeMonth = React.useMemo(() => {
     if (visibleDays.length === 0) return '';
-    if (!dayWidth) return format(visibleDays[0], 'MMMM yyyy');
+    if (!dayWidth) return format(visibleDays[0], 'MMMM yyyy', { locale: dateLocale });
     const centerPx = scrollLeft + viewportWidth / 2;
     const centerIndex = Math.min(
       visibleDays.length - 1,
       Math.max(0, Math.floor(centerPx / dayWidth))
     );
-    return format(visibleDays[centerIndex], 'MMMM yyyy');
-  }, [visibleDays, dayWidth, scrollLeft, viewportWidth]);
+    return format(visibleDays[centerIndex], 'MMMM yyyy', { locale: dateLocale });
+  }, [visibleDays, dayWidth, scrollLeft, viewportWidth, dateLocale]);
 
   const labelLeft = Math.min(
     totalWidth,
@@ -99,7 +104,7 @@ export const TimelineHeader: React.FC<TimelineHeaderProps> = ({
       {/* Day row */}
       <div className="flex h-14">
         {visibleDays.map((day, index) => {
-          const { day: dayName, date } = formatDayHeader(day, viewMode);
+          const { day: dayName, date } = formatDayHeader(day, viewMode, dateLocale);
           const today = isToday(day);
           const weekend = isWeekend(day);
           const dayKey = format(day, 'yyyy-MM-dd');

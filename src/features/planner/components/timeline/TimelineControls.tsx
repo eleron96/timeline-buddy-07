@@ -13,8 +13,12 @@ import { format, parseISO, addDays, subDays, addWeeks, subWeeks } from '@/featur
 import { addMonths, subMonths } from 'date-fns';
 import { cn } from '@/shared/lib/classNames';
 import { t } from '@lingui/macro';
+import { useLocaleStore } from '@/shared/store/localeStore';
+import { resolveDateFnsLocale } from '@/shared/lib/dateFnsLocale';
 
 export const TimelineControls: React.FC = () => {
+  const locale = useLocaleStore((state) => state.locale);
+  const dateLocale = React.useMemo(() => resolveDateFnsLocale(locale), [locale]);
   const { 
     viewMode, 
     setViewMode, 
@@ -89,7 +93,7 @@ export const TimelineControls: React.FC = () => {
         {/* Current date display */}
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Calendar className="h-4 w-4" />
-          <span>{format(parseISO(currentDate), 'MMMM yyyy')}</span>
+          <span>{format(parseISO(currentDate), 'MMMM yyyy', { locale: dateLocale })}</span>
         </div>
       </div>
       

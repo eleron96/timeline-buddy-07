@@ -16,7 +16,7 @@ import { Checkbox } from '@/shared/ui/checkbox';
 import { ScrollArea } from '@/shared/ui/scroll-area';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/shared/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/shared/ui/select';
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/shared/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/shared/ui/dialog';
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from '@/shared/ui/context-menu';
 import { supabase } from '@/shared/lib/supabaseClient';
 import { t } from '@lingui/macro';
@@ -1720,6 +1720,9 @@ const MembersPage = () => {
         <DialogContent className="w-[95vw] max-w-md">
           <DialogHeader>
             <DialogTitle>{t`New group`}</DialogTitle>
+            <DialogDescription className="sr-only">
+              {t`Create a new group for workspace members.`}
+            </DialogDescription>
           </DialogHeader>
           <form
             onSubmit={(event) => {
@@ -1764,6 +1767,9 @@ const MembersPage = () => {
         <DialogContent className="w-[95vw] max-w-2xl">
           <DialogHeader>
             <DialogTitle>{selectedTask?.title ?? t`Task details`}</DialogTitle>
+            <DialogDescription className="sr-only">
+              {t`View task details without leaving the members page.`}
+            </DialogDescription>
           </DialogHeader>
           {!selectedTask && (
             <div className="text-sm text-muted-foreground">{t`Task not found.`}</div>

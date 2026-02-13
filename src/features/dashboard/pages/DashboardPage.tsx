@@ -32,7 +32,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/shared/ui/alert-dialog';
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/shared/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/shared/ui/dialog';
 import { Input } from '@/shared/ui/input';
 import { Label } from '@/shared/ui/label';
 import { useAuthStore } from '@/features/auth/store/authStore';
@@ -634,6 +634,9 @@ const DashboardPage = () => {
         <DialogContent className="w-[95vw] max-w-md">
           <DialogHeader>
             <DialogTitle>{t`New dashboard`}</DialogTitle>
+            <DialogDescription className="sr-only">
+              {t`Create a new dashboard.`}
+            </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleCreateDashboard} className="space-y-4">
             <div className="space-y-1">
@@ -662,6 +665,9 @@ const DashboardPage = () => {
         <DialogContent className="w-[95vw] max-w-md">
           <DialogHeader>
             <DialogTitle>{t`Rename dashboard`}</DialogTitle>
+            <DialogDescription className="sr-only">
+              {t`Update the current dashboard name.`}
+            </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleRenameDashboard} className="space-y-4">
             <div className="space-y-1">

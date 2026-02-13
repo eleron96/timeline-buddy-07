@@ -9,7 +9,7 @@ import { Button } from '@/shared/ui/button';
 import { Input } from '@/shared/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/shared/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/shared/ui/table';
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/shared/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/shared/ui/dialog';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -847,6 +847,9 @@ const AdminUsersPage: React.FC = () => {
         <DialogContent className="sm:max-w-[640px]">
           <DialogHeader>
             <DialogTitle>{t`User workspaces`}</DialogTitle>
+            <DialogDescription className="sr-only">
+              {t`View all workspaces where this user is a member.`}
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             <div className="text-sm text-muted-foreground">
@@ -889,6 +892,9 @@ const AdminUsersPage: React.FC = () => {
         <DialogContent className="sm:max-w-[420px]">
           <DialogHeader>
             <DialogTitle>Rename workspace</DialogTitle>
+            <DialogDescription className="sr-only">
+              Rename the selected workspace.
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             <Input
@@ -941,6 +947,9 @@ const AdminUsersPage: React.FC = () => {
         <DialogContent className="sm:max-w-[420px]">
           <DialogHeader>
             <DialogTitle>Rename backup</DialogTitle>
+            <DialogDescription className="sr-only">
+              Change backup file name.
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             <Input

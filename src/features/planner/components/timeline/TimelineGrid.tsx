@@ -20,6 +20,8 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/shar
 import { hexToRgba } from '@/features/planner/lib/colorUtils';
 import { differenceInDays, format, isSameDay, parseISO } from 'date-fns';
 import { t } from '@lingui/macro';
+import { useLocaleStore } from '@/shared/store/localeStore';
+import { resolveDateFnsLocale } from '@/shared/lib/dateFnsLocale';
 
 interface TimelineGridProps {
   onCreateTask?: (payload: {
@@ -39,6 +41,8 @@ const countUniqueTaskUnits = (tasks: Task[]) => {
 };
 
 export const TimelineGrid: React.FC<TimelineGridProps> = ({ onCreateTask }) => {
+  const locale = useLocaleStore((state) => state.locale);
+  const dateLocale = useMemo(() => resolveDateFnsLocale(locale), [locale]);
   const { 
     tasks,
     milestones,
@@ -808,7 +812,7 @@ export const TimelineGrid: React.FC<TimelineGridProps> = ({ onCreateTask }) => {
                       >
                         <div className="space-y-1.5">
                           <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                            {format(parseISO(cell.date), 'dd MMM yyyy')}
+                            {format(parseISO(cell.date), 'dd MMM yyyy', { locale: dateLocale })}
                           </div>
                           <div className="max-h-44 space-y-1 overflow-y-auto pr-1">
                             {cell.milestones.map((milestone) => {

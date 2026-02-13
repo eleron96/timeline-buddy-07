@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/shared/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/shared/ui/dialog';
 import { Plus, Trash2 } from 'lucide-react';
 import { Button } from '@/shared/ui/button';
 import { Input } from '@/shared/ui/input';
@@ -363,6 +363,9 @@ export const WidgetEditorDialog: React.FC<WidgetEditorDialogProps> = ({
       <DialogContent className="w-[96vw] max-w-3xl max-h-[90vh] overflow-hidden flex flex-col p-4 sm:p-6">
         <DialogHeader>
           <DialogTitle>{dialogTitle}</DialogTitle>
+          <DialogDescription className="sr-only">
+            {t`Configure widget type, display style, and filters.`}
+          </DialogDescription>
         </DialogHeader>
 
         <div className="flex-1 min-w-0 overflow-y-auto overflow-x-visible space-y-4 px-1">

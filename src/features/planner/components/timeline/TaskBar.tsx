@@ -10,6 +10,8 @@ import { sortProjectsByTracking } from '@/shared/lib/projectSorting';
 import { calculateNewDates, calculateResizedDates, formatDateRange, TASK_HEIGHT, TASK_GAP } from '@/features/planner/lib/dateUtils';
 import { Ban, RotateCw } from 'lucide-react';
 import { t } from '@lingui/macro';
+import { useLocaleStore } from '@/shared/store/localeStore';
+import { resolveDateFnsLocale } from '@/shared/lib/dateFnsLocale';
 import {
   ContextMenu,
   ContextMenuContent,
@@ -104,6 +106,8 @@ export const TaskBar: React.FC<TaskBarProps> = ({
   canEdit,
   rowAssigneeId = null,
 }) => {
+  const locale = useLocaleStore((state) => state.locale);
+  const dateLocale = useMemo(() => resolveDateFnsLocale(locale), [locale]);
   const {
     tasks,
     projects,
@@ -495,7 +499,7 @@ export const TaskBar: React.FC<TaskBarProps> = ({
               {task.title}
             </div>
             <div className="text-xs text-muted-foreground">
-              {formatDateRange(task.startDate, task.endDate)}
+              {formatDateRange(task.startDate, task.endDate, dateLocale)}
             </div>
             {isRepeating && (
               <div className="flex items-center gap-1 text-xs text-muted-foreground">

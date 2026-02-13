@@ -6,6 +6,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- Added project edit opening by double-click in `Projects -> Projects`.
+
+### Changed
+- Timeline month names and weekday labels now follow the active interface language (Russian/English).
+- In the `Milestones` widget (`List` style), items are now filled adaptively based on actual card size and viewer screen resolution, showing the maximum that fits.
+
+### Fixed
+- Improved dialog accessibility by adding required descriptions, removing runtime warnings and improving screen-reader behavior.
+- Refined Keycloak routing so `/realms/master`, `/realms/timeline`, and `/admin/master/console` automatically open the correct login/console pages.
 
 ## [0.1.13] - 2026-02-13
 ### Fixed

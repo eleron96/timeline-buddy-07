@@ -20,6 +20,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Milestone } from '@/features/planner/types/planner';
 import { format, parseISO } from 'date-fns';
 import { t } from '@lingui/macro';
+import { useLocaleStore } from '@/shared/store/localeStore';
+import { resolveDateFnsLocale } from '@/shared/lib/dateFnsLocale';
 
 interface MilestoneDialogProps {
   open: boolean;
@@ -36,6 +38,8 @@ export const MilestoneDialog: React.FC<MilestoneDialogProps> = ({
   milestone,
   canEdit,
 }) => {
+  const locale = useLocaleStore((state) => state.locale);
+  const dateLocale = useMemo(() => resolveDateFnsLocale(locale), [locale]);
   const { projects, trackedProjectIds, addMilestone, updateMilestone, deleteMilestone } = usePlannerStore();
   const [title, setTitle] = useState('');
   const [projectId, setProjectId] = useState('');
@@ -63,8 +67,8 @@ export const MilestoneDialog: React.FC<MilestoneDialogProps> = ({
   const selectedDate = milestone?.date ?? date;
   const formattedDate = useMemo(() => {
     if (!selectedDate) return '';
-    return format(parseISO(selectedDate), 'd MMM yyyy');
-  }, [selectedDate]);
+    return format(parseISO(selectedDate), 'd MMM yyyy', { locale: dateLocale });
+  }, [selectedDate, dateLocale]);
 
   useEffect(() => {
     if (!open) return;

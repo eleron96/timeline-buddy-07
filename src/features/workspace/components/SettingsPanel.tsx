@@ -5,7 +5,7 @@ import { Button } from '@/shared/ui/button';
 import { Input } from '@/shared/ui/input';
 import { Label } from '@/shared/ui/label';
 import { Checkbox } from '@/shared/ui/checkbox';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/shared/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/shared/ui/dialog';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/shared/ui/accordion';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/shared/ui/tabs';
 import {
@@ -421,6 +421,9 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ open, onOpenChange
               <Settings2 className="w-5 h-5" />
               {t`Workspace settings`}
             </DialogTitle>
+            <DialogDescription className="sr-only">
+              {t`Manage workspace settings, statuses, task types, and tags.`}
+            </DialogDescription>
           </DialogHeader>
 
           <Tabs defaultValue="general" className="flex-1 flex flex-col mt-4">

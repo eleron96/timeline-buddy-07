@@ -1,6 +1,12 @@
 motio.nikog.net {
   redir /realms /realms/timeline/account 302
   redir /realms/ /realms/timeline/account 302
+  redir /realms/master /realms/master/account 302
+  redir /realms/master/ /realms/master/account 302
+  redir /realms/timeline /realms/timeline/account 302
+  redir /realms/timeline/ /realms/timeline/account 302
+  redir /admin /admin/master/console/ 302
+  redir /admin/master/console /admin/master/console/ 302
 
   handle /resources* {
     encode zstd gzip
