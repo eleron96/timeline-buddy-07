@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Changed
+- На дашборде графические виджеты теперь адаптивно подстраивают компоновку графика и легенды под фактический размер карточки и разрешение экрана, включая широкоформатные мониторы.
 
 ## [0.1.15] - 2026-02-13
 ### Fixed

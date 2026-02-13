@@ -59,6 +59,10 @@ const filterLabels: Record<DashboardStatusFilter, string> = {
 const PIE_OTHER_LABEL = 'Other';
 const MILESTONE_LIST_ROW_GAP_PX = 8;
 const MILESTONE_MORE_ROW_RESERVE_PX = 24;
+const CHART_ULTRAWIDE_MIN_WIDTH_PX = 1180;
+const CHART_ULTRAWIDE_MIN_ASPECT = 2.15;
+const CHART_SIDE_LEGEND_MIN_WIDTH_PX = 720;
+const CHART_SIDE_LEGEND_MIN_ASPECT = 1.6;
 
 interface DashboardWidgetCardProps {
   widget: DashboardWidget;
@@ -97,12 +101,38 @@ export const DashboardWidgetCard: React.FC<DashboardWidgetCardProps> = ({
   const isSmall = size === 'small';
   const showPeriod = size !== 'small';
   const showFilter = size === 'large';
-  const showAxes = size !== 'small';
+  const canShowAxesBySize = size !== 'small';
   const palette = widget.type !== 'kpi'
     ? getBarPalette(widget.barPalette)
     : ['#94A3B8'];
   const paletteColors = palette.length ? palette : ['#94A3B8'];
   const isChart = widget.type === 'bar' || widget.type === 'line' || widget.type === 'area' || widget.type === 'pie';
+  const chartViewportRef = React.useRef<HTMLDivElement | null>(null);
+  const [chartViewport, setChartViewport] = React.useState<{ width: number; height: number }>({ width: 0, height: 0 });
+
+  React.useLayoutEffect(() => {
+    if (!isChart) return;
+    const node = chartViewportRef.current;
+    if (!node) return;
+
+    const syncViewport = () => {
+      const next = {
+        width: node.clientWidth,
+        height: node.clientHeight,
+      };
+      setChartViewport((prev) => (
+        prev.width === next.width && prev.height === next.height ? prev : next
+      ));
+    };
+
+    syncViewport();
+    const observer = new ResizeObserver(() => {
+      requestAnimationFrame(syncViewport);
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [isChart, widget.type, size, editing]);
+
   const milestoneView = widget.milestoneView
     ?? (widget.type === 'milestone_calendar' ? 'calendar' : 'list');
   const milestoneCalendarMode = widget.milestoneCalendarMode ?? 'month';
@@ -135,25 +165,40 @@ export const DashboardWidgetCard: React.FC<DashboardWidgetCardProps> = ({
     ? (widget.type === 'pie' ? pieSeries : (data?.series ?? []))
     : [];
   const showLegend = isChart && legendItems.length > 0;
-  const chartMinHeightClass = isSmall
-    ? 'min-h-[64px]'
-    : legendItems.length > 6
-      ? 'min-h-[120px]'
-      : 'min-h-[160px]';
-  const barChartMinHeightClass = isSmall
-    ? 'min-h-[64px]'
-    : legendItems.length > 4
-      ? 'min-h-[120px]'
-      : 'min-h-[160px]';
-  const pieMinHeightClass = isSmall ? 'min-h-[72px]' : 'min-h-[200px]';
+  const chartAspectRatio = chartViewport.height > 0
+    ? chartViewport.width / chartViewport.height
+    : 0;
+  const isUltraWideChart = chartViewport.width >= CHART_ULTRAWIDE_MIN_WIDTH_PX
+    || chartAspectRatio >= CHART_ULTRAWIDE_MIN_ASPECT;
+  const preferSideLegend = showLegend
+    && !isSmall
+    && chartViewport.width >= CHART_SIDE_LEGEND_MIN_WIDTH_PX
+    && chartAspectRatio >= CHART_SIDE_LEGEND_MIN_ASPECT;
+  const isCompactChartHeight = chartViewport.height > 0 && chartViewport.height < 210;
+  const isCompactChartWidth = chartViewport.width > 0 && chartViewport.width < 380;
+  const showAxes = canShowAxesBySize
+    && (chartViewport.width === 0 || chartViewport.width >= 280)
+    && (chartViewport.height === 0 || chartViewport.height >= 150);
   const kpiValueClass = isKpiSmall ? 'text-2xl' : isSmall ? 'text-3xl' : 'text-4xl';
   const kpiValueStyle = isKpiSmall
     ? { fontSize: 'clamp(1.25rem, 6vw, 2.25rem)' }
     : isSmall
       ? { fontSize: 'clamp(1.5rem, 4vw, 2.75rem)' }
       : { fontSize: 'clamp(2rem, 3vw, 3.25rem)' };
-  const pieInnerRadius = size === 'small' ? '45%' : '55%';
-  const pieOuterRadius = size === 'small' ? '75%' : '90%';
+  const pieInnerRadius = isCompactChartHeight
+    ? '42%'
+    : size === 'small'
+      ? '45%'
+      : isUltraWideChart
+        ? '58%'
+        : '55%';
+  const pieOuterRadius = isCompactChartHeight
+    ? '72%'
+    : size === 'small'
+      ? '75%'
+      : isUltraWideChart
+        ? '92%'
+        : '90%';
   const timeSeries = data?.timeSeries ?? [];
   const seriesKeys = data?.seriesKeys ?? [];
   const hasTimeSeries = timeSeries.length > 0 && seriesKeys.length > 0;
@@ -161,63 +206,144 @@ export const DashboardWidgetCard: React.FC<DashboardWidgetCardProps> = ({
     ? taskPeriodLabel
     : null;
   const isPieLegend = widget.type === 'pie';
-  const legendColumns = isPieLegend
-    ? (legendItems.length > 2 ? 2 : 1)
-    : (legendItems.length <= 1 ? 1 : 2);
+  const legendMaxColumns = preferSideLegend
+    ? 1
+    : isPieLegend
+      ? (isUltraWideChart ? 3 : chartViewport.width >= 560 ? 2 : 1)
+      : (isUltraWideChart ? 3 : chartViewport.width >= 740 ? 2 : 1);
+  const legendColumns = Math.max(1, Math.min(legendItems.length || 1, legendMaxColumns));
+  const legendRowsBudget = (() => {
+    if (!showLegend) return 0;
+    if (preferSideLegend) {
+      if (!chartViewport.height) return 7;
+      return Math.max(2, Math.floor((chartViewport.height - 8) / (isPieLegend ? 20 : 22)));
+    }
+    if (!chartViewport.height) return isSmall ? 2 : 4;
+    if (chartViewport.height < 180) return 1;
+    if (chartViewport.height < 260) return 2;
+    if (chartViewport.height < 340) return 3;
+    return isUltraWideChart ? 4 : 3;
+  })();
+  const legendLimit = showLegend ? Math.max(1, legendRowsBudget * legendColumns) : 0;
+  const visibleLegendItems = showLegend ? legendItems.slice(0, legendLimit) : [];
+  const hiddenLegendItems = showLegend ? legendItems.slice(legendLimit) : [];
   const legendTextClass = isPieLegend
-    ? 'text-[9px] leading-tight'
-    : legendItems.length > 6
-      ? 'text-[10px] leading-snug'
-      : 'text-[11px] leading-snug';
-  const showLegendValue = true;
+    ? (isCompactChartHeight ? 'text-[8px] leading-tight' : 'text-[9px] leading-tight')
+    : isCompactChartHeight
+      ? 'text-[9px] leading-snug'
+      : legendItems.length > 6
+        ? 'text-[10px] leading-snug'
+        : 'text-[11px] leading-snug';
+  const showLegendValue = !isCompactChartWidth || preferSideLegend;
+  const legendPanelClass = isUltraWideChart
+    ? 'w-[min(36%,320px)]'
+    : 'w-[min(40%,270px)]';
+  const chartCanvasMinHeight = isSmall
+    ? 56
+    : preferSideLegend
+      ? (isCompactChartHeight ? 92 : 124)
+      : (isCompactChartHeight ? 84 : 112);
+  const pieCanvasMinHeight = isSmall
+    ? 64
+    : preferSideLegend
+      ? (isCompactChartHeight ? 112 : 156)
+      : (isCompactChartHeight ? 96 : 132);
+  const fallbackBarMaxSize = size === 'small' ? 16 : size === 'medium' ? 24 : 32;
+  const dynamicBarMaxSize = (() => {
+    const points = data?.series.length ?? 0;
+    if (points === 0 || chartViewport.width <= 0) return fallbackBarMaxSize;
+    const widthPerPoint = chartViewport.width / points;
+    const widthBased = Math.floor(widthPerPoint * (preferSideLegend ? 0.55 : 0.65));
+    const cap = isUltraWideChart ? 44 : 36;
+    return Math.max(10, Math.min(cap, widthBased));
+  })();
   const legendList = showLegend ? (
-    <div
-      className={cn(
-        'grid w-full max-w-full text-muted-foreground',
-        isPieLegend ? 'gap-x-2 gap-y-0.5' : 'gap-x-3 gap-y-1',
-        legendTextClass,
-      )}
-      style={{
-        gridTemplateColumns: legendColumns === 1
-          ? `minmax(0, 1fr)`
-          : 'repeat(2, minmax(0, 1fr))',
-        gridAutoFlow: 'row',
-        justifyContent: 'start',
-        justifyItems: 'start',
-      }}
-    >
-      {legendItems.map((item, index) => (
-        <div
-          key={`${item.name}-${index}`}
-          className={cn(
-            'grid min-w-0 items-center',
-            showLegendValue
-              ? (isPieLegend
-                ? 'grid-cols-[8px_minmax(0,1fr)_minmax(20px,auto)] gap-1'
-                : 'grid-cols-[12px_minmax(0,1fr)_minmax(24px,auto)] gap-2')
-              : 'grid-cols-[8px_minmax(0,1fr)] gap-1',
-          )}
-        >
-          <span
-            className={cn('rounded-full', isPieLegend ? 'h-1.5 w-1.5' : 'mt-1 h-2 w-2')}
-            style={{
-              backgroundColor: (
-                isPieLegend && item.name === PIE_OTHER_LABEL
-                  ? '#94A3B8'
-                  : paletteColors[index % paletteColors.length]
-              ),
-            }}
-          />
-          <span className={cn('min-w-0 text-muted-foreground', isPieLegend ? 'truncate' : 'break-words')}>
-            {item.name}
-          </span>
-          {showLegendValue && (
-            <span className="text-right font-medium text-foreground">
-              {item.value.toLocaleString()}
+    <div className="min-w-0">
+      <div
+        className={cn(
+          'grid w-full max-w-full text-muted-foreground',
+          isPieLegend ? 'gap-x-2 gap-y-0.5' : 'gap-x-3 gap-y-1',
+          legendTextClass,
+        )}
+        style={{
+          gridTemplateColumns: `repeat(${legendColumns}, minmax(0, 1fr))`,
+          gridAutoFlow: 'row',
+          justifyContent: 'start',
+          justifyItems: 'start',
+        }}
+      >
+        {visibleLegendItems.map((item, index) => (
+          <div
+            key={`${item.name}-${index}`}
+            className={cn(
+              'grid min-w-0 items-center',
+              showLegendValue
+                ? (isPieLegend
+                  ? 'grid-cols-[8px_minmax(0,1fr)_minmax(20px,auto)] gap-1'
+                  : 'grid-cols-[12px_minmax(0,1fr)_minmax(24px,auto)] gap-2')
+                : 'grid-cols-[8px_minmax(0,1fr)] gap-1',
+            )}
+          >
+            <span
+              className={cn('rounded-full', isPieLegend ? 'h-1.5 w-1.5' : 'mt-1 h-2 w-2')}
+              style={{
+                backgroundColor: (
+                  isPieLegend && item.name === PIE_OTHER_LABEL
+                    ? '#94A3B8'
+                    : paletteColors[index % paletteColors.length]
+                ),
+              }}
+            />
+            <span className={cn('min-w-0 text-muted-foreground', isPieLegend ? 'truncate' : 'break-words')}>
+              {item.name}
             </span>
-          )}
-        </div>
-      ))}
+            {showLegendValue && (
+              <span className="text-right font-medium text-foreground">
+                {item.value.toLocaleString(locale === 'ru' ? 'ru-RU' : 'en-US')}
+              </span>
+            )}
+          </div>
+        ))}
+      </div>
+      {hiddenLegendItems.length > 0 && (
+        <TooltipProvider delayDuration={180}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                className="mt-1 text-[10px] text-muted-foreground underline-offset-4 hover:underline"
+              >
+                {t`+${hiddenLegendItems.length} more`}
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="top" className="max-w-xs p-2 text-xs">
+              <div className="grid gap-1">
+                {hiddenLegendItems.map((item, index) => {
+                  const colorIndex = visibleLegendItems.length + index;
+                  return (
+                    <div key={`${item.name}-hidden-${index}`} className="grid grid-cols-[10px_minmax(0,1fr)_auto] items-center gap-2">
+                      <span
+                        className="h-2 w-2 rounded-full"
+                        style={{
+                          backgroundColor: (
+                            isPieLegend && item.name === PIE_OTHER_LABEL
+                              ? '#94A3B8'
+                              : paletteColors[colorIndex % paletteColors.length]
+                          ),
+                        }}
+                      />
+                      <span className="truncate">{item.name}</span>
+                      <span className="text-muted-foreground">
+                        {item.value.toLocaleString(locale === 'ru' ? 'ru-RU' : 'en-US')}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      )}
     </div>
   ) : null;
 
@@ -416,38 +542,47 @@ export const DashboardWidgetCard: React.FC<DashboardWidgetCardProps> = ({
           </div>
         )}
         {!loading && !error && widget.type === 'bar' && (
-          <div className={cn('flex h-full min-h-0 flex-col', contentGapClass)}>
-            {data?.series.length ? (
-              <ChartContainer
-                config={{ value: { label: t`Tasks` } }}
-                className={cn('flex-1 min-h-0', barChartMinHeightClass)}
-                style={{ aspectRatio: 'auto' }}
-              >
-                <BarChart
-                  data={data.series}
-                  barGap={4}
-                  barCategoryGap="22%"
-                  maxBarSize={size === 'small' ? 16 : size === 'medium' ? 24 : 32}
-                  margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
+          <div ref={chartViewportRef} className={cn('flex h-full min-h-0 flex-col', contentGapClass)}>
+            <div className={cn('flex min-h-0 flex-1', preferSideLegend ? 'flex-row gap-3' : 'flex-col gap-2')}>
+              {data?.series.length ? (
+                <ChartContainer
+                  config={{ value: { label: t`Tasks` } }}
+                  className="flex-1 min-h-0"
+                  style={{ aspectRatio: 'auto', minHeight: chartCanvasMinHeight }}
                 >
-                  <CartesianGrid vertical={false} stroke="#E5E7EB" />
-                  {showAxes && (
-                    <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={36} />
-                  )}
-                  <ChartTooltip content={<ChartTooltipContent indicator="dot" />} />
-                  <Bar dataKey="value" radius={[6, 6, 0, 0]}>
-                    {data.series.map((entry, index) => (
-                      <Cell key={`${entry.name}-${index}`} fill={paletteColors[index % paletteColors.length]} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ChartContainer>
-            ) : (
-              <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-                {t`No data`}
-              </div>
+                  <BarChart
+                    data={data.series}
+                    barGap={4}
+                    barCategoryGap={isUltraWideChart ? '28%' : '22%'}
+                    maxBarSize={dynamicBarMaxSize}
+                    margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
+                  >
+                    <CartesianGrid vertical={false} stroke="#E5E7EB" />
+                    {showAxes && (
+                      <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={36} />
+                    )}
+                    <ChartTooltip content={<ChartTooltipContent indicator="dot" />} />
+                    <Bar dataKey="value" radius={[6, 6, 0, 0]}>
+                      {data.series.map((entry, index) => (
+                        <Cell key={`${entry.name}-${index}`} fill={paletteColors[index % paletteColors.length]} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ChartContainer>
+              ) : (
+                <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
+                  {t`No data`}
+                </div>
+              )}
+              {legendList && preferSideLegend && (
+                <div className={cn(legendPanelClass, 'min-h-0 overflow-y-auto pr-1')}>
+                  {legendList}
+                </div>
+              )}
+            </div>
+            {legendList && !preferSideLegend && (
+              <div className="min-w-0">{legendList}</div>
             )}
-            {legendList}
             {showFilter && (
               <div className="text-xs text-muted-foreground">
                 {t`Filter: ${filterLabels[widget.statusFilter]}`}
@@ -456,37 +591,46 @@ export const DashboardWidgetCard: React.FC<DashboardWidgetCardProps> = ({
           </div>
         )}
         {!loading && !error && widget.type === 'line' && (
-          <div className={cn('flex h-full min-h-0 flex-col', contentGapClass)}>
-            {hasTimeSeries ? (
-              <ChartContainer
-                config={{}}
-                className={cn('flex-1 min-h-0', chartMinHeightClass)}
-                style={{ aspectRatio: 'auto' }}
-              >
-                <LineChart data={timeSeries}>
-                  {showAxes && (
-                    <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={36} />
-                  )}
-                  <ChartTooltip content={<ChartTooltipContent indicator="dot" />} />
-                  {seriesKeys.map((seriesKey, index) => (
-                    <Line
-                      key={seriesKey.key}
-                      type="monotone"
-                      dataKey={seriesKey.key}
-                      name={seriesKey.label}
-                      stroke={paletteColors[index % paletteColors.length]}
-                      strokeWidth={2}
-                      dot={false}
-                    />
-                  ))}
-                </LineChart>
-              </ChartContainer>
-            ) : (
-              <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-                {t`No data`}
-              </div>
+          <div ref={chartViewportRef} className={cn('flex h-full min-h-0 flex-col', contentGapClass)}>
+            <div className={cn('flex min-h-0 flex-1', preferSideLegend ? 'flex-row gap-3' : 'flex-col gap-2')}>
+              {hasTimeSeries ? (
+                <ChartContainer
+                  config={{}}
+                  className="flex-1 min-h-0"
+                  style={{ aspectRatio: 'auto', minHeight: chartCanvasMinHeight }}
+                >
+                  <LineChart data={timeSeries}>
+                    {showAxes && (
+                      <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={36} />
+                    )}
+                    <ChartTooltip content={<ChartTooltipContent indicator="dot" />} />
+                    {seriesKeys.map((seriesKey, index) => (
+                      <Line
+                        key={seriesKey.key}
+                        type="monotone"
+                        dataKey={seriesKey.key}
+                        name={seriesKey.label}
+                        stroke={paletteColors[index % paletteColors.length]}
+                        strokeWidth={2}
+                        dot={false}
+                      />
+                    ))}
+                  </LineChart>
+                </ChartContainer>
+              ) : (
+                <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
+                  {t`No data`}
+                </div>
+              )}
+              {legendList && preferSideLegend && (
+                <div className={cn(legendPanelClass, 'min-h-0 overflow-y-auto pr-1')}>
+                  {legendList}
+                </div>
+              )}
+            </div>
+            {legendList && !preferSideLegend && (
+              <div className="min-w-0">{legendList}</div>
             )}
-            {legendList}
             {showFilter && (
               <div className="text-xs text-muted-foreground">
                 {t`Filter: ${filterLabels[widget.statusFilter]}`}
@@ -495,37 +639,46 @@ export const DashboardWidgetCard: React.FC<DashboardWidgetCardProps> = ({
           </div>
         )}
         {!loading && !error && widget.type === 'area' && (
-          <div className={cn('flex h-full min-h-0 flex-col', contentGapClass)}>
-            {hasTimeSeries ? (
-              <ChartContainer
-                config={{}}
-                className={cn('flex-1 min-h-0', chartMinHeightClass)}
-                style={{ aspectRatio: 'auto' }}
-              >
-                <AreaChart data={timeSeries}>
-                  {showAxes && (
-                    <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={36} />
-                  )}
-                  <ChartTooltip content={<ChartTooltipContent indicator="dot" />} />
-                  {seriesKeys.map((seriesKey, index) => (
-                    <Area
-                      key={seriesKey.key}
-                      type="monotone"
-                      dataKey={seriesKey.key}
-                      name={seriesKey.label}
-                      stroke={paletteColors[index % paletteColors.length]}
-                      fill={paletteColors[index % paletteColors.length]}
-                      fillOpacity={0.2}
-                    />
-                  ))}
-                </AreaChart>
-              </ChartContainer>
-            ) : (
-              <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-                {t`No data`}
-              </div>
+          <div ref={chartViewportRef} className={cn('flex h-full min-h-0 flex-col', contentGapClass)}>
+            <div className={cn('flex min-h-0 flex-1', preferSideLegend ? 'flex-row gap-3' : 'flex-col gap-2')}>
+              {hasTimeSeries ? (
+                <ChartContainer
+                  config={{}}
+                  className="flex-1 min-h-0"
+                  style={{ aspectRatio: 'auto', minHeight: chartCanvasMinHeight }}
+                >
+                  <AreaChart data={timeSeries}>
+                    {showAxes && (
+                      <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={36} />
+                    )}
+                    <ChartTooltip content={<ChartTooltipContent indicator="dot" />} />
+                    {seriesKeys.map((seriesKey, index) => (
+                      <Area
+                        key={seriesKey.key}
+                        type="monotone"
+                        dataKey={seriesKey.key}
+                        name={seriesKey.label}
+                        stroke={paletteColors[index % paletteColors.length]}
+                        fill={paletteColors[index % paletteColors.length]}
+                        fillOpacity={0.2}
+                      />
+                    ))}
+                  </AreaChart>
+                </ChartContainer>
+              ) : (
+                <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
+                  {t`No data`}
+                </div>
+              )}
+              {legendList && preferSideLegend && (
+                <div className={cn(legendPanelClass, 'min-h-0 overflow-y-auto pr-1')}>
+                  {legendList}
+                </div>
+              )}
+            </div>
+            {legendList && !preferSideLegend && (
+              <div className="min-w-0">{legendList}</div>
             )}
-            {legendList}
             {showFilter && (
               <div className="text-xs text-muted-foreground">
                 {t`Filter: ${filterLabels[widget.statusFilter]}`}
@@ -534,48 +687,57 @@ export const DashboardWidgetCard: React.FC<DashboardWidgetCardProps> = ({
           </div>
         )}
         {!loading && !error && widget.type === 'pie' && (
-          <div className={cn('flex h-full min-h-0 flex-col', contentGapClass)}>
-            {pieChartSeries.length ? (
-              <ChartContainer
-                config={{ value: { label: t`Tasks` } }}
-                className={cn('flex-1 min-h-0', size === 'small' ? 'min-h-0' : pieMinHeightClass)}
-                style={{ aspectRatio: 'auto' }}
-              >
-                <PieChart
-                  onMouseMove={(state: { chartX?: number; chartY?: number }) => {
-                    if (typeof state.chartX !== 'number' || typeof state.chartY !== 'number') return;
-                    setPieTooltipPosition({ x: state.chartX + 14, y: state.chartY + 14 });
-                  }}
-                  onMouseLeave={() => setPieTooltipPosition(undefined)}
+          <div ref={chartViewportRef} className={cn('flex h-full min-h-0 flex-col', contentGapClass)}>
+            <div className={cn('flex min-h-0 flex-1', preferSideLegend ? 'flex-row gap-3' : 'flex-col gap-2')}>
+              {pieChartSeries.length ? (
+                <ChartContainer
+                  config={{ value: { label: t`Tasks` } }}
+                  className="flex-1 min-h-0"
+                  style={{ aspectRatio: 'auto', minHeight: pieCanvasMinHeight }}
                 >
-                  <ChartTooltip
-                    content={<ChartTooltipContent indicator="dot" />}
-                    position={pieTooltipPosition}
-                    allowEscapeViewBox={{ x: true, y: true }}
-                  />
-                  <Pie
-                    data={pieChartSeries}
-                    dataKey="value"
-                    nameKey="name"
-                    innerRadius={pieInnerRadius}
-                    outerRadius={pieOuterRadius}
-                    paddingAngle={2}
+                  <PieChart
+                    onMouseMove={(state: { chartX?: number; chartY?: number }) => {
+                      if (typeof state.chartX !== 'number' || typeof state.chartY !== 'number') return;
+                      setPieTooltipPosition({ x: state.chartX + 14, y: state.chartY + 14 });
+                    }}
+                    onMouseLeave={() => setPieTooltipPosition(undefined)}
                   >
-                    {pieChartSeries.map((entry, index) => (
-                      <Cell
-                        key={`${entry.name}-${index}`}
-                        fill={paletteColors[index % paletteColors.length]}
-                      />
-                    ))}
-                  </Pie>
-                </PieChart>
-              </ChartContainer>
-            ) : (
-              <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-                {t`No data`}
-              </div>
+                    <ChartTooltip
+                      content={<ChartTooltipContent indicator="dot" />}
+                      position={pieTooltipPosition}
+                      allowEscapeViewBox={{ x: true, y: true }}
+                    />
+                    <Pie
+                      data={pieChartSeries}
+                      dataKey="value"
+                      nameKey="name"
+                      innerRadius={pieInnerRadius}
+                      outerRadius={pieOuterRadius}
+                      paddingAngle={2}
+                    >
+                      {pieChartSeries.map((entry, index) => (
+                        <Cell
+                          key={`${entry.name}-${index}`}
+                          fill={paletteColors[index % paletteColors.length]}
+                        />
+                      ))}
+                    </Pie>
+                  </PieChart>
+                </ChartContainer>
+              ) : (
+                <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
+                  {t`No data`}
+                </div>
+              )}
+              {legendList && preferSideLegend && (
+                <div className={cn(legendPanelClass, 'min-h-0 overflow-y-auto pr-1')}>
+                  {legendList}
+                </div>
+              )}
+            </div>
+            {legendList && !preferSideLegend && (
+              <div className="min-w-0">{legendList}</div>
             )}
-            {legendList}
             {showPeriod && <div className="text-xs text-muted-foreground">{periodLabel}</div>}
             {showFilter && (
               <div className="text-xs text-muted-foreground">

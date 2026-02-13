@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Changed
+- Dashboard chart widgets now adapt chart/legend layout to the actual widget size and screen resolution, including ultrawide displays.
 
 ## [0.1.15] - 2026-02-13
 ### Fixed
