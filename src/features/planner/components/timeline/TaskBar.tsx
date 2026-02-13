@@ -400,7 +400,7 @@ export const TaskBar: React.FC<TaskBarProps> = ({
               )}
               {isRepeating && (
                 <RotateCw
-                  className="h-3 w-3 opacity-80"
+                  className="h-3 w-3 shrink-0 opacity-80"
                   style={{ color: textColor }}
                   aria-label={t`Repeat`}
                   title={t`Repeat`}
@@ -499,7 +499,7 @@ export const TaskBar: React.FC<TaskBarProps> = ({
             </div>
             {isRepeating && (
               <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                <RotateCw className="h-3 w-3" aria-hidden="true" />
+                <RotateCw className="h-3 w-3 shrink-0" aria-hidden="true" />
                 <span>{t`Repeat`}</span>
               </div>
             )}
@@ -547,12 +547,12 @@ export const TaskBar: React.FC<TaskBarProps> = ({
               <span>{t`Only for ${scopedAssigneeName}`}</span>
             </label>
           )}
-          <AlertDialogFooter>
-            <AlertDialogCancel>{t`Cancel`}</AlertDialogCancel>
+          <AlertDialogFooter className="flex-row flex-wrap items-center justify-end gap-2 sm:space-x-0">
+            <AlertDialogCancel className="mt-0 h-8 px-2.5 text-xs">{t`Cancel`}</AlertDialogCancel>
             {isRepeating ? (
               <>
                 <AlertDialogAction
-                  className="bg-muted text-foreground hover:bg-muted/80"
+                  className="h-8 whitespace-nowrap bg-muted px-2.5 text-xs text-foreground hover:bg-muted/80"
                   onClick={async () => {
                     if (!canEdit) return;
                     if (deleteForRowAssigneeOnly && scopedAssignee) {
@@ -566,7 +566,7 @@ export const TaskBar: React.FC<TaskBarProps> = ({
                   {t`Delete this`}
                 </AlertDialogAction>
                 <AlertDialogAction
-                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  className="h-8 whitespace-nowrap bg-destructive px-2.5 text-xs text-destructive-foreground hover:bg-destructive/90"
                   onClick={async () => {
                     if (!canEdit || !task.repeatId) return;
                     if (deleteForRowAssigneeOnly && scopedAssignee) {
@@ -582,6 +582,7 @@ export const TaskBar: React.FC<TaskBarProps> = ({
               </>
             ) : (
               <AlertDialogAction
+                className="h-8 whitespace-nowrap px-2.5 text-xs"
                 onClick={async () => {
                   if (!canEdit) return;
                   if (deleteForRowAssigneeOnly && scopedAssignee) {

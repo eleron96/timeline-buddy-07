@@ -229,7 +229,7 @@ const CustomerCombobox: React.FC<{
           <ChevronDown className="ml-2 h-4 w-4 opacity-60" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-[260px] p-0" align="start">
+      <PopoverContent className="w-[260px] p-0" align="start" portalled={false}>
         <Command shouldFilter={false}>
           <CommandInput
             placeholder={t`Find or add customer...`}
@@ -244,7 +244,12 @@ const CustomerCombobox: React.FC<{
               }
             }}
           />
-          <CommandList>
+          <CommandList
+            className="max-h-60 overscroll-contain"
+            onWheel={(event) => {
+              event.stopPropagation();
+            }}
+          >
             <CommandEmpty>{t`No customers found.`}</CommandEmpty>
             <CommandGroup>
               <CommandItem onSelect={() => handleSelect(null)}>

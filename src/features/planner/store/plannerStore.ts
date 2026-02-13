@@ -160,7 +160,7 @@ interface PlannerStore extends PlannerState {
   deleteTask: (id: string) => Promise<void>;
   deleteTasks: (ids: string[]) => Promise<{ error?: string }>;
   duplicateTask: (id: string) => Promise<void>;
-  createRepeats: (id: string, options: { frequency: 'daily' | 'weekly' | 'monthly' | 'yearly'; ends: 'never' | 'on' | 'after'; untilDate?: string; count?: number }) => Promise<{ error?: string; created?: number }>;
+  createRepeats: (id: string, options: { frequency: 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'yearly'; ends: 'never' | 'on' | 'after'; untilDate?: string; count?: number }) => Promise<{ error?: string; created?: number }>;
   moveTask: (id: string, startDate: string, endDate: string) => Promise<void>;
   reassignTask: (id: string, assigneeId: string | null, projectId?: string | null) => Promise<void>;
   deleteTaskSeries: (repeatId: string, fromDate: string) => Promise<void>;
@@ -976,6 +976,8 @@ export const usePlannerStore = create<PlannerStore>()(
               return addDays(date, step);
             case 'weekly':
               return addWeeks(date, step);
+            case 'biweekly':
+              return addWeeks(date, step * 2);
             case 'monthly':
               return addMonths(date, step);
             case 'yearly':

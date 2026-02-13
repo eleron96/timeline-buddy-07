@@ -18,18 +18,6 @@ const AuthPage: React.FC = () => {
   const [submitting, setSubmitting] = useState(false);
   const [oauthAttempted, setOauthAttempted] = useState(false);
   const [error, setError] = useState('');
-  const [silentOAuth, setSilentOAuth] = useState(() => {
-    if (typeof window === 'undefined') return false;
-    return window.sessionStorage.getItem('auth.silentOAuth') === '1';
-  });
-  const [skipAutoOAuth, setSkipAutoOAuth] = useState(() => {
-    if (typeof window === 'undefined') return false;
-    const untilRaw = window.sessionStorage.getItem('auth.skipAutoOAuthUntil');
-    const until = untilRaw ? Number(untilRaw) : 0;
-    if (Number.isFinite(until) && until > Date.now()) return true;
-    window.sessionStorage.removeItem('auth.skipAutoOAuthUntil');
-    return false;
-  });
 
   const locale = useLocaleStore((state) => state.locale);
   const setLocale = useLocaleStore((state) => state.setLocale);
@@ -53,17 +41,7 @@ const AuthPage: React.FC = () => {
     setError(oauthError);
     setSubmitting(false);
     setOauthAttempted(true);
-    setSilentOAuth(false);
-    if (typeof window !== 'undefined') {
-      window.sessionStorage.removeItem('auth.silentOAuth');
-    }
   }, [oauthError]);
-
-  useEffect(() => {
-    if (!user || typeof window === 'undefined') return;
-    window.sessionStorage.removeItem('auth.silentOAuth');
-    setSilentOAuth(false);
-  }, [user]);
 
   useEffect(() => {
     if (!user) return;
@@ -72,7 +50,7 @@ const AuthPage: React.FC = () => {
   }, [location.state, navigate, user]);
 
   useEffect(() => {
-    if (loading || user || oauthAttempted || skipAutoOAuth) return;
+    if (loading || user || oauthAttempted) return;
 
     setOauthAttempted(true);
     setSubmitting(true);
@@ -82,32 +60,18 @@ const AuthPage: React.FC = () => {
       .then(({ error: keycloakError }) => {
         if (keycloakError) {
           setError(keycloakError);
-          if (typeof window !== 'undefined') {
-            window.sessionStorage.removeItem('auth.silentOAuth');
-          }
-          setSilentOAuth(false);
         }
         setSubmitting(false);
       })
       .catch((authError: unknown) => {
         setError(authError instanceof Error ? authError.message : t`Authentication failed.`);
-        if (typeof window !== 'undefined') {
-          window.sessionStorage.removeItem('auth.silentOAuth');
-        }
-        setSilentOAuth(false);
         setSubmitting(false);
       });
-  }, [loading, oauthAttempted, signInWithKeycloak, skipAutoOAuth, user]);
+  }, [loading, oauthAttempted, signInWithKeycloak, user]);
 
   const handleKeycloakSignIn = async () => {
     setError('');
     setSubmitting(true);
-    if (typeof window !== 'undefined') {
-      window.sessionStorage.removeItem('auth.skipAutoOAuthUntil');
-      window.sessionStorage.removeItem('auth.silentOAuth');
-    }
-    setSkipAutoOAuth(false);
-    setSilentOAuth(false);
 
     const redirectTo = typeof window !== 'undefined' ? `${window.location.origin}/auth` : undefined;
     const { error: keycloakError } = await signInWithKeycloak(redirectTo);
@@ -123,8 +87,9 @@ const AuthPage: React.FC = () => {
     setPendingLocale(nextLocale);
   };
 
-  const hideAuthCard = (silentOAuth || submitting) && !skipAutoOAuth && !user && !oauthError && !error;
-  if (hideAuthCard) {
+  const authError = error || oauthError;
+
+  if (!user && !authError) {
     return <div className="min-h-screen bg-background" />;
   }
 
@@ -132,7 +97,7 @@ const AuthPage: React.FC = () => {
     <div className="flex min-h-screen items-center justify-center bg-background px-4 py-10">
       <Card className="w-full max-w-md">
         <CardHeader>
-          <CardTitle>{t`Welcome`}</CardTitle>
+          <CardTitle>{t`Sign in required`}</CardTitle>
           <CardDescription>{t`Continue with Keycloak to access the workspace.`}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -149,33 +114,16 @@ const AuthPage: React.FC = () => {
             </Select>
           </div>
 
-          {error && (
+          {authError && (
             <Alert variant="destructive">
               <AlertTitle>{t`Authentication error`}</AlertTitle>
-              <AlertDescription>{error}</AlertDescription>
+              <AlertDescription>{authError}</AlertDescription>
             </Alert>
           )}
 
           <Button type="button" className="w-full" onClick={handleKeycloakSignIn} disabled={loading || submitting}>
             {t`Continue with Keycloak`}
           </Button>
-
-          {skipAutoOAuth && (
-            <Button
-              type="button"
-              variant="outline"
-              className="w-full"
-              onClick={() => {
-                if (typeof window !== 'undefined') {
-                  window.sessionStorage.removeItem('auth.skipAutoOAuthUntil');
-                }
-                setSkipAutoOAuth(false);
-                setOauthAttempted(false);
-              }}
-            >
-              {t`Retry automatic sign in`}
-            </Button>
-          )}
 
           <div className="text-xs text-muted-foreground">
             {t`Passwords and account recovery are managed in Keycloak.`}

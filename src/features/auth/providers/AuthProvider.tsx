@@ -18,9 +18,23 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   useEffect(() => {
     let active = true;
+    let lastSessionKey: string | null = null;
 
-    const handleSession = async (session: Session | null) => {
+    const sessionKey = (session: Session | null) => {
+      if (!session?.user) return 'signed-out';
+      return session.access_token
+        ? `${session.user.id}:${session.access_token}`
+        : session.user.id;
+    };
+
+    const handleSession = async (session: Session | null, force = false) => {
       if (!active) return;
+      const nextSessionKey = sessionKey(session);
+      if (!force && lastSessionKey === nextSessionKey) {
+        return;
+      }
+      lastSessionKey = nextSessionKey;
+
       setSession(session);
       if (session?.user) {
         try {
@@ -42,12 +56,16 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     };
 
     setLoading(true);
-    supabase.auth.getSession().then(({ data }) => {
-      void handleSession(data.session);
-    });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'TOKEN_REFRESHED') {
+        return;
+      }
       void handleSession(session);
     });
+    supabase.auth.getSession().then(({ data }) => {
+      void handleSession(data.session, true);
+    });
+
     return () => {
       active = false;
       subscription.unsubscribe();

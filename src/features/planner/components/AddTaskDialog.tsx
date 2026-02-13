@@ -78,6 +78,7 @@ export const AddTaskDialog: React.FC<AddTaskDialogProps> = ({
   initialProjectId,
   initialAssigneeIds,
 }) => {
+  type RepeatFrequency = 'none' | 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'yearly';
   const { projects, trackedProjectIds, assignees, statuses, taskTypes, tags, groupMode, addTask, createRepeats } = usePlannerStore();
   const currentWorkspaceId = useAuthStore((state) => state.currentWorkspaceId);
   const filteredAssignees = useFilteredAssignees(assignees);
@@ -121,7 +122,7 @@ export const AddTaskDialog: React.FC<AddTaskDialogProps> = ({
   const [tagIds, setTagIds] = useState<string[]>([]);
   const [description, setDescription] = useState('');
   const repeatUntilAutoRef = useRef(true);
-  const [repeatFrequency, setRepeatFrequency] = useState<'none' | 'daily' | 'weekly' | 'monthly' | 'yearly'>('none');
+  const [repeatFrequency, setRepeatFrequency] = useState<RepeatFrequency>('none');
   const [repeatEnds, setRepeatEnds] = useState<'never' | 'on' | 'after'>('never');
   const [repeatUntil, setRepeatUntil] = useState(getDefaultRepeatUntil(initialStart));
   const [repeatCount, setRepeatCount] = useState(4);
@@ -400,20 +401,20 @@ export const AddTaskDialog: React.FC<AddTaskDialogProps> = ({
                   setProjectId(value);
                 }}
               >
-                <SelectTrigger>
+                <SelectTrigger className="min-w-0 overflow-hidden">
                   <SelectValue placeholder={t`Select project`} />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none" disabled={noProjectDisabled}>{t`No project`}</SelectItem>
                   {activeProjects.map(p => (
                     <SelectItem key={p.id} value={p.id}>
-                      <div className="flex items-center gap-2">
-                        <div 
-                          className="w-2.5 h-2.5 rounded-full"
+                      <span className="inline-flex min-w-0 items-center gap-2">
+                        <span
+                          className="h-2.5 w-2.5 shrink-0 rounded-full"
                           style={{ backgroundColor: p.color }}
                         />
-                        {formatProjectLabel(p.name, p.code)}
-                      </div>
+                        <span className="truncate">{formatProjectLabel(p.name, p.code)}</span>
+                      </span>
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -571,6 +572,7 @@ export const AddTaskDialog: React.FC<AddTaskDialogProps> = ({
                       <SelectItem value="none">{t`Does not repeat`}</SelectItem>
                       <SelectItem value="daily">{t`Daily`}</SelectItem>
                       <SelectItem value="weekly">{t`Weekly`}</SelectItem>
+                      <SelectItem value="biweekly">{t`Biweekly (every 2 weeks)`}</SelectItem>
                       <SelectItem value="monthly">{t`Monthly`}</SelectItem>
                       <SelectItem value="yearly">{t`Yearly`}</SelectItem>
                     </SelectContent>

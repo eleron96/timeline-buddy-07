@@ -97,8 +97,10 @@ export const InviteNotifications: React.FC = () => {
   const [busyToken, setBusyToken] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
   const inviteReactionSeenRef = useRef<Set<string>>(new Set());
+  const inviteReactionSessionStartedAtRef = useRef<number>(Date.now());
 
   const inviteReactionStorageKey = user?.id ? `invite-reactions-seen-${user.id}` : null;
+  const inviteReactionSessionStorageKey = user?.id ? `invite-reactions-session-started-${user.id}` : null;
 
   const pendingCount = pendingInvites.length;
   const hasPending = pendingCount > 0;
@@ -158,6 +160,7 @@ export const InviteNotifications: React.FC = () => {
 
       const respondedAtMs = Date.parse(invite.respondedAt);
       if (!Number.isFinite(respondedAtMs)) return;
+      if (respondedAtMs < inviteReactionSessionStartedAtRef.current) return;
       if (now - respondedAtMs > 7 * 24 * 60 * 60 * 1000) return;
 
       const reactionKey = `${invite.token}:${invite.status}`;
@@ -176,6 +179,23 @@ export const InviteNotifications: React.FC = () => {
       window.localStorage.setItem(inviteReactionStorageKey, JSON.stringify(values));
     }
   }, [inviteReactionStorageKey, user]);
+
+  useEffect(() => {
+    if (!inviteReactionSessionStorageKey || typeof window === 'undefined') {
+      inviteReactionSessionStartedAtRef.current = Date.now();
+      return;
+    }
+
+    const storedSessionStart = Number(window.sessionStorage.getItem(inviteReactionSessionStorageKey));
+    if (Number.isFinite(storedSessionStart) && storedSessionStart > 0) {
+      inviteReactionSessionStartedAtRef.current = storedSessionStart;
+      return;
+    }
+
+    const nextSessionStart = Date.now();
+    inviteReactionSessionStartedAtRef.current = nextSessionStart;
+    window.sessionStorage.setItem(inviteReactionSessionStorageKey, String(nextSessionStart));
+  }, [inviteReactionSessionStorageKey]);
 
   useEffect(() => {
     if (!inviteReactionStorageKey || typeof window === 'undefined') {

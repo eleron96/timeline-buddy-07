@@ -61,6 +61,8 @@ type PendingRepeatUpdate = {
   resetDraftOnCancel: boolean;
 };
 
+type RepeatFrequency = 'none' | 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'yearly';
+
 const hasTaskUpdates = (task: Task, updates: Partial<Task>) => (
   Object.entries(updates).some(([key, value]) => {
     const currentValue = task[key as keyof Task];
@@ -70,6 +72,20 @@ const hasTaskUpdates = (task: Task, updates: Partial<Task>) => (
     return currentValue !== value;
   })
 );
+
+const inferRepeatFrequency = (series: Task[]): RepeatFrequency => {
+  if (series.length < 2) return 'none';
+  const sorted = [...series].sort((left, right) => left.startDate.localeCompare(right.startDate));
+  const firstDate = parseISO(sorted[0].startDate);
+  const secondDate = parseISO(sorted[1].startDate);
+  const dayDiff = Math.abs(Math.round((secondDate.getTime() - firstDate.getTime()) / 86400000));
+  if (dayDiff === 1) return 'daily';
+  if (dayDiff === 7) return 'weekly';
+  if (dayDiff === 14) return 'biweekly';
+  if (dayDiff >= 28 && dayDiff <= 31) return 'monthly';
+  if (dayDiff >= 364 && dayDiff <= 366) return 'yearly';
+  return 'none';
+};
 
 export const TaskDetailPanel: React.FC = () => {
   const { 
@@ -113,7 +129,7 @@ export const TaskDetailPanel: React.FC = () => {
   const titleDraftRef = useRef('');
   const descriptionDraftRef = useRef('');
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const [repeatFrequency, setRepeatFrequency] = useState<'none' | 'daily' | 'weekly' | 'monthly' | 'yearly'>('none');
+  const [repeatFrequency, setRepeatFrequency] = useState<RepeatFrequency>('none');
   const [repeatEnds, setRepeatEnds] = useState<'never' | 'on' | 'after'>('never');
   const [repeatUntil, setRepeatUntil] = useState('');
   const [repeatCount, setRepeatCount] = useState(4);
@@ -188,15 +204,37 @@ export const TaskDetailPanel: React.FC = () => {
 
   useEffect(() => {
     if (!task) return;
-    setRepeatFrequency('none');
-    setRepeatEnds('never');
+    const defaultRepeatUntil = getDefaultRepeatUntil(task.startDate);
+    const series = task.repeatId
+      ? tasks.filter((item) => item.repeatId === task.repeatId)
+      : [];
+    const inferredFrequency = task.repeatId ? inferRepeatFrequency(series) : 'none';
+    const lastSeriesDate = series.length > 0
+      ? [...series].sort((left, right) => left.startDate.localeCompare(right.startDate))[series.length - 1].startDate
+      : null;
+
+    if (task.repeatId && inferredFrequency !== 'none') {
+      setRepeatFrequency(inferredFrequency);
+      if (series.length > 1) {
+        setRepeatEnds('after');
+        setRepeatCount(series.length);
+      } else {
+        setRepeatEnds('never');
+        setRepeatCount(4);
+      }
+      setRepeatUntil(lastSeriesDate ?? defaultRepeatUntil);
+    } else {
+      setRepeatFrequency('none');
+      setRepeatEnds('never');
+      setRepeatUntil(defaultRepeatUntil);
+      setRepeatCount(4);
+    }
+
     repeatUntilAutoRef.current = true;
-    setRepeatUntil(getDefaultRepeatUntil(task.startDate));
-    setRepeatCount(4);
     setRepeatError('');
     setRepeatNotice('');
     setRepeatCreating(false);
-  }, [task]);
+  }, [selectedTaskId, task?.repeatId, task?.startDate]);
 
   useEffect(() => {
     if (selectedTaskId) return;
@@ -686,6 +724,7 @@ export const TaskDetailPanel: React.FC = () => {
                       <SelectItem value="none">{t`Does not repeat`}</SelectItem>
                       <SelectItem value="daily">{t`Daily`}</SelectItem>
                       <SelectItem value="weekly">{t`Weekly`}</SelectItem>
+                      <SelectItem value="biweekly">{t`Biweekly (every 2 weeks)`}</SelectItem>
                       <SelectItem value="monthly">{t`Monthly`}</SelectItem>
                       <SelectItem value="yearly">{t`Yearly`}</SelectItem>
                     </SelectContent>
@@ -904,12 +943,12 @@ export const TaskDetailPanel: React.FC = () => {
                 : t`This will permanently delete "${task.title}".`}
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>{t`Cancel`}</AlertDialogCancel>
+          <AlertDialogFooter className="flex-row flex-wrap items-center justify-end gap-2 sm:space-x-0">
+            <AlertDialogCancel className="mt-0 h-8 px-2.5 text-xs">{t`Cancel`}</AlertDialogCancel>
             {isRepeating ? (
               <>
                 <AlertDialogAction
-                  className="bg-muted text-foreground hover:bg-muted/80"
+                  className="h-8 whitespace-nowrap bg-muted px-2.5 text-xs text-foreground hover:bg-muted/80"
                   onClick={async () => {
                     if (!canEdit) return;
                     await deleteTask(task.id);
@@ -919,7 +958,7 @@ export const TaskDetailPanel: React.FC = () => {
                   {t`Delete this`}
                 </AlertDialogAction>
                 <AlertDialogAction
-                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  className="h-8 whitespace-nowrap bg-destructive px-2.5 text-xs text-destructive-foreground hover:bg-destructive/90"
                   onClick={async () => {
                     if (!canEdit || !task.repeatId) return;
                     await deleteTaskSeries(task.repeatId, task.startDate);
@@ -931,6 +970,7 @@ export const TaskDetailPanel: React.FC = () => {
               </>
             ) : (
               <AlertDialogAction
+                className="h-8 whitespace-nowrap px-2.5 text-xs"
                 onClick={async () => {
                   if (!canEdit) return;
                   await deleteTask(task.id);

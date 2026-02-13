@@ -6,6 +6,33 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- Added a new task repeat option: `Biweekly (every 2 weeks)`, available in both Russian and English UI.
+
+### Changed
+- In timeline task creation, long project names in the `Project` field now stay on a single line and are neatly truncated.
+- Removed the intermediate welcome screen from the login flow: regular sign-in now redirects directly to Keycloak.
+
+### Fixed
+- The repeating-task (`Repeat`) icon now has a consistent fixed size across timeline task cards.
+- Workspace invite reaction toasts (accepted/declined) no longer appear long after the fact; only fresh new reactions are shown.
+
+## [0.1.10] - 2026-02-13
+### Fixed
+- Mouse-wheel scrolling works again in the `Customer` dropdown while creating/editing a project.
+- Action buttons in recurring-task delete dialogs are now responsive and no longer clip in small modal layouts.
+- When editing a recurring task, the `Repeat` section now auto-fills the current series settings (frequency and occurrence count) instead of showing an empty state.
+- Updated edge cache headers for Keycloak resources to reduce stale/broken cached styles on the admin login page.
+
+## [0.1.9] - 2026-02-13
+### Changed
+- No documented changes.
+
+## [0.1.8] - 2026-02-13
+### Changed
+- Improved authentication and login page speed: Keycloak production now uses theme/static caching.
+- Reduced post-login delay: removed duplicate startup requests for profile/roles/workspaces during session initialization.
+- Removed external Google Fonts loading from the app so login and first render no longer depend on a third-party CDN.
 
 ## [0.1.7] - 2026-02-13
 ### Fixed
