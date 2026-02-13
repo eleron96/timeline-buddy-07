@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [0.1.7] - 2026-02-13
 ### Fixed
 - Finalized edge settings for the auth page: compression and caching of Keycloak resources now apply correctly on production.
 
