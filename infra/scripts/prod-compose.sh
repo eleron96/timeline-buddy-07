@@ -28,6 +28,13 @@ if [[ ! -f "$env_file" ]]; then
   exit 1
 fi
 
+if [[ ! -x "infra/scripts/check-prod-secrets.sh" ]]; then
+  echo "Missing executable infra/scripts/check-prod-secrets.sh" >&2
+  exit 1
+fi
+
+infra/scripts/check-prod-secrets.sh "$env_file"
+
 get_env_value() {
   local key="$1"
   local line

@@ -40,7 +40,7 @@ const envPath = path.join(process.cwd(), '.env');
     GOTRUE_SMTP_SENDER_NAME: 'Timeline Planner',
     GOTRUE_EXTERNAL_KEYCLOAK_ENABLED: 'true',
     GOTRUE_EXTERNAL_KEYCLOAK_CLIENT_ID: 'timeline-supabase',
-    GOTRUE_EXTERNAL_KEYCLOAK_SECRET: 'timeline-supabase-dev-secret-change-me',
+    GOTRUE_EXTERNAL_KEYCLOAK_SECRET: 'timeline-supabase-local-dev-secret',
     GOTRUE_EXTERNAL_KEYCLOAK_URL: 'http://keycloak:8080/realms/timeline',
     GOTRUE_EXTERNAL_KEYCLOAK_SCOPE: 'openid profile email',
     GOTRUE_EXTERNAL_KEYCLOAK_SCOPES: 'openid profile email',
@@ -57,7 +57,7 @@ const envPath = path.join(process.cwd(), '.env');
     OAUTH2_PROXY_PROFILE_URL: 'http://keycloak:8080/realms/timeline/protocol/openid-connect/userinfo',
     OAUTH2_PROXY_OIDC_JWKS_URL: 'http://keycloak:8080/realms/timeline/protocol/openid-connect/certs',
     OAUTH2_PROXY_CLIENT_ID: 'timeline-supabase',
-    OAUTH2_PROXY_CLIENT_SECRET: 'timeline-supabase-dev-secret-change-me',
+    OAUTH2_PROXY_CLIENT_SECRET: 'timeline-supabase-local-dev-secret',
     OAUTH2_PROXY_REDIRECT_URL: 'http://localhost:5173/oauth2/callback',
     OAUTH2_PROXY_SCOPE: 'openid profile email',
     OAUTH2_PROXY_EMAIL_DOMAINS: '*',
@@ -281,7 +281,7 @@ const ensureCompose = () => {
   const anonKey = createJwt({ role: 'anon', iss: 'supabase', iat: now, exp }, jwtSecret);
   const serviceRoleKey = createJwt({ role: 'service_role', iss: 'supabase', iat: now, exp }, jwtSecret);
 
-  const env = `POSTGRES_PASSWORD=postgres\nPOSTGRES_USER=postgres\nPOSTGRES_DB=postgres\n\nJWT_SECRET=${jwtSecret}\nANON_KEY=${anonKey}\nSERVICE_ROLE_KEY=${serviceRoleKey}\n\nSITE_URL=http://localhost:5173\nURI_ALLOW_LIST=http://localhost:5173/*\nAPI_EXTERNAL_URL=http://localhost:8080/auth/v1\nAPP_URL=http://localhost:5173\nRESEND_API_KEY=\nRESEND_FROM=Workspace <no-reply@example.com>\nGOTRUE_SMTP_HOST=smtp.resend.com\nGOTRUE_SMTP_PORT=587\nGOTRUE_SMTP_USER=resend\nGOTRUE_SMTP_PASS=\nGOTRUE_SMTP_ADMIN_EMAIL=\nGOTRUE_SMTP_SENDER_NAME=Timeline Planner\nGOTRUE_EXTERNAL_KEYCLOAK_ENABLED=true\nGOTRUE_EXTERNAL_KEYCLOAK_CLIENT_ID=timeline-supabase\nGOTRUE_EXTERNAL_KEYCLOAK_SECRET=timeline-supabase-dev-secret-change-me\nGOTRUE_EXTERNAL_KEYCLOAK_URL=http://keycloak:8080/realms/timeline\nGOTRUE_EXTERNAL_KEYCLOAK_SCOPE=openid profile email\nGOTRUE_EXTERNAL_KEYCLOAK_SCOPES=openid profile email\nGOTRUE_EXTERNAL_KEYCLOAK_REDIRECT_URI=http://localhost:8080/auth/v1/callback\nKEYCLOAK_ADMIN=admin\nKEYCLOAK_ADMIN_PASSWORD=admin\nKEYCLOAK_DB_NAME=keycloak\nKEYCLOAK_DB_USER=keycloak\nKEYCLOAK_DB_PASSWORD=keycloak\nRESERVE_ADMIN_EMAIL=\nRESERVE_ADMIN_PASSWORD=\nVITE_RESERVE_ADMIN_EMAIL=\nVITE_AUTH_MODE=keycloak\n\nPGRST_DB_URI=postgresql://postgres:postgres@db:5432/postgres\nGOTRUE_DB_DATABASE_URL=postgresql://postgres:postgres@db:5432/postgres?search_path=auth\nSUPABASE_DB_URL=postgresql://postgres:postgres@db:5432/postgres\nSUPABASE_INTERNAL_URL=http://gateway:8080\nTASK_MEDIA_MAX_FILE_BYTES=5242880\nTASK_MEDIA_USER_QUOTA_BYTES=209715200\nTASK_MEDIA_WORKSPACE_QUOTA_BYTES=2147483648\nVITE_SUPABASE_URL=http://localhost:8080\nVITE_SUPABASE_ANON_KEY=${anonKey}\n`;
+  const env = `POSTGRES_PASSWORD=postgres\nPOSTGRES_USER=postgres\nPOSTGRES_DB=postgres\n\nJWT_SECRET=${jwtSecret}\nANON_KEY=${anonKey}\nSERVICE_ROLE_KEY=${serviceRoleKey}\n\nSITE_URL=http://localhost:5173\nURI_ALLOW_LIST=http://localhost:5173/*\nAPI_EXTERNAL_URL=http://localhost:8080/auth/v1\nAPP_URL=http://localhost:5173\nRESEND_API_KEY=\nRESEND_FROM=Workspace <no-reply@example.com>\nGOTRUE_SMTP_HOST=smtp.resend.com\nGOTRUE_SMTP_PORT=587\nGOTRUE_SMTP_USER=resend\nGOTRUE_SMTP_PASS=\nGOTRUE_SMTP_ADMIN_EMAIL=\nGOTRUE_SMTP_SENDER_NAME=Timeline Planner\nGOTRUE_EXTERNAL_KEYCLOAK_ENABLED=true\nGOTRUE_EXTERNAL_KEYCLOAK_CLIENT_ID=timeline-supabase\nGOTRUE_EXTERNAL_KEYCLOAK_SECRET=timeline-supabase-local-dev-secret\nGOTRUE_EXTERNAL_KEYCLOAK_URL=http://keycloak:8080/realms/timeline\nGOTRUE_EXTERNAL_KEYCLOAK_SCOPE=openid profile email\nGOTRUE_EXTERNAL_KEYCLOAK_SCOPES=openid profile email\nGOTRUE_EXTERNAL_KEYCLOAK_REDIRECT_URI=http://localhost:8080/auth/v1/callback\nKEYCLOAK_ADMIN=admin\nKEYCLOAK_ADMIN_PASSWORD=admin\nKEYCLOAK_DB_NAME=keycloak\nKEYCLOAK_DB_USER=keycloak\nKEYCLOAK_DB_PASSWORD=keycloak\nRESERVE_ADMIN_EMAIL=\nRESERVE_ADMIN_PASSWORD=\nVITE_RESERVE_ADMIN_EMAIL=\nVITE_AUTH_MODE=keycloak\n\nPGRST_DB_URI=postgresql://postgres:postgres@db:5432/postgres\nGOTRUE_DB_DATABASE_URL=postgresql://postgres:postgres@db:5432/postgres?search_path=auth\nSUPABASE_DB_URL=postgresql://postgres:postgres@db:5432/postgres\nSUPABASE_INTERNAL_URL=http://gateway:8080\nTASK_MEDIA_MAX_FILE_BYTES=5242880\nTASK_MEDIA_USER_QUOTA_BYTES=209715200\nTASK_MEDIA_WORKSPACE_QUOTA_BYTES=2147483648\nVITE_SUPABASE_URL=http://localhost:8080\nVITE_SUPABASE_ANON_KEY=${anonKey}\n`;
 
   fs.writeFileSync(envPath, env);
   return true;
@@ -318,7 +318,7 @@ const entries = Object.fromEntries(env.split('\n')
     GOTRUE_SMTP_SENDER_NAME: 'Timeline Planner',
     GOTRUE_EXTERNAL_KEYCLOAK_ENABLED: 'true',
     GOTRUE_EXTERNAL_KEYCLOAK_CLIENT_ID: 'timeline-supabase',
-    GOTRUE_EXTERNAL_KEYCLOAK_SECRET: 'timeline-supabase-dev-secret-change-me',
+    GOTRUE_EXTERNAL_KEYCLOAK_SECRET: 'timeline-supabase-local-dev-secret',
     GOTRUE_EXTERNAL_KEYCLOAK_URL: 'http://keycloak:8080/realms/timeline',
     GOTRUE_EXTERNAL_KEYCLOAK_SCOPE: 'openid profile email',
     GOTRUE_EXTERNAL_KEYCLOAK_SCOPES: 'openid profile email',
@@ -334,7 +334,7 @@ const entries = Object.fromEntries(env.split('\n')
     OAUTH2_PROXY_PROFILE_URL: 'http://keycloak:8080/realms/timeline/protocol/openid-connect/userinfo',
     OAUTH2_PROXY_OIDC_JWKS_URL: 'http://keycloak:8080/realms/timeline/protocol/openid-connect/certs',
     OAUTH2_PROXY_CLIENT_ID: 'timeline-supabase',
-    OAUTH2_PROXY_CLIENT_SECRET: 'timeline-supabase-dev-secret-change-me',
+    OAUTH2_PROXY_CLIENT_SECRET: 'timeline-supabase-local-dev-secret',
     OAUTH2_PROXY_REDIRECT_URL: 'http://localhost:5173/oauth2/callback',
     OAUTH2_PROXY_SCOPE: 'openid profile email',
     OAUTH2_PROXY_EMAIL_DOMAINS: '*',

@@ -72,6 +72,7 @@ make up
 
 - Приложение: `http://localhost:5173`
 - Keycloak: `http://localhost:8081`
+- Keycloak Admin Console (prod): `https://motio.nikog.net/admin/master/console/`
 - Supabase Gateway health: `http://localhost:8080/health`
 - Supabase Auth health: `http://localhost:8080/auth/v1/health`
 - Postgres: `localhost:54322`
@@ -124,9 +125,27 @@ make deploy-remote
 - `RESERVE_ADMIN_PASSWORD`
 - `KEYCLOAK_ADMIN`
 - `KEYCLOAK_ADMIN_PASSWORD`
+- `GOTRUE_EXTERNAL_KEYCLOAK_CLIENT_ID`
+- `GOTRUE_EXTERNAL_KEYCLOAK_SECRET`
+- `OAUTH2_PROXY_CLIENT_ID`
+- `OAUTH2_PROXY_CLIENT_SECRET`
 - `OAUTH2_PROXY_COOKIE_SECRET` (может сгенерироваться скриптом, но лучше задавать явно)
 
 Шаблон: `.env.example`
+
+Проверка перед деплоем:
+
+```bash
+make check-prod-secrets
+```
+
+Для проверки удалённого production `.env` на сервере:
+
+```bash
+make check-prod-secrets-remote
+```
+
+Важно: production-деплой блокируется, если OIDC секреты пустые или используют dev/default значения.
 
 ## Основные переменные окружения
 

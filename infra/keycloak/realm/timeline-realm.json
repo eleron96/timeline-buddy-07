@@ -26,7 +26,7 @@
       "enabled": true,
       "protocol": "openid-connect",
       "publicClient": false,
-      "secret": "timeline-supabase-dev-secret-change-me",
+      "secret": "timeline-supabase-local-dev-secret",
       "standardFlowEnabled": true,
       "directAccessGrantsEnabled": false,
       "serviceAccountsEnabled": false,

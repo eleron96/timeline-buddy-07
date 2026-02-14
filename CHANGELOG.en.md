@@ -7,6 +7,13 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Security
+- Hardened authentication security: rotated default OIDC secrets and added a deployment guard to block dev/default secrets.
+
+## [0.1.18] - 2026-02-14
+### Changed
+- No documented changes.
+
 ## [0.1.17] - 2026-02-14
 ### Fixed
 - Fixed pie-chart legend labels so technical/internal keys are no longer shown; the aggregated item is always rendered as `Other`.

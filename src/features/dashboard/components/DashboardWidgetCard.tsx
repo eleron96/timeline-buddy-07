@@ -57,7 +57,7 @@ const filterLabels: Record<DashboardStatusFilter, string> = {
   custom: t`Custom`,
 };
 const PIE_OTHER_KEY = '__pie_other__';
-const PIE_OTHER_LABEL = 'Other';
+const LEGACY_OTHER_LABEL_IDS = new Set(['/IX/7x', 'RuXuwk']);
 const MILESTONE_LIST_ROW_GAP_PX = 8;
 const MILESTONE_MORE_ROW_RESERVE_PX = 24;
 const CHART_ULTRAWIDE_MIN_WIDTH_PX = 1180;
@@ -87,15 +87,17 @@ export const DashboardWidgetCard: React.FC<DashboardWidgetCardProps> = ({
   onEdit,
 }) => {
   const locale = useLocaleStore((state) => state.locale);
+  const otherLegendLabel = locale === 'ru' ? 'Остальное' : 'Other';
   const isTechnicalLegendName = React.useCallback((name: string) => (
     !name.trim()
     || /^series_/i.test(name)
     || /^__.+__$/.test(name)
+    || LEGACY_OTHER_LABEL_IDS.has(name.trim())
   ), []);
   const formatLegendName = React.useCallback((name: string) => {
-    if (name === PIE_OTHER_KEY || isTechnicalLegendName(name)) return PIE_OTHER_LABEL;
+    if (name === PIE_OTHER_KEY || isTechnicalLegendName(name)) return otherLegendLabel;
     return name;
-  }, [isTechnicalLegendName]);
+  }, [isTechnicalLegendName, otherLegendLabel]);
   const dateLocale = React.useMemo(() => resolveDateFnsLocale(locale), [locale]);
   const { startDate: taskStartDate, endDate: taskEndDate } = getPeriodRange(widget.period);
   const formatShortRange = (startDate: string, endDate: string) => {
@@ -237,6 +239,9 @@ export const DashboardWidgetCard: React.FC<DashboardWidgetCardProps> = ({
   const legendLimit = showLegend ? Math.max(1, legendRowsBudget * legendColumns) : 0;
   const visibleLegendItems = showLegend ? legendItems.slice(0, legendLimit) : [];
   const hiddenLegendItems = showLegend ? legendItems.slice(legendLimit) : [];
+  const hiddenLegendLabel = locale === 'ru'
+    ? `+${hiddenLegendItems.length} ещё`
+    : `+${hiddenLegendItems.length} more`;
   const legendTextClass = isPieLegend
     ? (isCompactChartHeight ? 'text-[8px] leading-tight' : 'text-[9px] leading-tight')
     : isCompactChartHeight
@@ -327,7 +332,7 @@ export const DashboardWidgetCard: React.FC<DashboardWidgetCardProps> = ({
                 type="button"
                 className="mt-1 text-[10px] text-muted-foreground underline-offset-4 hover:underline"
               >
-                {t`+${hiddenLegendItems.length} more`}
+                {hiddenLegendLabel}
               </button>
             </TooltipTrigger>
             <TooltipContent side="top" className="max-w-xs p-2 text-xs">
