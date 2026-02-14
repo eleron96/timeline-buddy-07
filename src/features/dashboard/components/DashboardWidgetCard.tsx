@@ -56,6 +56,7 @@ const filterLabels: Record<DashboardStatusFilter, string> = {
   cancelled: t`Cancelled`,
   custom: t`Custom`,
 };
+const PIE_OTHER_KEY = '__pie_other__';
 const PIE_OTHER_LABEL = 'Other';
 const MILESTONE_LIST_ROW_GAP_PX = 8;
 const MILESTONE_MORE_ROW_RESERVE_PX = 24;
@@ -86,6 +87,15 @@ export const DashboardWidgetCard: React.FC<DashboardWidgetCardProps> = ({
   onEdit,
 }) => {
   const locale = useLocaleStore((state) => state.locale);
+  const isTechnicalLegendName = React.useCallback((name: string) => (
+    !name.trim()
+    || /^series_/i.test(name)
+    || /^__.+__$/.test(name)
+  ), []);
+  const formatLegendName = React.useCallback((name: string) => {
+    if (name === PIE_OTHER_KEY || isTechnicalLegendName(name)) return PIE_OTHER_LABEL;
+    return name;
+  }, [isTechnicalLegendName]);
   const dateLocale = React.useMemo(() => resolveDateFnsLocale(locale), [locale]);
   const { startDate: taskStartDate, endDate: taskEndDate } = getPeriodRange(widget.period);
   const formatShortRange = (startDate: string, endDate: string) => {
@@ -149,17 +159,17 @@ export const DashboardWidgetCard: React.FC<DashboardWidgetCardProps> = ({
       : 'pt-3';
   const [pieTooltipPosition, setPieTooltipPosition] = React.useState<{ x: number; y: number } | undefined>(undefined);
   const pieChartSeries = widget.type === 'pie' ? (data?.series ?? []) : [];
-  const pieLegendLimit = size === 'small' ? 3 : size === 'medium' ? 5 : 7;
+  const pieLegendLimit = size === 'small' ? 2 : size === 'medium' ? 5 : 7;
   const pieSeries = widget.type === 'pie' ? (() => {
     const source = pieChartSeries;
     if (!isSmall) return source;
     if (source.length <= pieLegendLimit) return source;
-    const visibleCount = Math.max(1, pieLegendLimit - 1);
+    const visibleCount = Math.max(1, pieLegendLimit);
     const visible = source.slice(0, visibleCount);
     const hidden = source.slice(visibleCount);
     const otherValue = hidden.reduce((sum, item) => sum + item.value, 0);
     if (!otherValue) return visible;
-    return [...visible, { name: PIE_OTHER_LABEL, value: otherValue }];
+    return [...visible, { name: PIE_OTHER_KEY, value: otherValue }];
   })() : [];
   const legendItems = isChart
     ? (widget.type === 'pie' ? pieSeries : (data?.series ?? []))
@@ -272,7 +282,10 @@ export const DashboardWidgetCard: React.FC<DashboardWidgetCardProps> = ({
           justifyItems: 'start',
         }}
       >
-        {visibleLegendItems.map((item, index) => (
+        {visibleLegendItems.map((item, index) => {
+          const legendName = formatLegendName(item.name);
+          const isPieOther = isPieLegend && item.name === PIE_OTHER_KEY;
+          return (
           <div
             key={`${item.name}-${index}`}
             className={cn(
@@ -288,14 +301,14 @@ export const DashboardWidgetCard: React.FC<DashboardWidgetCardProps> = ({
               className={cn('rounded-full', isPieLegend ? 'h-1.5 w-1.5' : 'mt-1 h-2 w-2')}
               style={{
                 backgroundColor: (
-                  isPieLegend && item.name === PIE_OTHER_LABEL
+                  isPieOther
                     ? '#94A3B8'
                     : paletteColors[index % paletteColors.length]
                 ),
               }}
             />
             <span className={cn('min-w-0 text-muted-foreground', isPieLegend ? 'truncate' : 'break-words')}>
-              {item.name}
+              {legendName}
             </span>
             {showLegendValue && (
               <span className="text-right font-medium text-foreground">
@@ -303,7 +316,8 @@ export const DashboardWidgetCard: React.FC<DashboardWidgetCardProps> = ({
               </span>
             )}
           </div>
-        ))}
+        );
+        })}
       </div>
       {hiddenLegendItems.length > 0 && (
         <TooltipProvider delayDuration={180}>
@@ -320,19 +334,21 @@ export const DashboardWidgetCard: React.FC<DashboardWidgetCardProps> = ({
               <div className="grid gap-1">
                 {hiddenLegendItems.map((item, index) => {
                   const colorIndex = visibleLegendItems.length + index;
+                  const legendName = formatLegendName(item.name);
+                  const isPieOther = isPieLegend && item.name === PIE_OTHER_KEY;
                   return (
                     <div key={`${item.name}-hidden-${index}`} className="grid grid-cols-[10px_minmax(0,1fr)_auto] items-center gap-2">
                       <span
                         className="h-2 w-2 rounded-full"
                         style={{
                           backgroundColor: (
-                            isPieLegend && item.name === PIE_OTHER_LABEL
+                            isPieOther
                               ? '#94A3B8'
                               : paletteColors[colorIndex % paletteColors.length]
                           ),
                         }}
                       />
-                      <span className="truncate">{item.name}</span>
+                      <span className="truncate">{legendName}</span>
                       <span className="text-muted-foreground">
                         {item.value.toLocaleString(locale === 'ru' ? 'ru-RU' : 'en-US')}
                       </span>
@@ -600,6 +616,7 @@ export const DashboardWidgetCard: React.FC<DashboardWidgetCardProps> = ({
                   style={{ aspectRatio: 'auto', minHeight: chartCanvasMinHeight }}
                 >
                   <LineChart data={timeSeries}>
+                    <CartesianGrid vertical={false} stroke="#E5E7EB" />
                     {showAxes && (
                       <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={36} />
                     )}
@@ -648,6 +665,7 @@ export const DashboardWidgetCard: React.FC<DashboardWidgetCardProps> = ({
                   style={{ aspectRatio: 'auto', minHeight: chartCanvasMinHeight }}
                 >
                   <AreaChart data={timeSeries}>
+                    <CartesianGrid vertical={false} stroke="#E5E7EB" />
                     {showAxes && (
                       <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={36} />
                     )}

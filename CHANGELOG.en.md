@@ -6,6 +6,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Fixed
+- Fixed pie-chart legend labels so technical/internal keys are no longer shown; the aggregated item is always rendered as `Other`.
+- Added background horizontal grid lines to `Line chart` and `Area chart` widgets to match the bar chart visual grid.
 
 ## [0.1.16] - 2026-02-13
 ### Changed
